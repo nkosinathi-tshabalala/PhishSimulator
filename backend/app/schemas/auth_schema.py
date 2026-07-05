@@ -44,3 +44,28 @@ class AuthSchema:
             return False, "Age must be at least 16."
 
         return True, None
+    
+    @staticmethod
+    def validate_login(data):
+        """Validate login data."""
+
+        required_fields = [
+            "email",
+            "password"
+        ]
+
+        # Check required fields
+        for field in required_fields:
+            if field not in data:
+                return False, f"{field} is required."
+
+            if data[field] in ("", None):
+                return False, f"{field} cannot be empty."
+
+        # Validate email format
+        email_pattern = r"^[\w\.-]+@[\w\.-]+\.\w+$"
+
+        if not re.match(email_pattern, data["email"]):
+            return False, "Invalid email address."
+
+        return True, None

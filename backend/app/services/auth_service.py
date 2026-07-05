@@ -1,3 +1,7 @@
+from flask_jwt_extended import get_jwt_identity
+from flask_jwt_extended import create_access_token
+from app.models.authentication import UserSession
+from app.enums.session_status import SessionStatus
 from app.extensions import bcrypt, db
 from app.models.authentication import Player
 from app.models.authentication import User
@@ -69,4 +73,85 @@ class AuthService:
 
         except Exception as error:
             db.session.rollback()
-            raise error
+            raise 
+        
+
+    @staticmethod
+    def login(data):
+        """Authenticate a user."""
+
+        # Validate request
+        is_valid, error = AuthSchema.validate_login(data)
+
+        if not is_valid:
+            return False, error, None
+
+        # Find user
+        user = User.query.filter_by(
+            email=data["email"]
+        ).first()
+
+        if not user:
+            return False, "Invalid email or password.", None
+
+        # Verify password
+        if not bcrypt.check_password_hash(
+            user.password_hash,
+            data["password"]
+        ):
+            return False, "Invalid email or password.", None
+
+        try:
+
+            # Create JWT
+            access_token = create_access_token(
+                identity=str(user.user_id)
+            )
+
+            # Record login session
+            session = UserSession(
+                user_id=user.user_id,
+                status=SessionStatus.ACTIVE
+            )
+
+            db.session.add(session)
+            db.session.commit()
+
+            return True, "Login successful.", {
+                "access_token": access_token,
+                "user_id": user.user_id,
+                "role": user.role
+            }
+
+        except Exception:
+            db.session.rollback()
+            raise
+    
+    @staticmethod
+    def get_current_user():
+        """Returns the currently authenticated user."""
+
+        user_id = int(get_jwt_identity())
+
+        user = User.query.get(user_id)
+
+        if not user:
+            return False, "User not found.", None
+
+        player = Player.query.filter_by(
+            user_id=user.user_id
+        ).first()
+
+        profile = UserProfile.query.filter_by(
+            player_id=player.player_id
+        ).first()
+
+        return True, "User retrieved successfully.", {
+            "user_id": user.user_id,
+            "email": user.email,
+            "role": user.role,
+            "full_name": player.full_name,
+            "age": profile.age,
+            "it_background": profile.it_background,
+            "occupation": profile.occupation.value
+        }
