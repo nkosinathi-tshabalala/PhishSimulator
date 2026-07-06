@@ -1,4 +1,5 @@
 from flask import Flask
+from flask_cors import CORS
 
 from app.config import Config
 from app.extensions import bcrypt
@@ -21,6 +22,12 @@ def create_app():
     # Load application configuration
     app.config.from_object(Config)
 
+    # Allow requests from the React frontend
+    CORS(
+        app,
+        resources={r"/api/*": {"origins": "http://localhost:5173"}}
+    )
+
     # Initialise Flask extensions
     db.init_app(app)
     migrate.init_app(app, db)
@@ -29,9 +36,8 @@ def create_app():
 
     # Register API Blueprints
     app.register_blueprint(auth_bp)
-    print(app.url_map)
 
-    # Home route
+    # Health check route
     @app.route("/")
     def home():
         return {
