@@ -77,7 +77,8 @@ export function RegisterPage({ onNavigate, onRegister }: RegisterPageProps) {
 
       setTimeout(() => {
         onRegister();
-      }, 3000);
+        console.log("Redirecting to login...");
+      }, 2000);
     } catch (error) {
       setErrorMessage("Unable to create your account. Please try again.");
     } finally {
