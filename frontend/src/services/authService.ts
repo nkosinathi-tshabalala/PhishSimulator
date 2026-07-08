@@ -1,39 +1,25 @@
 import { apiRequest } from "./api";
 
 class AuthService {
+  async register(userData: any) {
+    return await apiRequest("/auth/register", "POST", userData);
+  }
 
-    async register(userData: any) {
-        return await apiRequest(
-            "/auth/register",
-            "POST",
-            userData
-        );
-    }
+  async login(credentials: any) {
+    return await apiRequest("/auth/login", "POST", credentials);
+  }
 
-    async login(credentials: any) {
-        return await apiRequest(
-            "/auth/login",
-            "POST",
-            credentials
-        );
-    }
+  async getCurrentUser() {
+    const token = localStorage.getItem("access_token");
 
-    async getCurrentUser() {
+    return await apiRequest("/auth/me", "GET", null, token);
+  }
 
-        const token = localStorage.getItem("access_token");
+  logout() {
+    localStorage.removeItem("access_token");
 
-        return await apiRequest(
-            "/auth/me",
-            "GET",
-            null,
-            token
-        );
-    }
-
-    logout() {
-
-        localStorage.removeItem("access_token");
-    }
+    // Clear any future session data here if needed.
+  }
 }
 
 export default new AuthService();

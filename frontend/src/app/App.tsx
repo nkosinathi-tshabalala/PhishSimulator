@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { LandingPage } from "./components/LandingPage";
 import { LoginPage } from "./components/LoginPage";
 import { AdminLoginPage } from "./components/AdminLoginPage";
@@ -20,12 +20,85 @@ import { EmailDispatcherPage } from "./components/EmailDispatcherPage";
 import { Sidebar } from "./components/Sidebar";
 import { AdminSidebar } from "./components/AdminSidebar";
 
+import AuthService from "../services/authService";
+
 export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [userRole, setUserRole] = useState<"player" | "admin">("player");
   const [currentPage, setCurrentPage] = useState("landing");
 
-  const handleLogin = (role: "player" | "admin") => {
+  interface CurrentUser {
+    user_id: number;
+    full_name: string;
+    email: string;
+    age: number;
+    occupation: string;
+    it_background: boolean;
+    role: string;
+  }
+
+  const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
+
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    restoreSession();
+  }, []);
+
+  const restoreSession = async () => {
+    const token = localStorage.getItem("access_token");
+
+    // No stored session
+    if (!token) {
+      setIsLoading(false);
+      return;
+    }
+
+    try {
+      const response = await AuthService.getCurrentUser();
+
+      if (!response.ok) {
+        AuthService.logout();
+
+        setIsLoggedIn(false);
+        setUserRole("player");
+        setCurrentPage("landing");
+
+        setIsLoading(false);
+        return;
+      }
+
+      const user = response.data.data;
+
+      const role = user.role.toLowerCase() as "player" | "admin";
+
+      setCurrentUser(user);
+
+      setIsLoggedIn(true);
+      setUserRole(role);
+      setCurrentPage(role === "admin" ? "admin-dashboard" : "dashboard");
+    } catch (error) {
+      console.error(error);
+
+      AuthService.logout();
+
+      setIsLoggedIn(false);
+      setUserRole("player");
+      setCurrentPage("landing");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleLogin = async (role: "player" | "admin") => {
+    const response = await AuthService.getCurrentUser();
+
+    console.log("Current User Response:", response);
+
+    if (response.ok) {
+      setCurrentUser(response.data.data);
+    }
+
     setIsLoggedIn(true);
     setUserRole(role);
     setCurrentPage(role === "admin" ? "admin-dashboard" : "dashboard");
@@ -39,6 +112,10 @@ export default function App() {
   };
 
   const handleLogout = () => {
+    AuthService.logout();
+
+    setCurrentUser(null);
+
     setIsLoggedIn(false);
     setUserRole("player");
     setCurrentPage("landing");
@@ -49,6 +126,15 @@ export default function App() {
   };
 
   // Public pages
+
+  if (isLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <p className="text-muted-foreground">Loading...</p>
+      </div>
+    );
+  }
+
   if (!isLoggedIn) {
     if (currentPage === "landing")
       return <LandingPage onNavigate={handleNavigate} />;
@@ -127,7 +213,7 @@ export default function App() {
         style={{ backgroundColor: "#f0f4f8" }}
       >
         {currentPage === "dashboard" && (
-          <Dashboard onNavigate={handleNavigate} />
+          <Dashboard user={currentUser} onNavigate={handleNavigate} />
         )}
         {currentPage === "quiz" && (
           <BaselineQuiz onBack={() => handleNavigate("dashboard")} />
