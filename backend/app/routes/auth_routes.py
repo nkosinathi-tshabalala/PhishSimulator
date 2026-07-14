@@ -101,3 +101,62 @@ def get_current_user():
             "message": "Unable to retrieve user.",
             "error": str(error)
         }), 500
+
+@auth_bp.route("/update-profile", methods=["PUT"])
+@jwt_required()
+def update_profile():
+    """Updates the authenticated user's profile."""
+
+    data = request.get_json()
+
+    try:
+
+        success, message, updated_user = AuthService.update_profile(data)
+
+        if not success:
+            return jsonify({
+                "success": False,
+                "message": message
+            }), 400
+
+        return jsonify({
+            "success": True,
+            "message": message,
+            "data": updated_user
+        }), 200
+
+    except Exception as error:
+        return jsonify({
+            "success": False,
+            "message": "Profile update failed.",
+            "error": str(error)
+        }), 500
+
+@auth_bp.route("/change-password", methods=["PUT"])
+@jwt_required()
+def change_password():
+    """Changes the authenticated user's password."""
+
+    data = request.get_json()
+
+    try:
+
+        success, message, _ = AuthService.change_password(data)
+
+        if not success:
+            return jsonify({
+                "success": False,
+                "message": message
+            }), 400
+
+        return jsonify({
+            "success": True,
+            "message": message
+        }), 200
+
+    except Exception as error:
+        return jsonify({
+            "success": False,
+            "message": "Password update failed.",
+            "error": str(error)
+        }), 500

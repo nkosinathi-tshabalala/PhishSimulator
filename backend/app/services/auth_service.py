@@ -2,6 +2,7 @@ from flask_jwt_extended import get_jwt_identity
 from flask_jwt_extended import create_access_token
 from app.models.authentication import UserSession
 from app.enums.session_status import SessionStatus
+from app.enums.occupation import Occupation
 from app.extensions import bcrypt, db
 from app.models.authentication import Player
 from app.models.authentication import User
@@ -155,3 +156,88 @@ class AuthService:
             "it_background": profile.it_background,
             "occupation": profile.occupation.value
         }
+    
+    @staticmethod
+    def update_profile(data):
+        """Updates the authenticated user's profile."""
+
+        user_id = int(get_jwt_identity())
+
+        user = User.query.get(user_id)
+
+        if not user:
+            return False, "User not found.", None
+
+        player = Player.query.filter_by(
+            user_id=user.user_id
+        ).first()
+
+        profile = UserProfile.query.filter_by(
+            player_id=player.player_id
+        ).first()
+
+        try:
+            # Update player details
+            player.full_name = data["full_name"]
+
+            # Update profile details
+            profile.age = data["age"]
+            profile.it_background = data["it_background"]
+            try:
+                profile.occupation = Occupation(data["occupation"])
+            except ValueError:
+
+                return False, "Invalid occupation selected.", None
+
+            db.session.commit()
+
+            return True, "Profile updated successfully.", {
+                "user_id": user.user_id,
+                "email": user.email,
+                "role": user.role,
+                "full_name": player.full_name,
+                "age": profile.age,
+                "it_background": profile.it_background,
+                "occupation": profile.occupation.value
+            }
+
+        except Exception:
+            db.session.rollback()
+            raise
+
+    @staticmethod
+    def change_password(data):
+        """Changes the authenticated user's password."""
+
+        user_id = int(get_jwt_identity())
+
+        user = User.query.get(user_id)
+
+        if not user:
+            return False, "User not found.", None
+
+        # Verify current password
+        if not bcrypt.check_password_hash(
+            user.password_hash,
+            data["current_password"]
+        ):
+            return False, "Current password is incorrect.", None
+
+        # Confirm passwords match
+        if data["new_password"] != data["confirm_password"]:
+            return False, "New passwords do not match.", None
+
+        try:
+
+            # Hash the new password
+            user.password_hash = bcrypt.generate_password_hash(
+                data["new_password"]
+            ).decode("utf-8")
+
+            db.session.commit()
+
+            return True, "Password updated successfully.", None
+
+        except Exception:
+            db.session.rollback()
+            raise
