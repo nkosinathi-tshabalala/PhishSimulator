@@ -76,7 +76,12 @@ export default function App() {
 
       setIsLoggedIn(true);
       setUserRole(role);
-      setCurrentPage(role === "admin" ? "admin-dashboard" : "dashboard");
+
+      const defaultPage = role === "admin" ? "admin-dashboard" : "dashboard";
+
+      const savedPage = localStorage.getItem("current_page");
+
+      setCurrentPage(savedPage || defaultPage);
     } catch (error) {
       console.error(error);
 
@@ -93,15 +98,22 @@ export default function App() {
   const handleLogin = async (role: "player" | "admin") => {
     const response = await AuthService.getCurrentUser();
 
-    console.log("Current User Response:", response);
+    console.log(response);
 
     if (response.ok) {
       setCurrentUser(response.data.data);
     }
 
+    const page = role === "admin" ? "admin-dashboard" : "dashboard";
+
+    localStorage.setItem("current_page", page);
+
+    setCurrentPage(page);
+
+    console.log("Navigating to:", page);
+
     setIsLoggedIn(true);
     setUserRole(role);
-    setCurrentPage(role === "admin" ? "admin-dashboard" : "dashboard");
   };
 
   const handleRegister = () => {
@@ -114,6 +126,8 @@ export default function App() {
   const handleLogout = () => {
     AuthService.logout();
 
+    localStorage.removeItem("current_page");
+
     setCurrentUser(null);
 
     setIsLoggedIn(false);
@@ -122,6 +136,7 @@ export default function App() {
   };
 
   const handleNavigate = (page: string) => {
+    localStorage.setItem("current_page", page);
     setCurrentPage(page);
   };
 
@@ -192,8 +207,13 @@ export default function App() {
               onBack={() => handleNavigate("admin-dashboard")}
             />
           )}
+
           {currentPage === "settings" && (
-            <ProfilePage onBack={() => handleNavigate("admin-dashboard")} />
+            <ProfilePage
+              user={currentUser}
+              setCurrentUser={setCurrentUser}
+              onBack={() => handleNavigate("admin-dashboard")}
+            />
           )}
         </div>
       </div>
@@ -231,7 +251,11 @@ export default function App() {
           <Analytics onBack={() => handleNavigate("dashboard")} />
         )}
         {currentPage === "profile" && (
-          <ProfilePage onBack={() => handleNavigate("dashboard")} />
+          <ProfilePage
+            user={currentUser}
+            setCurrentUser={setCurrentUser}
+            onBack={() => handleNavigate("dashboard")}
+          />
         )}
       </div>
     </div>
