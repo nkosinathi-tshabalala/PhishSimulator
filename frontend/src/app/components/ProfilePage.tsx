@@ -63,6 +63,12 @@ export function ProfilePage({
 
   const [errorMessage, setErrorMessage] = useState("");
 
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
+
+  const [passwordSuccessMessage, setPasswordSuccessMessage] = useState("");
+
+  const [passwordErrorMessage, setPasswordErrorMessage] = useState("");
+
   useEffect(() => {
     if (!user) return;
 
@@ -107,10 +113,83 @@ export function ProfilePage({
     }
   };
 
-  const handlePasswordUpdate = (e: React.FormEvent) => {
-    e.preventDefault();
-    // Handle password update
-  };
+  const showPasswordSuccess = (message: string) => {
+  setPasswordSuccessMessage(message);
+
+  setTimeout(() => {
+    setPasswordSuccessMessage("");
+  }, 3000);
+};
+
+const showPasswordError = (message: string) => {
+  setPasswordErrorMessage(message);
+
+  setTimeout(() => {
+    setPasswordErrorMessage("");
+  }, 3000);
+};
+
+const handlePasswordUpdate = async (e: React.FormEvent) => {
+  e.preventDefault();
+
+  // Clear previous messages
+  setPasswordSuccessMessage("");
+  setPasswordErrorMessage("");
+
+  // Validate required fields BEFORE enabling loading
+  if (
+    !passwordData.currentPassword ||
+    !passwordData.newPassword ||
+    !passwordData.confirmPassword
+  ) {
+    showPasswordError("Please complete all password fields.");
+    return;
+  }
+
+  // Prevent using the same password
+  if (
+    passwordData.currentPassword === passwordData.newPassword
+  ) {
+    showPasswordError(
+      "Your new password must be different from your current password."
+    );
+    return;
+  }
+
+  setIsChangingPassword(true);
+
+  try {
+    const response = await AuthService.changePassword({
+      current_password: passwordData.currentPassword,
+      new_password: passwordData.newPassword,
+      confirm_password: passwordData.confirmPassword,
+    });
+
+    if (!response.ok) {
+      showPasswordError(response.data.message);
+      return;
+    }
+
+    showPasswordSuccess(response.data.message);
+
+    // Clear the password fields after a successful update
+    setPasswordData({
+      currentPassword: "",
+      newPassword: "",
+      confirmPassword: "",
+    });
+
+  } catch (error) {
+    console.error(error);
+
+    showPasswordError(
+      "Unable to change password. Please try again."
+    );
+
+  } finally {
+    setIsChangingPassword(false);
+  }
+};
 
   return (
     <div className="h-screen flex flex-col">
@@ -290,8 +369,30 @@ export function ProfilePage({
                   />
                 </div>
 
-                <Button type="submit" className="w-full">
-                  Update Password
+                {passwordSuccessMessage && (
+                  <div className="rounded-md border border-green-200 bg-green-50 p-3">
+                    <p className="text-sm text-green-700">
+                      {passwordSuccessMessage}
+                    </p>
+                  </div>
+                )}
+
+                {passwordErrorMessage && (
+                  <div className="rounded-md border border-red-200 bg-red-50 p-3">
+                    <p className="text-sm text-red-700">
+                      {passwordErrorMessage}
+                    </p>
+                  </div>
+                )}
+
+                <Button
+                  type="submit"
+                  className="w-full"
+                  disabled={isChangingPassword}
+                >
+                  {isChangingPassword
+                    ? "Updating Password..."
+                    : "Update Password"}
                 </Button>
               </form>
             </CardContent>
