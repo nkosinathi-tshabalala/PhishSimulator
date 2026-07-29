@@ -26,9 +26,9 @@ interface CurrentUser {
   user_id: number;
   full_name: string;
   email: string;
-  age: number;
-  occupation: string;
-  it_background: boolean;
+  age: number | null;
+  occupation: string | null;
+  it_background: boolean | null;
   role: string;
 }
 
@@ -73,11 +73,11 @@ export function ProfilePage({
     if (!user) return;
 
     setProfileData({
-      fullName: user.full_name,
-      email: user.email,
-      age: user.age.toString(),
-      itBackground: user.it_background ? "yes" : "no",
-      occupation: user.occupation,
+      fullName: user.full_name ?? "",
+      email: user.email ?? "",
+      age: user.age !== null ? user.age.toString() : "",
+      itBackground: user.it_background === true ? "yes" : "no",
+      occupation: user.occupation ?? "",
     });
   }, [user]);
 
@@ -114,82 +114,76 @@ export function ProfilePage({
   };
 
   const showPasswordSuccess = (message: string) => {
-  setPasswordSuccessMessage(message);
+    setPasswordSuccessMessage(message);
 
-  setTimeout(() => {
+    setTimeout(() => {
+      setPasswordSuccessMessage("");
+    }, 3000);
+  };
+
+  const showPasswordError = (message: string) => {
+    setPasswordErrorMessage(message);
+
+    setTimeout(() => {
+      setPasswordErrorMessage("");
+    }, 3000);
+  };
+
+  const handlePasswordUpdate = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    // Clear previous messages
     setPasswordSuccessMessage("");
-  }, 3000);
-};
-
-const showPasswordError = (message: string) => {
-  setPasswordErrorMessage(message);
-
-  setTimeout(() => {
     setPasswordErrorMessage("");
-  }, 3000);
-};
 
-const handlePasswordUpdate = async (e: React.FormEvent) => {
-  e.preventDefault();
-
-  // Clear previous messages
-  setPasswordSuccessMessage("");
-  setPasswordErrorMessage("");
-
-  // Validate required fields BEFORE enabling loading
-  if (
-    !passwordData.currentPassword ||
-    !passwordData.newPassword ||
-    !passwordData.confirmPassword
-  ) {
-    showPasswordError("Please complete all password fields.");
-    return;
-  }
-
-  // Prevent using the same password
-  if (
-    passwordData.currentPassword === passwordData.newPassword
-  ) {
-    showPasswordError(
-      "Your new password must be different from your current password."
-    );
-    return;
-  }
-
-  setIsChangingPassword(true);
-
-  try {
-    const response = await AuthService.changePassword({
-      current_password: passwordData.currentPassword,
-      new_password: passwordData.newPassword,
-      confirm_password: passwordData.confirmPassword,
-    });
-
-    if (!response.ok) {
-      showPasswordError(response.data.message);
+    // Validate required fields BEFORE enabling loading
+    if (
+      !passwordData.currentPassword ||
+      !passwordData.newPassword ||
+      !passwordData.confirmPassword
+    ) {
+      showPasswordError("Please complete all password fields.");
       return;
     }
 
-    showPasswordSuccess(response.data.message);
+    // Prevent using the same password
+    if (passwordData.currentPassword === passwordData.newPassword) {
+      showPasswordError(
+        "Your new password must be different from your current password.",
+      );
+      return;
+    }
 
-    // Clear the password fields after a successful update
-    setPasswordData({
-      currentPassword: "",
-      newPassword: "",
-      confirmPassword: "",
-    });
+    setIsChangingPassword(true);
 
-  } catch (error) {
-    console.error(error);
+    try {
+      const response = await AuthService.changePassword({
+        current_password: passwordData.currentPassword,
+        new_password: passwordData.newPassword,
+        confirm_password: passwordData.confirmPassword,
+      });
 
-    showPasswordError(
-      "Unable to change password. Please try again."
-    );
+      if (!response.ok) {
+        showPasswordError(response.data.message);
+        return;
+      }
 
-  } finally {
-    setIsChangingPassword(false);
-  }
-};
+      showPasswordSuccess(response.data.message);
+
+      // Clear the password fields after a successful update
+      setPasswordData({
+        currentPassword: "",
+        newPassword: "",
+        confirmPassword: "",
+      });
+    } catch (error) {
+      console.error(error);
+
+      showPasswordError("Unable to change password. Please try again.");
+    } finally {
+      setIsChangingPassword(false);
+    }
+  };
 
   return (
     <div className="h-screen flex flex-col">

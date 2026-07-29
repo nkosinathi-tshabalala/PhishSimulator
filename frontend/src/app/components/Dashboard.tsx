@@ -25,9 +25,9 @@ interface CurrentUser {
   user_id: number;
   full_name: string;
   email: string;
-  age: number;
-  occupation: string;
-  it_background: boolean;
+  age: number | null;
+  occupation: string | null;
+  it_background: boolean | null;
   role: string;
 }
 

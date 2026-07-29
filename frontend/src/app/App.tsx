@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { LandingPage } from "./components/LandingPage";
 import { LoginPage } from "./components/LoginPage";
-import { AdminLoginPage } from "./components/AdminLoginPage";
 import { RegisterPage } from "./components/RegisterPage";
 import { ResetPasswordPage } from "./components/ResetPasswordPage";
 import { Dashboard } from "./components/Dashboard";
@@ -19,6 +18,8 @@ import { UserMonitoringPage } from "./components/UserMonitoringPage";
 import { EmailDispatcherPage } from "./components/EmailDispatcherPage";
 import { Sidebar } from "./components/Sidebar";
 import { AdminSidebar } from "./components/AdminSidebar";
+import { BaselineManagementPage } from "./components/BaselineManagementPage";
+import { AdminProfilePage } from "./components/AdminProfilePage";
 
 import AuthService from "../services/authService";
 
@@ -31,9 +32,9 @@ export default function App() {
     user_id: number;
     full_name: string;
     email: string;
-    age: number;
-    occupation: string;
-    it_background: boolean;
+    age: number | null;
+    occupation: string | null;
+    it_background: boolean | null;
     role: string;
   }
 
@@ -73,6 +74,7 @@ export default function App() {
       const role = user.role.toLowerCase() as "player" | "admin";
 
       setCurrentUser(user);
+      console.log("Current User:", user);
 
       setIsLoggedIn(true);
       setUserRole(role);
@@ -102,6 +104,8 @@ export default function App() {
 
     if (response.ok) {
       setCurrentUser(response.data.data);
+
+      console.log("Current User:", response.data.data);
     }
 
     const page = role === "admin" ? "admin-dashboard" : "dashboard";
@@ -155,10 +159,11 @@ export default function App() {
       return <LandingPage onNavigate={handleNavigate} />;
     if (currentPage === "login")
       return <LoginPage onLogin={handleLogin} onNavigate={handleNavigate} />;
-    if (currentPage === "admin-login")
-      return (
-        <AdminLoginPage onLogin={handleLogin} onNavigate={handleNavigate} />
-      );
+
+
+   
+
+
     if (currentPage === "register")
       return (
         <RegisterPage onNavigate={handleNavigate} onRegister={handleRegister} />
@@ -184,6 +189,13 @@ export default function App() {
           {currentPage === "admin-dashboard" && (
             <AdminDashboard onNavigate={handleNavigate} />
           )}
+
+          {currentPage === "baseline-management" && (
+            <BaselineManagementPage
+              onBack={() => handleNavigate("admin-dashboard")}
+            />
+          )}
+
           {currentPage === "datasets" && (
             <DatasetManagementPage
               onBack={() => handleNavigate("admin-dashboard")}
@@ -208,8 +220,8 @@ export default function App() {
             />
           )}
 
-          {currentPage === "settings" && (
-            <ProfilePage
+          {currentPage === "admin-profile" && (
+            <AdminProfilePage
               user={currentUser}
               setCurrentUser={setCurrentUser}
               onBack={() => handleNavigate("admin-dashboard")}
