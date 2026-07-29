@@ -1,40 +1,188 @@
-import { useState } from 'react';
-import { ArrowLeft, User, Mail, Lock, Briefcase } from 'lucide-react';
-import { Button } from './ui/button';
-import { Input } from './ui/input';
-import { Label } from './ui/label';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
-import { RadioGroup, RadioGroupItem } from './ui/radio-group';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
-import { Separator } from './ui/separator';
+import { useEffect, useState } from "react";
+import { ArrowLeft, User, Mail, Lock, Briefcase } from "lucide-react";
+import { Button } from "./ui/button";
+import { Input } from "./ui/input";
+import { Label } from "./ui/label";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "./ui/card";
+import { RadioGroup, RadioGroupItem } from "./ui/radio-group";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "./ui/select";
+import { Separator } from "./ui/separator";
+
+import AuthService from "../../services/authService";
+
+interface CurrentUser {
+  user_id: number;
+  full_name: string;
+  email: string;
+  age: number | null;
+  occupation: string | null;
+  it_background: boolean | null;
+  role: string;
+}
 
 interface ProfilePageProps {
+  user: CurrentUser | null;
+  setCurrentUser: React.Dispatch<React.SetStateAction<CurrentUser | null>>;
   onBack: () => void;
 }
 
-export function ProfilePage({ onBack }: ProfilePageProps) {
+export function ProfilePage({
+  user,
+  setCurrentUser,
+  onBack,
+}: ProfilePageProps) {
   const [profileData, setProfileData] = useState({
-    fullName: 'John Doe',
-    email: 'john.doe@example.com',
-    age: '25',
-    itBackground: 'yes',
-    role: 'admin',
+    fullName: "",
+    email: "",
+    age: "",
+    itBackground: "no",
+    occupation: "",
   });
 
   const [passwordData, setPasswordData] = useState({
-    currentPassword: '',
-    newPassword: '',
-    confirmPassword: '',
+    currentPassword: "",
+    newPassword: "",
+    confirmPassword: "",
   });
 
-  const handleProfileUpdate = (e: React.FormEvent) => {
+  const [isUpdating, setIsUpdating] = useState(false);
+
+  const [successMessage, setSuccessMessage] = useState("");
+
+  const [errorMessage, setErrorMessage] = useState("");
+
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
+
+  const [passwordSuccessMessage, setPasswordSuccessMessage] = useState("");
+
+  const [passwordErrorMessage, setPasswordErrorMessage] = useState("");
+
+  useEffect(() => {
+    if (!user) return;
+
+    setProfileData({
+      fullName: user.full_name ?? "",
+      email: user.email ?? "",
+      age: user.age !== null ? user.age.toString() : "",
+      itBackground: user.it_background === true ? "yes" : "no",
+      occupation: user.occupation ?? "",
+    });
+  }, [user]);
+
+  const handleProfileUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Handle profile update
+
+    setErrorMessage("");
+    setSuccessMessage("");
+    setIsUpdating(true);
+
+    try {
+      const response = await AuthService.updateProfile({
+        full_name: profileData.fullName,
+        age: Number(profileData.age),
+        it_background: profileData.itBackground === "yes",
+        occupation: profileData.occupation,
+      });
+
+      if (!response.ok) {
+        setErrorMessage(response.data.message);
+        return;
+      }
+
+      setCurrentUser(response.data.data);
+
+      setSuccessMessage(response.data.message);
+    } catch (error) {
+      console.error(error);
+
+      setErrorMessage("Unable to update your profile. Please try again.");
+    } finally {
+      setIsUpdating(false);
+    }
   };
 
-  const handlePasswordUpdate = (e: React.FormEvent) => {
+  const showPasswordSuccess = (message: string) => {
+    setPasswordSuccessMessage(message);
+
+    setTimeout(() => {
+      setPasswordSuccessMessage("");
+    }, 3000);
+  };
+
+  const showPasswordError = (message: string) => {
+    setPasswordErrorMessage(message);
+
+    setTimeout(() => {
+      setPasswordErrorMessage("");
+    }, 3000);
+  };
+
+  const handlePasswordUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Handle password update
+
+    // Clear previous messages
+    setPasswordSuccessMessage("");
+    setPasswordErrorMessage("");
+
+    // Validate required fields BEFORE enabling loading
+    if (
+      !passwordData.currentPassword ||
+      !passwordData.newPassword ||
+      !passwordData.confirmPassword
+    ) {
+      showPasswordError("Please complete all password fields.");
+      return;
+    }
+
+    // Prevent using the same password
+    if (passwordData.currentPassword === passwordData.newPassword) {
+      showPasswordError(
+        "Your new password must be different from your current password.",
+      );
+      return;
+    }
+
+    setIsChangingPassword(true);
+
+    try {
+      const response = await AuthService.changePassword({
+        current_password: passwordData.currentPassword,
+        new_password: passwordData.newPassword,
+        confirm_password: passwordData.confirmPassword,
+      });
+
+      if (!response.ok) {
+        showPasswordError(response.data.message);
+        return;
+      }
+
+      showPasswordSuccess(response.data.message);
+
+      // Clear the password fields after a successful update
+      setPasswordData({
+        currentPassword: "",
+        newPassword: "",
+        confirmPassword: "",
+      });
+    } catch (error) {
+      console.error(error);
+
+      showPasswordError("Unable to change password. Please try again.");
+    } finally {
+      setIsChangingPassword(false);
+    }
   };
 
   return (
@@ -61,17 +209,23 @@ export function ProfilePage({ onBack }: ProfilePageProps) {
                     id="fullName"
                     type="text"
                     value={profileData.fullName}
-                    onChange={(e) => setProfileData({ ...profileData, fullName: e.target.value })}
+                    onChange={(e) =>
+                      setProfileData({
+                        ...profileData,
+                        fullName: e.target.value,
+                      })
+                    }
                   />
                 </div>
 
                 <div className="space-y-2">
                   <Label htmlFor="email">Email</Label>
+
                   <Input
                     id="email"
                     type="email"
                     value={profileData.email}
-                    onChange={(e) => setProfileData({ ...profileData, email: e.target.value })}
+                    disabled
                   />
                 </div>
 
@@ -81,7 +235,9 @@ export function ProfilePage({ onBack }: ProfilePageProps) {
                     id="age"
                     type="number"
                     value={profileData.age}
-                    onChange={(e) => setProfileData({ ...profileData, age: e.target.value })}
+                    onChange={(e) =>
+                      setProfileData({ ...profileData, age: e.target.value })
+                    }
                   />
                 </div>
 
@@ -89,40 +245,65 @@ export function ProfilePage({ onBack }: ProfilePageProps) {
                   <Label>IT Background</Label>
                   <RadioGroup
                     value={profileData.itBackground}
-                    onValueChange={(value) => setProfileData({ ...profileData, itBackground: value })}
+                    onValueChange={(value) =>
+                      setProfileData({ ...profileData, itBackground: value })
+                    }
                   >
                     <div className="flex items-center space-x-4">
                       <div className="flex items-center space-x-2">
                         <RadioGroupItem value="yes" id="profile-it-yes" />
-                        <Label htmlFor="profile-it-yes" className="font-normal">Yes</Label>
+                        <Label htmlFor="profile-it-yes" className="font-normal">
+                          Yes
+                        </Label>
                       </div>
                       <div className="flex items-center space-x-2">
                         <RadioGroupItem value="no" id="profile-it-no" />
-                        <Label htmlFor="profile-it-no" className="font-normal">No</Label>
+                        <Label htmlFor="profile-it-no" className="font-normal">
+                          No
+                        </Label>
                       </div>
                     </div>
                   </RadioGroup>
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="role">Role</Label>
+                  <Label htmlFor="occupation">Occupation</Label>
+
                   <Select
-                    value={profileData.role}
-                    onValueChange={(value) => setProfileData({ ...profileData, role: value })}
+                    value={profileData.occupation}
+                    onValueChange={(value) =>
+                      setProfileData({
+                        ...profileData,
+                        occupation: value,
+                      })
+                    }
                   >
-                    <SelectTrigger id="role">
+                    <SelectTrigger id="occupation">
                       <SelectValue />
                     </SelectTrigger>
+
                     <SelectContent>
-                      <SelectItem value="student">Student</SelectItem>
-                      <SelectItem value="employee">Employee</SelectItem>
-                      <SelectItem value="other">Other</SelectItem>
+                      <SelectItem value="Student">Student</SelectItem>
+                      <SelectItem value="Employee">Employee</SelectItem>
+                      <SelectItem value="Other">Other</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
 
-                <Button type="submit" className="w-full">
-                  Update Profile
+                {successMessage && (
+                  <div className="rounded-md border border-green-200 bg-green-50 p-3">
+                    <p className="text-sm text-green-700">{successMessage}</p>
+                  </div>
+                )}
+
+                {errorMessage && (
+                  <div className="rounded-md border border-red-200 bg-red-50 p-3">
+                    <p className="text-sm text-red-700">{errorMessage}</p>
+                  </div>
+                )}
+
+                <Button type="submit" className="w-full" disabled={isUpdating}>
+                  {isUpdating ? "Updating Profile..." : "Update Profile"}
                 </Button>
               </form>
             </CardContent>
@@ -141,7 +322,12 @@ export function ProfilePage({ onBack }: ProfilePageProps) {
                     id="currentPassword"
                     type="password"
                     value={passwordData.currentPassword}
-                    onChange={(e) => setPasswordData({ ...passwordData, currentPassword: e.target.value })}
+                    onChange={(e) =>
+                      setPasswordData({
+                        ...passwordData,
+                        currentPassword: e.target.value,
+                      })
+                    }
                   />
                 </div>
 
@@ -151,27 +337,60 @@ export function ProfilePage({ onBack }: ProfilePageProps) {
                     id="newPassword"
                     type="password"
                     value={passwordData.newPassword}
-                    onChange={(e) => setPasswordData({ ...passwordData, newPassword: e.target.value })}
+                    onChange={(e) =>
+                      setPasswordData({
+                        ...passwordData,
+                        newPassword: e.target.value,
+                      })
+                    }
                   />
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="confirmNewPassword">Confirm New Password</Label>
+                  <Label htmlFor="confirmNewPassword">
+                    Confirm New Password
+                  </Label>
                   <Input
                     id="confirmNewPassword"
                     type="password"
                     value={passwordData.confirmPassword}
-                    onChange={(e) => setPasswordData({ ...passwordData, confirmPassword: e.target.value })}
+                    onChange={(e) =>
+                      setPasswordData({
+                        ...passwordData,
+                        confirmPassword: e.target.value,
+                      })
+                    }
                   />
                 </div>
 
-                <Button type="submit" className="w-full">
-                  Update Password
+                {passwordSuccessMessage && (
+                  <div className="rounded-md border border-green-200 bg-green-50 p-3">
+                    <p className="text-sm text-green-700">
+                      {passwordSuccessMessage}
+                    </p>
+                  </div>
+                )}
+
+                {passwordErrorMessage && (
+                  <div className="rounded-md border border-red-200 bg-red-50 p-3">
+                    <p className="text-sm text-red-700">
+                      {passwordErrorMessage}
+                    </p>
+                  </div>
+                )}
+
+                <Button
+                  type="submit"
+                  className="w-full"
+                  disabled={isChangingPassword}
+                >
+                  {isChangingPassword
+                    ? "Updating Password..."
+                    : "Update Password"}
                 </Button>
               </form>
             </CardContent>
           </Card>
-
         </div>
       </div>
     </div>

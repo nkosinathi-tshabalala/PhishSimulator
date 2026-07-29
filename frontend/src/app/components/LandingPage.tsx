@@ -60,20 +60,15 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
             </div>
           </div>
           <div className="flex items-center gap-3">
+
             <Button
               onClick={() => onNavigate('login')}
               variant="outline"
               className="border-white/20 text-white hover:bg-white/10 hover:text-white bg-transparent"
             >
-              Player Login
+              Login
             </Button>
-            <Button
-              onClick={() => onNavigate('admin-login')}
-              className="text-white"
-              style={{ backgroundColor: '#0ea5e9' }}
-            >
-              Admin Login
-            </Button>
+           
           </div>
         </div>
       </nav>
@@ -83,7 +78,7 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
         <div className="max-w-5xl mx-auto text-center">
           <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-sm font-medium mb-6" style={{ backgroundColor: 'rgba(14,165,233,0.15)', color: '#38bdf8', border: '1px solid rgba(14,165,233,0.3)' }}>
             <Zap className="w-3.5 h-3.5" />
-            Honours Cybersecurity Research Project
+            Cybersecurity
           </div>
           <h1 className="text-5xl font-bold text-white mb-6 leading-tight">
             Build Real Phishing<br />
@@ -112,7 +107,7 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
               variant="outline"
               className="px-8 text-base border-white/20 text-white hover:bg-white/10 hover:text-white bg-transparent"
             >
-              Player Login
+              Login
             </Button>
           </div>
           <div className="mt-16 grid grid-cols-3 gap-8 max-w-lg mx-auto">
@@ -210,8 +205,8 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
             </div>
             <span className="text-white font-semibold">PhishSimulator</span>
           </div>
-          <p className="text-sm" style={{ color: '#64748b' }}>
-            &copy; 2026 PhishSimulator &mdash; Honours Cybersecurity Research Project. All rights reserved.
+          <p className="text-sm"  style={{ color: '#64748b' }}>
+            &copy; 2026 PhishSimulator &mdash; All rights reserved.
           </p>
         </div>
       </footer>

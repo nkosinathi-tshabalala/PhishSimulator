@@ -1,4 +1,5 @@
-import { Home, Database, FileText, Users, BarChart3, Settings, Shield, LogOut, Send } from 'lucide-react';
+import { Home, Database, FileText, Users, BarChart3, Shield, LogOut, Send, ClipboardList, User } from 'lucide-react';
+import { Profiler } from 'react';
 
 interface AdminSidebarProps {
   currentPage: string;
@@ -9,12 +10,13 @@ interface AdminSidebarProps {
 export function AdminSidebar({ currentPage, onNavigate, onLogout }: AdminSidebarProps) {
   const menuItems = [
     { id: 'admin-dashboard', label: 'Dashboard', icon: Home },
+    { id: 'baseline-management', label: 'Baseline Questions', icon: ClipboardList },
     { id: 'datasets', label: 'Manage Datasets', icon: Database },
     { id: 'scenarios', label: 'Manage Scenarios', icon: FileText },
     { id: 'users', label: 'Manage Users', icon: Users },
     { id: 'analytics', label: 'Analytics', icon: BarChart3 },
     { id: 'email-dispatcher', label: 'Email Dispatcher', icon: Send },
-    { id: 'settings', label: 'Settings', icon: Settings },
+    { id: "admin-profile", label: "Admin Profile", icon: User },
   ];
 
   return (
