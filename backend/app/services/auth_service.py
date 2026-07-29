@@ -8,6 +8,7 @@ from app.models.authentication import Player
 from app.models.authentication import User
 from app.models.authentication import UserProfile
 from app.schemas.auth_schema import AuthSchema
+from app.enums import role
 
 
 class AuthService:
@@ -101,12 +102,14 @@ class AuthService:
             data["password"]
         ):
             return False, "Invalid email or password.", None
-
+        
         try:
-
-            # Create JWT
+            # Create JWT with user role
             access_token = create_access_token(
-                identity=str(user.user_id)
+                identity=str(user.user_id),
+                additional_claims={
+                    "role": user.role
+                }
             )
 
             # Record login session
@@ -139,13 +142,38 @@ class AuthService:
         if not user:
             return False, "User not found.", None
 
+        
+        # Administrator
+        
+        if user.role == "ADMIN":
+
+            if user.role == "ADMIN":
+                return True, "Administrator profile cannot be edited.", {
+                    "user_id": user.user_id,
+                    "email": user.email,
+                    "role": user.role,
+                    "full_name": "Administrator",
+                    "age": None,
+                    "it_background": None,
+                    "occupation": None
+                }
+
+        
+        # Player
+        
         player = Player.query.filter_by(
             user_id=user.user_id
         ).first()
 
+        if not player:
+            return False, "Player record not found.", None
+
         profile = UserProfile.query.filter_by(
             player_id=player.player_id
         ).first()
+
+        if not profile:
+            return False, "Player profile not found.", None
 
         return True, "User retrieved successfully.", {
             "user_id": user.user_id,
@@ -168,25 +196,52 @@ class AuthService:
         if not user:
             return False, "User not found.", None
 
+        # ==========================
+        # ADMIN PROFILE
+        # ==========================
+        if user.role == role.ADMIN:
+
+            user.full_name = data["full_name"]
+
+            db.session.commit()
+
+            return True, "Profile updated successfully.", {
+                "user_id": user.user_id,
+                "email": user.email,
+                "role": user.role,
+                "full_name": user.full_name,
+                "age": None,
+                "it_background": None,
+                "occupation": None
+            }
+
+        # ==========================
+        # PLAYER PROFILE
+        # ==========================
         player = Player.query.filter_by(
             user_id=user.user_id
         ).first()
+
+        if not player:
+            return False, "Player not found.", None
 
         profile = UserProfile.query.filter_by(
             player_id=player.player_id
         ).first()
 
+        if not profile:
+            return False, "User profile not found.", None
+
         try:
-            # Update player details
+
             player.full_name = data["full_name"]
 
-            # Update profile details
             profile.age = data["age"]
             profile.it_background = data["it_background"]
+
             try:
                 profile.occupation = Occupation(data["occupation"])
             except ValueError:
-
                 return False, "Invalid occupation selected.", None
 
             db.session.commit()
@@ -204,7 +259,10 @@ class AuthService:
         except Exception:
             db.session.rollback()
             raise
+    
+    
 
+    
     @staticmethod
     def change_password(data):
         """Changes the authenticated user's password."""

@@ -47,5 +47,11 @@ class Player(db.Model):
         cascade="all, delete-orphan"
     )
 
+    baseline_assessments = db.relationship(
+    "BaselineAssessment",
+    back_populates="player",
+    cascade="all, delete-orphan"
+    )   
+
     def __repr__(self):
         return f"<Player {self.full_name}>"

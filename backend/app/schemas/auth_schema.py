@@ -51,7 +51,7 @@ class AuthSchema:
 
         required_fields = [
             "email",
-            "password"
+            "password",
         ]
 
         # Check required fields

@@ -12,6 +12,7 @@ from app.models import *
 
 # Import Blueprints
 from app.routes.auth_routes import auth_bp
+from app.routes.baseline_routes import baseline_bp
 
 
 def create_app():
@@ -36,6 +37,7 @@ def create_app():
 
     # Register API Blueprints
     app.register_blueprint(auth_bp)
+    app.register_blueprint(baseline_bp)
 
     # Health check route
     @app.route("/")
