@@ -6,6 +6,7 @@ import {
   Shield,
   CheckCircle2,
   AlertCircle,
+  ArrowLeft,
 } from "lucide-react";
 
 import { Button } from "./ui/button";
@@ -107,11 +108,46 @@ export function LoginPage({
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background p-4">
+    <div className="min-h-screen flex bg-background">
+      <div
+        className="relative hidden w-1/2 overflow-hidden lg:flex lg:flex-col lg:justify-between lg:p-12"
+        style={{
+          backgroundImage:
+            "linear-gradient(180deg, rgba(5,8,12,0.85) 0%, rgba(5,8,12,0.7) 60%, rgba(5,8,12,0.95) 100%), url('/assets/IMG_5596.jpeg')",
+          backgroundPosition: "center",
+          backgroundSize: "cover",
+        }}
+      >
+        <div className="flex items-center gap-3">
+          <span className="flex h-10 w-10 items-center justify-center border border-sky-400/30 bg-sky-400/10">
+            <Shield className="h-5 w-5 text-sky-400" />
+          </span>
+          <span className="text-sm font-semibold tracking-[0.12em] text-white">PHISHSIMULATOR</span>
+        </div>
+        <div>
+          <h2 className="max-w-md text-3xl font-semibold leading-tight text-white">
+            Sharpen your instincts against real-world phishing tactics.
+          </h2>
+          <p className="mt-4 max-w-sm text-sm leading-6 text-slate-400">
+            Sign in to continue your scenario-based training and track your progress over time.
+          </p>
+        </div>
+      </div>
 
-      <Card className="w-full max-w-md">
+      <div className="flex w-full items-center justify-center p-4 lg:w-1/2">
+        <Card className="w-full max-w-md">
 
         <CardHeader className="space-y-4 text-center">
+
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => onNavigate("landing")}
+            className="w-fit -ml-2"
+          >
+            <ArrowLeft className="w-4 h-4 mr-2" />
+            Back to Home
+          </Button>
 
           <div className="flex justify-center">
 
@@ -184,15 +220,15 @@ export function LoginPage({
 
             {successMessage && (
 
-              <Alert className="border-green-200 bg-green-50">
+              <Alert className="border-green-500/30 bg-green-500/10">
 
-                <CheckCircle2 className="h-4 w-4 text-green-600" />
+                <CheckCircle2 className="h-4 w-4 text-green-400" />
 
-                <AlertTitle className="text-green-700">
+                <AlertTitle className="text-green-400">
                   Login Successful
                 </AlertTitle>
 
-                <AlertDescription className="text-green-600">
+                <AlertDescription className="text-green-400/80">
                   {successMessage}
                 </AlertDescription>
 
@@ -259,8 +295,8 @@ export function LoginPage({
 
         </CardContent>
 
-      </Card>
-
+        </Card>
+      </div>
     </div>
   );
 }

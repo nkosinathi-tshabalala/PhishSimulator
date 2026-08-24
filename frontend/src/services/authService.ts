@@ -9,6 +9,10 @@ class AuthService {
     return await apiRequest("/auth/login", "POST", credentials);
   }
 
+  async requestPasswordReset(email: string) {
+    return await apiRequest("/auth/forgot-password", "POST", { email });
+  }
+
   async getCurrentUser() {
     const token = localStorage.getItem("access_token");
 
@@ -32,8 +36,16 @@ class AuthService {
     );
   }
 
-  logout() {
-    localStorage.removeItem("access_token");
+  async logout() {
+    const token = localStorage.getItem("access_token");
+
+    try {
+      if (token) {
+        await apiRequest("/auth/logout", "POST", null, token);
+      }
+    } finally {
+      localStorage.removeItem("access_token");
+    }
   }
 }
 

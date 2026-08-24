@@ -9,26 +9,54 @@ export async function apiRequest(
     data: any = null,
     token: string | null = null
 ) {
-    const headers: HeadersInit = {
-        "Content-Type": "application/json"
-    };
 
-    // Attach JWT if available
+    const headers: HeadersInit = {};
+
+    // Attach JWT
     if (token) {
         headers["Authorization"] = `Bearer ${token}`;
     }
 
-    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+    const options: RequestInit = {
         method,
-        headers,
-        body: data ? JSON.stringify(data) : null
-    });
+        headers
+    };
+
+    // Handle request body
+    if (data) {
+
+        if (data instanceof FormData) {
+
+            // IMPORTANT:
+            // Do NOT set Content-Type.
+            // The browser sets the multipart boundary automatically.
+            options.body = data;
+
+        } else {
+
+            headers["Content-Type"] = "application/json";
+
+            options.body = JSON.stringify(data);
+
+        }
+
+    }
+
+    const response = await fetch(
+        `${API_BASE_URL}${endpoint}`,
+        options
+    );
 
     const result = await response.json();
 
     return {
+
         ok: response.ok,
+
         status: response.status,
+
         data: result
+
     };
+
 }

@@ -127,8 +127,8 @@ export default function App() {
     setCurrentPage("login");
   };
 
-  const handleLogout = () => {
-    AuthService.logout();
+  const handleLogout = async () => {
+    await AuthService.logout();
 
     localStorage.removeItem("current_page");
 
@@ -184,7 +184,14 @@ export default function App() {
         />
         <div
           className="flex-1 overflow-auto"
-          style={{ backgroundColor: "#f0f4f8" }}
+          style={{
+            backgroundColor: "#0a0e14",
+            backgroundImage:
+              "linear-gradient(rgba(10,14,20,0.93), rgba(10,14,20,0.96)), url('/assets/IMG_5602.jpg')",
+            backgroundSize: "cover",
+            backgroundPosition: "center",
+            backgroundAttachment: "fixed",
+          }}
         >
           {currentPage === "admin-dashboard" && (
             <AdminDashboard onNavigate={handleNavigate} />
@@ -242,7 +249,14 @@ export default function App() {
       />
       <div
         className="flex-1 overflow-auto"
-        style={{ backgroundColor: "#f0f4f8" }}
+        style={{
+          backgroundColor: "#0a0e14",
+          backgroundImage:
+            "linear-gradient(rgba(10,14,20,0.93), rgba(10,14,20,0.96)), url('/assets/IMG_5601.jpg')",
+          backgroundSize: "cover",
+          backgroundPosition: "center",
+          backgroundAttachment: "fixed",
+        }}
       >
         {currentPage === "dashboard" && (
           <Dashboard user={currentUser} onNavigate={handleNavigate} />
@@ -254,10 +268,16 @@ export default function App() {
           <SimulationsPage onNavigate={handleNavigate} />
         )}
         {currentPage === "email" && (
-          <EmailSimulation onBack={() => handleNavigate("simulations")} />
+          <EmailSimulation
+            onBack={() => handleNavigate("simulations")}
+            onNavigate={handleNavigate}
+          />
         )}
         {currentPage === "sms" && (
-          <SMSSimulation onBack={() => handleNavigate("simulations")} />
+          <SMSSimulation
+            onBack={() => handleNavigate("simulations")}
+            onNavigate={handleNavigate}
+          />
         )}
         {currentPage === "performance" && (
           <Analytics onBack={() => handleNavigate("dashboard")} />

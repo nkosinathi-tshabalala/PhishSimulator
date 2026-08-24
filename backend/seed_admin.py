@@ -7,7 +7,7 @@ app = create_app()
 with app.app_context():
 
     existing_admin = User.query.filter_by(
-        email="admin@phishsimulator.com"
+        email="admin@example.com"
     ).first()
 
     if existing_admin:
@@ -15,9 +15,9 @@ with app.app_context():
     else:
 
         admin = User(
-            email="admin@phishsimulator.com",
+            email="admin@example.com",
             password_hash=bcrypt.generate_password_hash(
-                "Admin@123"
+                "admin"
             ).decode("utf-8"),
             role="ADMIN"
         )

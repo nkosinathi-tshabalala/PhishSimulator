@@ -1,3 +1,6 @@
+from datetime import datetime, timedelta
+import secrets
+
 from flask_jwt_extended import get_jwt_identity
 from flask_jwt_extended import create_access_token
 from app.models.authentication import UserSession
@@ -7,8 +10,10 @@ from app.extensions import bcrypt, db
 from app.models.authentication import Player
 from app.models.authentication import User
 from app.models.authentication import UserProfile
+from app.models.authentication import PasswordResetToken
+from app.email.email_dispatcher import EmailDispatcher
 from app.schemas.auth_schema import AuthSchema
-from app.enums import role
+from app.enums.role import Role
 
 
 class AuthService:
@@ -130,6 +135,54 @@ class AuthService:
         except Exception:
             db.session.rollback()
             raise
+
+    @staticmethod
+    def logout():
+        """Mark every active session for the current user as logged out."""
+
+        user_id = int(get_jwt_identity())
+        active_sessions = UserSession.query.filter_by(
+                user_id=user_id,
+                status=SessionStatus.ACTIVE,
+            ).all()
+
+        if not active_sessions:
+            return True, "No active session found."
+
+        logout_time = datetime.utcnow()
+        for session in active_sessions:
+            session.status = SessionStatus.LOGGED_OUT
+            session.logout_time = logout_time
+
+        db.session.commit()
+
+        return True, "Logged out successfully."
+
+    @staticmethod
+    def request_password_reset(email):
+        """Create an expiring reset token without disclosing account existence."""
+
+        user = User.query.filter_by(email=email.strip().lower()).first()
+
+        if not user:
+            return True, "If that account exists, reset instructions will be sent."
+
+        PasswordResetToken.query.filter_by(user_id=user.user_id, used=False).update({
+            PasswordResetToken.used: True,
+        })
+        token = secrets.token_urlsafe(32)
+        reset_token = PasswordResetToken(
+            user_id=user.user_id,
+            token=token,
+            expires_at=datetime.utcnow() + timedelta(minutes=30),
+        )
+        db.session.add(reset_token)
+        db.session.commit()
+
+        reset_url = f"{__import__('flask').current_app.config['FRONTEND_URL']}/reset-password?token={token}"
+        EmailDispatcher.send_password_reset(user.email, reset_url)
+
+        return True, "If that account exists, reset instructions will be sent."
     
     @staticmethod
     def get_current_user():
@@ -199,7 +252,7 @@ class AuthService:
         # ==========================
         # ADMIN PROFILE
         # ==========================
-        if user.role == role.ADMIN:
+        if user.role == Role.ADMIN.value:
 
             user.full_name = data["full_name"]
 

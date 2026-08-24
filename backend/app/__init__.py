@@ -13,6 +13,11 @@ from app.models import *
 # Import Blueprints
 from app.routes.auth_routes import auth_bp
 from app.routes.baseline_routes import baseline_bp
+from app.routes.scenario_routes import scenario_bp
+from app.routes.dataset_routes import dataset_bp
+from app.routes.simulation_routes import simulation_bp
+from app.routes.analytics_routes import analytics_bp
+from app.routes.email_routes import email_bp
 
 
 def create_app():
@@ -35,9 +40,19 @@ def create_app():
     bcrypt.init_app(app)
     jwt.init_app(app)
 
+    if app.config["SQLALCHEMY_DATABASE_URI"].startswith("sqlite"):
+        with app.app_context():
+            db.create_all()
+
     # Register API Blueprints
     app.register_blueprint(auth_bp)
     app.register_blueprint(baseline_bp)
+    app.register_blueprint(dataset_bp)
+    app.register_blueprint(scenario_bp)
+    app.register_blueprint(simulation_bp)
+    app.register_blueprint(analytics_bp)
+    app.register_blueprint(email_bp)
+    
 
     # Health check route
     @app.route("/")

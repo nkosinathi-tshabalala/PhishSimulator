@@ -243,26 +243,19 @@ export function BaselineManagementPage({
     form.confidenceThreshold > form.expectedKeywords.length;
 
   return (
-    <div
-      className="h-full flex flex-col"
-      style={{ backgroundColor: "#f0f4f8" }}
-    >
+    <div className="h-full flex flex-col">
       {/* Header */}
-      <div className="border-b p-4 flex items-center gap-4 bg-white">
+      <div className="border-b p-4 flex items-center gap-4 bg-card">
         <div className="flex-1">
-          <h2 className="text-xl font-semibold" style={{ color: "#0f2240" }}>
+          <h2 className="text-xl font-semibold text-foreground">
             Baseline Assessment Management
           </h2>
-          <p className="text-sm mt-0.5" style={{ color: "#64748b" }}>
+          <p className="text-sm mt-0.5 text-muted-foreground">
             Create and manage baseline assessment questions presented to players
             before phishing training.
           </p>
         </div>
-        <Button
-          onClick={openAdd}
-          className="text-white flex-shrink-0"
-          style={{ backgroundColor: "#1e3a5f" }}
-        >
+        <Button onClick={openAdd} className="shrink-0">
           <Plus className="w-4 h-4 mr-2" />
           Add Question
         </Button>
@@ -297,21 +290,24 @@ export function BaselineManagementPage({
                   )
                 : "0",
             },
+            {
+              label: "Total Keywords",
+              value: String(
+                questions.reduce(
+                  (total, question) => total + question.expectedKeywords.length,
+                  0,
+                ),
+              ),
+            },
           ].map((s) => (
-            <Card key={s.label} className="border-0 shadow-sm bg-white">
+            <Card key={s.label}>
               <CardHeader className="pb-2">
-                <CardTitle
-                  className="text-sm font-medium"
-                  style={{ color: "#64748b" }}
-                >
+                <CardTitle className="text-sm font-medium text-muted-foreground">
                   {s.label}
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div
-                  className="text-3xl font-bold"
-                  style={{ color: "#0f2240" }}
-                >
+                <div className="text-3xl font-bold text-foreground">
                   {s.value}
                 </div>
               </CardContent>
@@ -320,11 +316,11 @@ export function BaselineManagementPage({
         </div>
 
         {/* Questions Table */}
-        <Card className="border-0 shadow-sm bg-white">
+        <Card>
           <CardHeader>
             <div className="flex items-center justify-between gap-4 flex-wrap">
               <div>
-                <CardTitle className="text-base" style={{ color: "#0f2240" }}>
+                <CardTitle className="text-base text-foreground">
                   Assessment Questions
                 </CardTitle>
                 <CardDescription>
@@ -333,16 +329,12 @@ export function BaselineManagementPage({
                 </CardDescription>
               </div>
               <div className="relative w-64">
-                <Search
-                  className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4"
-                  style={{ color: "#94a3b8" }}
-                />
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                 <Input
                   placeholder="Search questions or keywords..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="pl-9 text-sm"
-                  style={{ borderColor: "#e2e8f0" }}
                 />
               </div>
             </div>
@@ -352,29 +344,25 @@ export function BaselineManagementPage({
               <div className="flex flex-col items-center justify-center py-20 text-center px-6">
                 <div
                   className="w-14 h-14 rounded-full flex items-center justify-center mb-4"
-                  style={{ backgroundColor: "rgba(30,58,95,0.07)" }}
+                  style={{ backgroundColor: "rgba(47,129,247,0.12)" }}
                 >
                   <ClipboardList
                     className="w-7 h-7"
-                    style={{ color: "#1e3a5f" }}
+                    style={{ color: "#2f81f7" }}
                   />
                 </div>
-                <p className="font-semibold mb-1" style={{ color: "#0f2240" }}>
+                <p className="font-semibold mb-1 text-foreground">
                   {searchQuery
                     ? "No matching questions found"
                     : "No baseline questions available"}
                 </p>
-                <p className="text-sm mb-6" style={{ color: "#94a3b8" }}>
+                <p className="text-sm mb-6 text-muted-foreground">
                   {searchQuery
                     ? "Try a different search term."
                     : "Get started by creating your first question."}
                 </p>
                 {!searchQuery && (
-                  <Button
-                    onClick={openAdd}
-                    className="text-white"
-                    style={{ backgroundColor: "#1e3a5f" }}
-                  >
+                  <Button onClick={openAdd}>
                     <Plus className="w-4 h-4 mr-2" />
                     Create First Question
                   </Button>
@@ -383,35 +371,28 @@ export function BaselineManagementPage({
             ) : (
               <Table>
                 <TableHeader>
-                  <TableRow style={{ borderColor: "#f1f5f9" }}>
-                    <TableHead
-                      className="text-xs font-medium pl-6"
-                      style={{ color: "#94a3b8" }}
-                    >
+                  <TableRow>
+                    <TableHead className="text-xs font-medium pl-6 text-muted-foreground">
                       ID
                     </TableHead>
                     <TableHead
                       className="text-xs font-medium"
-                      style={{ color: "#94a3b8" }}
                     >
                       Question Preview
                     </TableHead>
                     <TableHead
                       className="text-xs font-medium"
-                      style={{ color: "#94a3b8" }}
                     >
                       Expected Keywords
                     </TableHead>
                     <TableHead
                       className="text-xs font-medium text-center"
-                      style={{ color: "#94a3b8" }}
                     >
                       Threshold
                     </TableHead>
 
                     <TableHead
                       className="text-xs font-medium text-right pr-6"
-                      style={{ color: "#94a3b8" }}
                     >
                       Actions
                     </TableHead>
@@ -419,13 +400,13 @@ export function BaselineManagementPage({
                 </TableHeader>
                 <TableBody>
                   {filtered.map((q) => (
-                    <TableRow key={q.id} style={{ borderColor: "#f1f5f9" }}>
+                    <TableRow key={q.id}>
                       <TableCell className="pl-6">
                         <span
                           className="text-xs font-mono font-semibold px-2 py-1 rounded"
                           style={{
-                            backgroundColor: "rgba(30,58,95,0.07)",
-                            color: "#1e3a5f",
+                            backgroundColor: "rgba(47,129,247,0.12)",
+                            color: "#2f81f7",
                           }}
                         >
                           Q{String(q.id).padStart(2, "0")}
@@ -433,21 +414,20 @@ export function BaselineManagementPage({
                       </TableCell>
                       <TableCell className="max-w-xs">
                         <p
-                          className="text-sm font-medium line-clamp-2"
-                          style={{ color: "#0f2240" }}
+                          className="text-sm font-medium line-clamp-2 text-foreground"
                         >
                           {q.question}
                         </p>
                       </TableCell>
                       <TableCell>
-                        <div className="flex flex-wrap gap-1 max-w-[220px]">
+                        <div className="flex flex-wrap gap-1 max-w-55">
                           {q.expectedKeywords.slice(0, 4).map((kw) => (
                             <span
                               key={kw}
                               className="px-1.5 py-0.5 rounded text-xs"
                               style={{
-                                backgroundColor: "rgba(14,165,233,0.08)",
-                                color: "#0ea5e9",
+                                backgroundColor: "rgba(56,189,248,0.12)",
+                                color: "#38bdf8",
                               }}
                             >
                               {kw}
@@ -457,8 +437,8 @@ export function BaselineManagementPage({
                             <span
                               className="px-1.5 py-0.5 rounded text-xs"
                               style={{
-                                backgroundColor: "#f1f5f9",
-                                color: "#94a3b8",
+                                backgroundColor: "rgba(230,237,243,0.1)",
+                                color: "#8b949e",
                               }}
                             >
                               +{q.expectedKeywords.length - 4}
@@ -468,20 +448,20 @@ export function BaselineManagementPage({
                       </TableCell>
                       <TableCell className="text-center">
                         <Badge
-                          className="text-xs font-semibold"
+                          className="text-xs font-semibold border-0"
                           style={{
                             backgroundColor:
                               q.confidenceThreshold >= 4
-                                ? "rgba(220,38,38,0.08)"
+                                ? "rgba(248,81,73,0.12)"
                                 : q.confidenceThreshold === 3
-                                  ? "rgba(245,158,11,0.08)"
-                                  : "rgba(22,163,74,0.08)",
+                                  ? "rgba(242,204,96,0.12)"
+                                  : "rgba(63,185,80,0.12)",
                             color:
                               q.confidenceThreshold >= 4
-                                ? "#dc2626"
+                                ? "#f85149"
                                 : q.confidenceThreshold === 3
-                                  ? "#d97706"
-                                  : "#16a34a",
+                                  ? "#f2cc60"
+                                  : "#3fb950",
                           }}
                         >
                           {q.confidenceThreshold}
@@ -492,16 +472,15 @@ export function BaselineManagementPage({
                         <div className="flex items-center justify-end gap-1">
                           <button
                             onClick={() => openView(q)}
-                            className="p-1.5 rounded-md transition-colors"
+                            className="p-1.5 rounded-md transition-colors text-muted-foreground"
                             title="View"
-                            style={{ color: "#94a3b8" }}
                             onMouseEnter={(e) => {
                               (
                                 e.currentTarget as HTMLButtonElement
-                              ).style.backgroundColor = "#f0f4f8";
+                              ).style.backgroundColor = "rgba(255,255,255,0.06)";
                               (
                                 e.currentTarget as HTMLButtonElement
-                              ).style.color = "#1e3a5f";
+                              ).style.color = "#2f81f7";
                             }}
                             onMouseLeave={(e) => {
                               (
@@ -509,23 +488,22 @@ export function BaselineManagementPage({
                               ).style.backgroundColor = "transparent";
                               (
                                 e.currentTarget as HTMLButtonElement
-                              ).style.color = "#94a3b8";
+                              ).style.color = "";
                             }}
                           >
                             <Eye className="w-4 h-4" />
                           </button>
                           <button
                             onClick={() => openEdit(q)}
-                            className="p-1.5 rounded-md transition-colors"
+                            className="p-1.5 rounded-md transition-colors text-muted-foreground"
                             title="Edit"
-                            style={{ color: "#94a3b8" }}
                             onMouseEnter={(e) => {
                               (
                                 e.currentTarget as HTMLButtonElement
-                              ).style.backgroundColor = "rgba(14,165,233,0.08)";
+                              ).style.backgroundColor = "rgba(56,189,248,0.12)";
                               (
                                 e.currentTarget as HTMLButtonElement
-                              ).style.color = "#0ea5e9";
+                              ).style.color = "#38bdf8";
                             }}
                             onMouseLeave={(e) => {
                               (
@@ -533,23 +511,22 @@ export function BaselineManagementPage({
                               ).style.backgroundColor = "transparent";
                               (
                                 e.currentTarget as HTMLButtonElement
-                              ).style.color = "#94a3b8";
+                              ).style.color = "";
                             }}
                           >
                             <Edit className="w-4 h-4" />
                           </button>
                           <button
                             onClick={() => openDelete(q.id)}
-                            className="p-1.5 rounded-md transition-colors"
+                            className="p-1.5 rounded-md transition-colors text-muted-foreground"
                             title="Delete"
-                            style={{ color: "#94a3b8" }}
                             onMouseEnter={(e) => {
                               (
                                 e.currentTarget as HTMLButtonElement
-                              ).style.backgroundColor = "rgba(220,38,38,0.08)";
+                              ).style.backgroundColor = "rgba(248,81,73,0.12)";
                               (
                                 e.currentTarget as HTMLButtonElement
-                              ).style.color = "#dc2626";
+                              ).style.color = "#f85149";
                             }}
                             onMouseLeave={(e) => {
                               (
@@ -557,7 +534,7 @@ export function BaselineManagementPage({
                               ).style.backgroundColor = "transparent";
                               (
                                 e.currentTarget as HTMLButtonElement
-                              ).style.color = "#94a3b8";
+                              ).style.color = "";
                             }}
                           >
                             <Trash2 className="w-4 h-4" />
@@ -577,7 +554,7 @@ export function BaselineManagementPage({
       <Dialog open={modalOpen} onOpenChange={setModalOpen}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle style={{ color: "#0f2240" }}>
+            <DialogTitle>
               {editingId !== null ? "Edit Question" : "Add Question"}
             </DialogTitle>
             <DialogDescription>
@@ -590,11 +567,8 @@ export function BaselineManagementPage({
           <div className="space-y-5 pt-2">
             {/* Question Text */}
             <div className="space-y-1.5">
-              <Label
-                className="text-sm font-medium"
-                style={{ color: "#0f2240" }}
-              >
-                Question Text <span style={{ color: "#dc2626" }}>*</span>
+              <Label className="text-sm font-medium">
+                Question Text <span style={{ color: "#f85149" }}>*</span>
               </Label>
               <Textarea
                 placeholder="e.g. How would you identify a phishing email? Describe at least three warning signs."
@@ -602,16 +576,12 @@ export function BaselineManagementPage({
                 onChange={(e) => setForm({ ...form, question: e.target.value })}
                 className="resize-none text-sm"
                 rows={3}
-                style={{ borderColor: "#e2e8f0" }}
               />
             </div>
 
             {/* Instruction */}
             <div className="space-y-1.5">
-              <Label
-                className="text-sm font-medium"
-                style={{ color: "#0f2240" }}
-              >
+              <Label className="text-sm font-medium">
                 Instruction
               </Label>
               <Input
@@ -621,33 +591,26 @@ export function BaselineManagementPage({
                   setForm({ ...form, instruction: e.target.value })
                 }
                 className="text-sm"
-                style={{ borderColor: "#e2e8f0" }}
               />
             </div>
 
             {/* Expected Keywords */}
             <div className="space-y-1.5">
-              <Label
-                className="text-sm font-medium"
-                style={{ color: "#0f2240" }}
-              >
-                Expected Keywords <span style={{ color: "#dc2626" }}>*</span>
+              <Label className="text-sm font-medium">
+                Expected Keywords <span style={{ color: "#f85149" }}>*</span>
               </Label>
-              <p className="text-xs" style={{ color: "#94a3b8" }}>
+              <p className="text-xs text-muted-foreground">
                 Press Enter or comma to add a keyword. Player answers are
                 evaluated against these.
               </p>
-              <div
-                className="flex flex-wrap gap-1.5 p-2 rounded-md border min-h-[44px]"
-                style={{ borderColor: "#e2e8f0", backgroundColor: "#f8fafc" }}
-              >
+              <div className="flex flex-wrap gap-1.5 p-2 rounded-md border border-border bg-muted min-h-11">
                 {form.expectedKeywords.map((kw) => (
                   <span
                     key={kw}
                     className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium"
                     style={{
-                      backgroundColor: "rgba(14,165,233,0.1)",
-                      color: "#0ea5e9",
+                      backgroundColor: "rgba(56,189,248,0.12)",
+                      color: "#38bdf8",
                     }}
                   >
                     {kw}
@@ -660,7 +623,7 @@ export function BaselineManagementPage({
                   </span>
                 ))}
                 <input
-                  className="flex-1 min-w-[120px] bg-transparent text-sm outline-none"
+                  className="flex-1 min-w-30 bg-transparent text-sm outline-none text-foreground"
                   placeholder={
                     form.expectedKeywords.length === 0
                       ? "Type keyword and press Enter..."
@@ -671,17 +634,13 @@ export function BaselineManagementPage({
                     setForm({ ...form, keywordInput: e.target.value })
                   }
                   onKeyDown={handleKeywordKeyDown}
-                  style={{ color: "#0f2240" }}
                 />
               </div>
             </div>
 
             {/* Example Answer */}
             <div className="space-y-1.5">
-              <Label
-                className="text-sm font-medium"
-                style={{ color: "#0f2240" }}
-              >
+              <Label className="text-sm font-medium">
                 Example Answer
               </Label>
               <Textarea
@@ -692,16 +651,12 @@ export function BaselineManagementPage({
                 }
                 className="resize-none text-sm"
                 rows={2}
-                style={{ borderColor: "#e2e8f0" }}
               />
             </div>
 
             {/* Feedback */}
             <div className="space-y-1.5">
-              <Label
-                className="text-sm font-medium"
-                style={{ color: "#0f2240" }}
-              >
+              <Label className="text-sm font-medium">
                 Feedback
               </Label>
               <Textarea
@@ -710,19 +665,15 @@ export function BaselineManagementPage({
                 onChange={(e) => setForm({ ...form, feedback: e.target.value })}
                 className="resize-none text-sm"
                 rows={2}
-                style={{ borderColor: "#e2e8f0" }}
               />
             </div>
 
             {/* Confidence Threshold */}
             <div className="space-y-2">
-              <Label
-                className="text-sm font-medium"
-                style={{ color: "#0f2240" }}
-              >
-                Confidence Threshold <span style={{ color: "#dc2626" }}>*</span>
+              <Label className="text-sm font-medium">
+                Confidence Threshold <span style={{ color: "#f85149" }}>*</span>
               </Label>
-              <p className="text-xs" style={{ color: "#94a3b8" }}>
+              <p className="text-xs text-muted-foreground">
                 The player must match at least this many expected keywords for the answer to be considered correct.
               </p>
               <div className="flex items-center gap-4">
@@ -737,23 +688,20 @@ export function BaselineManagementPage({
                       confidenceThreshold: Number(e.target.value),
                     })
                   }
-                  className="flex-1 accent-[#1e3a5f]"
+                  className="flex-1 accent-[#2f81f7]"
                 />
                 <div
                   className="w-12 h-10 rounded-lg flex items-center justify-center text-lg font-bold"
                   style={{
-                    backgroundColor: "rgba(30,58,95,0.07)",
-                    color: "#1e3a5f",
+                    backgroundColor: "rgba(47,129,247,0.12)",
+                    color: "#2f81f7",
                   }}
                 >
                   {form.confidenceThreshold} / {Math.max(form.expectedKeywords.length, 1)}
                 </div>
               </div>
 
-              <div
-                className="flex justify-between text-xs"
-                style={{ color: "#94a3b8" }}
-              >
+              <div className="flex justify-between text-xs text-muted-foreground">
                 <span>Minimum Match</span>
 
                 <span>
@@ -763,10 +711,7 @@ export function BaselineManagementPage({
             </div>
 
             {/* Actions */}
-            <div
-              className="flex gap-3 pt-2 border-t"
-              style={{ borderColor: "#f1f5f9" }}
-            >
+            <div className="flex gap-3 pt-2 border-t border-border">
               <Button
                 variant="outline"
                 onClick={() => setModalOpen(false)}
@@ -777,10 +722,7 @@ export function BaselineManagementPage({
               <Button
                 onClick={handleSave}
                 disabled={isSaveDisabled}
-                className="flex-1 text-white"
-                style={{
-                  backgroundColor: isSaveDisabled ? "#94a3b8" : "#1e3a5f",
-                }}
+                className="flex-1"
               >
                 {editingId !== null ? "Save Changes" : "Add Question"}
               </Button>
@@ -793,7 +735,7 @@ export function BaselineManagementPage({
       <Dialog open={viewModalOpen} onOpenChange={setViewModalOpen}>
         <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle style={{ color: "#0f2240" }}>
+            <DialogTitle>
               {viewingQuestion &&
                 `Q${String(viewingQuestion.id).padStart(2, "0")} — Question Details`}
             </DialogTitle>
@@ -804,25 +746,19 @@ export function BaselineManagementPage({
 
           {viewingQuestion && (
             <div className="space-y-4 pt-2">
-              <div
-                className="p-4 rounded-xl"
-                style={{ backgroundColor: "#f0f4f8" }}
-              >
-                <p className="text-sm font-medium" style={{ color: "#0f2240" }}>
+              <div className="p-4 rounded-xl bg-muted">
+                <p className="text-sm font-medium text-foreground">
                   {viewingQuestion.question}
                 </p>
                 {viewingQuestion.instruction && (
-                  <p className="text-xs mt-2" style={{ color: "#64748b" }}>
+                  <p className="text-xs mt-2 text-muted-foreground">
                     {viewingQuestion.instruction}
                   </p>
                 )}
               </div>
 
               <div>
-                <p
-                  className="text-xs font-semibold mb-2"
-                  style={{ color: "#64748b" }}
-                >
+                <p className="text-xs font-semibold mb-2 text-muted-foreground">
                   EXPECTED KEYWORDS ({viewingQuestion.expectedKeywords.length})
                 </p>
                 <div className="flex flex-wrap gap-1.5">
@@ -831,8 +767,8 @@ export function BaselineManagementPage({
                       key={kw}
                       className="px-2 py-0.5 rounded text-xs font-medium"
                       style={{
-                        backgroundColor: "rgba(14,165,233,0.1)",
-                        color: "#0ea5e9",
+                        backgroundColor: "rgba(56,189,248,0.12)",
+                        color: "#38bdf8",
                       }}
                     >
                       {kw}
@@ -843,19 +779,12 @@ export function BaselineManagementPage({
 
               {viewingQuestion.exampleAnswer && (
                 <div>
-                  <p
-                    className="text-xs font-semibold mb-2"
-                    style={{ color: "#64748b" }}
-                  >
+                  <p className="text-xs font-semibold mb-2 text-muted-foreground">
                     EXAMPLE ANSWER
                   </p>
                   <p
-                    className="text-sm p-3 rounded-lg"
-                    style={{
-                      backgroundColor: "#f8fafc",
-                      color: "#374151",
-                      border: "1px solid #e2e8f0",
-                    }}
+                    className="text-sm p-3 rounded-lg bg-muted border border-border"
+                    style={{ color: "#c9d1d9" }}
                   >
                     {viewingQuestion.exampleAnswer}
                   </p>
@@ -864,18 +793,15 @@ export function BaselineManagementPage({
 
               {viewingQuestion.feedback && (
                 <div>
-                  <p
-                    className="text-xs font-semibold mb-2"
-                    style={{ color: "#64748b" }}
-                  >
+                  <p className="text-xs font-semibold mb-2 text-muted-foreground">
                     FEEDBACK
                   </p>
                   <p
                     className="text-sm p-3 rounded-lg"
                     style={{
-                      backgroundColor: "rgba(14,165,233,0.05)",
-                      color: "#374151",
-                      border: "1px solid rgba(14,165,233,0.15)",
+                      backgroundColor: "rgba(56,189,248,0.06)",
+                      color: "#c9d1d9",
+                      border: "1px solid rgba(56,189,248,0.2)",
                     }}
                   >
                     {viewingQuestion.feedback}
@@ -883,41 +809,32 @@ export function BaselineManagementPage({
                 </div>
               )}
 
-              <div
-                className="flex items-center justify-between p-3 rounded-lg"
-                style={{ backgroundColor: "#f0f4f8" }}
-              >
-                <span
-                  className="text-sm font-medium"
-                  style={{ color: "#0f2240" }}
-                >
+              <div className="flex items-center justify-between p-3 rounded-lg bg-muted">
+                <span className="text-sm font-medium text-foreground">
                   Confidence Threshold
                 </span>
                 <Badge
-                  className="text-sm font-bold px-3"
+                  className="text-sm font-bold px-3 border-0"
                   style={{
                     backgroundColor:
                       viewingQuestion.confidenceThreshold >= 4
-                        ? "rgba(220,38,38,0.1)"
+                        ? "rgba(248,81,73,0.12)"
                         : viewingQuestion.confidenceThreshold === 3
-                          ? "rgba(245,158,11,0.1)"
-                          : "rgba(22,163,74,0.1)",
+                          ? "rgba(242,204,96,0.12)"
+                          : "rgba(63,185,80,0.12)",
                     color:
                       viewingQuestion.confidenceThreshold >= 4
-                        ? "#dc2626"
+                        ? "#f85149"
                         : viewingQuestion.confidenceThreshold === 3
-                          ? "#d97706"
-                          : "#16a34a",
+                          ? "#f2cc60"
+                          : "#3fb950",
                   }}
                 >
                   {viewingQuestion.confidenceThreshold} keywords
                 </Badge>
               </div>
 
-              <div
-                className="flex gap-3 pt-2 border-t"
-                style={{ borderColor: "#f1f5f9" }}
-              >
+              <div className="flex gap-3 pt-2 border-t border-border">
                 <Button
                   variant="outline"
                   onClick={() => setViewModalOpen(false)}
@@ -930,8 +847,7 @@ export function BaselineManagementPage({
                     setViewModalOpen(false);
                     openEdit(viewingQuestion);
                   }}
-                  className="flex-1 text-white"
-                  style={{ backgroundColor: "#1e3a5f" }}
+                  className="flex-1"
                 >
                   <Edit className="w-4 h-4 mr-2" />
                   Edit Question
@@ -946,7 +862,7 @@ export function BaselineManagementPage({
       <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle style={{ color: "#0f2240" }}>
+            <DialogTitle>
               Delete Question
             </DialogTitle>
             <DialogDescription>
@@ -957,15 +873,15 @@ export function BaselineManagementPage({
           <div
             className="flex items-start gap-3 p-4 rounded-xl my-2"
             style={{
-              backgroundColor: "rgba(220,38,38,0.05)",
-              border: "1px solid rgba(220,38,38,0.15)",
+              backgroundColor: "rgba(248,81,73,0.08)",
+              border: "1px solid rgba(248,81,73,0.25)",
             }}
           >
             <AlertTriangle
-              className="w-4 h-4 flex-shrink-0 mt-0.5"
-              style={{ color: "#dc2626" }}
+              className="w-4 h-4 shrink-0 mt-0.5"
+              style={{ color: "#f85149" }}
             />
-            <p className="text-sm" style={{ color: "#dc2626" }}>
+            <p className="text-sm" style={{ color: "#f85149" }}>
               Players who have not yet completed the assessment will no longer
               see this question.
             </p>
@@ -981,7 +897,7 @@ export function BaselineManagementPage({
             <Button
               onClick={handleDelete}
               className="flex-1 text-white"
-              style={{ backgroundColor: "#dc2626" }}
+              style={{ backgroundColor: "#f85149" }}
             >
               <Trash2 className="w-4 h-4 mr-2" />
               Delete
