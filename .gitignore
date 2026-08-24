@@ -39,3 +39,11 @@ Thumbs.db
 # Logs
 # =========================
 *.log
+
+# Runtime uploads
+# Uploaded training datasets belong in object storage (for example S3) in
+# production and must never be committed to the source repository.
+backend/uploads/datasets/
+
+# Local runtime database
+backend/instance/

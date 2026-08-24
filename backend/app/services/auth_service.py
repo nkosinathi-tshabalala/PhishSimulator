@@ -1,0 +1,354 @@
+from datetime import datetime, timedelta
+import secrets
+
+from flask_jwt_extended import get_jwt_identity
+from flask_jwt_extended import create_access_token
+from app.models.authentication import UserSession
+from app.enums.session_status import SessionStatus
+from app.enums.occupation import Occupation
+from app.extensions import bcrypt, db
+from app.models.authentication import Player
+from app.models.authentication import User
+from app.models.authentication import UserProfile
+from app.models.authentication import PasswordResetToken
+from app.email.email_dispatcher import EmailDispatcher
+from app.schemas.auth_schema import AuthSchema
+from app.enums.role import Role
+
+
+class AuthService:
+    """Handles authentication business logic."""
+
+    @staticmethod
+    def register(data):
+        """Register a new player."""
+
+        # Validate input
+        is_valid, error = AuthSchema.validate_registration(data)
+
+        if not is_valid:
+            return False, error
+
+        # Check whether the email already exists
+        existing_user = User.query.filter_by(
+            email=data["email"]
+        ).first()
+
+        if existing_user:
+            return False, "An account with this email already exists."
+
+        try:
+
+            # Hash the password
+            password_hash = bcrypt.generate_password_hash(
+                data["password"]
+            ).decode("utf-8")
+
+            # Create user
+            user = User(
+                email=data["email"],
+                password_hash=password_hash,
+                role="PLAYER"
+            )
+
+            db.session.add(user)
+            db.session.flush()
+
+            # Create player
+            player = Player(
+                user_id=user.user_id,
+                full_name=data["full_name"]
+            )
+
+            db.session.add(player)
+            db.session.flush()
+
+            # Create profile
+            profile = UserProfile(
+                player_id=player.player_id,
+                age=data["age"],
+                it_background=data["it_background"],
+                occupation=data["occupation"]
+            )
+
+            db.session.add(profile)
+
+            # Save everything
+            db.session.commit()
+
+            return True, "Registration successful."
+
+        except Exception as error:
+            db.session.rollback()
+            raise 
+        
+
+    @staticmethod
+    def login(data):
+        """Authenticate a user."""
+
+        # Validate request
+        is_valid, error = AuthSchema.validate_login(data)
+
+        if not is_valid:
+            return False, error, None
+
+        # Find user
+        user = User.query.filter_by(
+            email=data["email"]
+        ).first()
+
+        if not user:
+            return False, "Invalid email or password.", None
+
+        # Verify password
+        if not bcrypt.check_password_hash(
+            user.password_hash,
+            data["password"]
+        ):
+            return False, "Invalid email or password.", None
+        
+        try:
+            # Create JWT with user role
+            access_token = create_access_token(
+                identity=str(user.user_id),
+                additional_claims={
+                    "role": user.role
+                }
+            )
+
+            # Record login session
+            session = UserSession(
+                user_id=user.user_id,
+                status=SessionStatus.ACTIVE
+            )
+
+            db.session.add(session)
+            db.session.commit()
+
+            return True, "Login successful.", {
+                "access_token": access_token,
+                "user_id": user.user_id,
+                "role": user.role
+            }
+
+        except Exception:
+            db.session.rollback()
+            raise
+
+    @staticmethod
+    def logout():
+        """Mark every active session for the current user as logged out."""
+
+        user_id = int(get_jwt_identity())
+        active_sessions = UserSession.query.filter_by(
+                user_id=user_id,
+                status=SessionStatus.ACTIVE,
+            ).all()
+
+        if not active_sessions:
+            return True, "No active session found."
+
+        logout_time = datetime.utcnow()
+        for session in active_sessions:
+            session.status = SessionStatus.LOGGED_OUT
+            session.logout_time = logout_time
+
+        db.session.commit()
+
+        return True, "Logged out successfully."
+
+    @staticmethod
+    def request_password_reset(email):
+        """Create an expiring reset token without disclosing account existence."""
+
+        user = User.query.filter_by(email=email.strip().lower()).first()
+
+        if not user:
+            return True, "If that account exists, reset instructions will be sent."
+
+        PasswordResetToken.query.filter_by(user_id=user.user_id, used=False).update({
+            PasswordResetToken.used: True,
+        })
+        token = secrets.token_urlsafe(32)
+        reset_token = PasswordResetToken(
+            user_id=user.user_id,
+            token=token,
+            expires_at=datetime.utcnow() + timedelta(minutes=30),
+        )
+        db.session.add(reset_token)
+        db.session.commit()
+
+        reset_url = f"{__import__('flask').current_app.config['FRONTEND_URL']}/reset-password?token={token}"
+        EmailDispatcher.send_password_reset(user.email, reset_url)
+
+        return True, "If that account exists, reset instructions will be sent."
+    
+    @staticmethod
+    def get_current_user():
+        """Returns the currently authenticated user."""
+
+        user_id = int(get_jwt_identity())
+
+        user = User.query.get(user_id)
+
+        if not user:
+            return False, "User not found.", None
+
+        
+        # Administrator
+        
+        if user.role == "ADMIN":
+
+            if user.role == "ADMIN":
+                return True, "Administrator profile cannot be edited.", {
+                    "user_id": user.user_id,
+                    "email": user.email,
+                    "role": user.role,
+                    "full_name": "Administrator",
+                    "age": None,
+                    "it_background": None,
+                    "occupation": None
+                }
+
+        
+        # Player
+        
+        player = Player.query.filter_by(
+            user_id=user.user_id
+        ).first()
+
+        if not player:
+            return False, "Player record not found.", None
+
+        profile = UserProfile.query.filter_by(
+            player_id=player.player_id
+        ).first()
+
+        if not profile:
+            return False, "Player profile not found.", None
+
+        return True, "User retrieved successfully.", {
+            "user_id": user.user_id,
+            "email": user.email,
+            "role": user.role,
+            "full_name": player.full_name,
+            "age": profile.age,
+            "it_background": profile.it_background,
+            "occupation": profile.occupation.value
+        }
+    
+    @staticmethod
+    def update_profile(data):
+        """Updates the authenticated user's profile."""
+
+        user_id = int(get_jwt_identity())
+
+        user = User.query.get(user_id)
+
+        if not user:
+            return False, "User not found.", None
+
+        # ==========================
+        # ADMIN PROFILE
+        # ==========================
+        if user.role == Role.ADMIN.value:
+
+            user.full_name = data["full_name"]
+
+            db.session.commit()
+
+            return True, "Profile updated successfully.", {
+                "user_id": user.user_id,
+                "email": user.email,
+                "role": user.role,
+                "full_name": user.full_name,
+                "age": None,
+                "it_background": None,
+                "occupation": None
+            }
+
+        # ==========================
+        # PLAYER PROFILE
+        # ==========================
+        player = Player.query.filter_by(
+            user_id=user.user_id
+        ).first()
+
+        if not player:
+            return False, "Player not found.", None
+
+        profile = UserProfile.query.filter_by(
+            player_id=player.player_id
+        ).first()
+
+        if not profile:
+            return False, "User profile not found.", None
+
+        try:
+
+            player.full_name = data["full_name"]
+
+            profile.age = data["age"]
+            profile.it_background = data["it_background"]
+
+            try:
+                profile.occupation = Occupation(data["occupation"])
+            except ValueError:
+                return False, "Invalid occupation selected.", None
+
+            db.session.commit()
+
+            return True, "Profile updated successfully.", {
+                "user_id": user.user_id,
+                "email": user.email,
+                "role": user.role,
+                "full_name": player.full_name,
+                "age": profile.age,
+                "it_background": profile.it_background,
+                "occupation": profile.occupation.value
+            }
+
+        except Exception:
+            db.session.rollback()
+            raise
+    
+    
+
+    
+    @staticmethod
+    def change_password(data):
+        """Changes the authenticated user's password."""
+
+        user_id = int(get_jwt_identity())
+
+        user = User.query.get(user_id)
+
+        if not user:
+            return False, "User not found.", None
+
+        # Verify current password
+        if not bcrypt.check_password_hash(
+            user.password_hash,
+            data["current_password"]
+        ):
+            return False, "Current password is incorrect.", None
+
+        # Confirm passwords match
+        if data["new_password"] != data["confirm_password"]:
+            return False, "New passwords do not match.", None
+
+        try:
+
+            # Hash the new password
+            user.password_hash = bcrypt.generate_password_hash(
+                data["new_password"]
+            ).decode("utf-8")
+
+            db.session.commit()
+
+            return True, "Password updated successfully.", None
+
+        except Exception:
+            db.session.rollback()
+            raise
