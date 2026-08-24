@@ -1,312 +1,200 @@
-import { useState } from 'react';
-import { Send, Settings, Eye, CheckCircle2, AlertTriangle, Copy, Mail, Shield } from 'lucide-react';
-import { Button } from './ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
-import { Input } from './ui/input';
-import { Label } from './ui/label';
-import { Badge } from './ui/badge';
-import { Textarea } from './ui/textarea';
+import { useEffect, useState } from "react";
+import { AlertTriangle, BarChart3, Eye, Mail, Send, Settings, Shield } from "lucide-react";
+import { Button } from "./ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
+import { Badge } from "./ui/badge";
+import { Input } from "./ui/input";
+import EmailService from "../../services/emailService";
+
+interface Scenario {
+  scenario_id: number;
+  title: string;
+  sender: string;
+  subject: string;
+  message: string;
+  category: string;
+  difficulty: string;
+}
+
+interface DispatcherContext {
+  delivery_configured: boolean;
+  smtp_host: string;
+  recipient_count: number;
+  target_groups: string[];
+  overview: {
+    campaigns: number;
+    sent: number;
+    clicked: number;
+    reported: number;
+    click_rate: number;
+    report_rate: number;
+  };
+  scenarios: Scenario[];
+  campaigns: Campaign[];
+}
+
+interface Campaign {
+  campaign_id: number;
+  name: string;
+  status: string;
+  scenario_title: string;
+  target_group: string;
+  created_at: string;
+  launched_at: string | null;
+  recipients: number;
+  sent: number;
+  failed: number;
+  clicked: number;
+  click_rate: number;
+  reported: number;
+  report_rate: number;
+  recipient_details?: Array<{
+    email: string;
+    delivery_status: string;
+    sent_at: string | null;
+    clicked_at: string | null;
+    click_count: number;
+    reported_at: string | null;
+  }>;
+}
 
 interface EmailDispatcherPageProps {
   onBack: () => void;
 }
 
 export function EmailDispatcherPage({ onBack }: EmailDispatcherPageProps) {
-  const [smtpConfig, setSmtpConfig] = useState({
-    host: 'smtp.example.com',
-    port: '587',
-    username: 'dispatcher@phishsimulator.local',
-    password: '',
-    encryption: 'TLS',
-  });
+  const [context, setContext] = useState<DispatcherContext | null>(null);
+  const [selectedScenarioId, setSelectedScenarioId] = useState<number | null>(null);
+  const [campaignName, setCampaignName] = useState("");
+  const [targetOccupation, setTargetOccupation] = useState("ALL");
+  const [selectedCampaign, setSelectedCampaign] = useState<Campaign | null>(null);
+  const [message, setMessage] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
 
-  const [campaignConfig, setCampaignConfig] = useState({
-    fromName: 'IT Security Team',
-    fromEmail: 'security@paypa1-verify.com',
-    subject: 'Urgent: Verify Your Account Immediately',
-    targetList: 'player_group_a',
-    scenario: 'PayPal Account Suspension',
-  });
-
-  const [trackingToken] = useState('TRK-' + Math.random().toString(36).substring(2, 10).toUpperCase());
-  const [testSent, setTestSent] = useState(false);
-  const [campaignStatus, setCampaignStatus] = useState<'idle' | 'running' | 'completed'>('idle');
-
-  const handleSendTest = () => {
-    setTestSent(true);
-    setTimeout(() => setTestSent(false), 3000);
+  const loadContext = async () => {
+    setLoading(true);
+    try {
+      const response = await EmailService.getDispatcherContext();
+      if (response.ok && response.data.success) {
+        const data = response.data.data as DispatcherContext;
+        setContext(data);
+        setSelectedScenarioId((current) => current ?? data.scenarios[0]?.scenario_id ?? null);
+      } else {
+        setMessage(response.data.message || "Unable to load email campaign settings.");
+      }
+    } catch {
+      setMessage("Unable to load email campaign settings.");
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleLaunch = () => {
-    setCampaignStatus('running');
-    setTimeout(() => setCampaignStatus('completed'), 3000);
+  useEffect(() => {
+    loadContext();
+  }, []);
+
+  const selectedScenario = context?.scenarios.find((scenario) => scenario.scenario_id === selectedScenarioId);
+
+  const createCampaign = async () => {
+    if (!selectedScenarioId) return;
+    setSubmitting(true);
+    try {
+      const response = await EmailService.createCampaign(
+        selectedScenarioId,
+        campaignName,
+        targetOccupation === "ALL" ? null : targetOccupation,
+      );
+      setMessage(response.data.message || "Campaign request could not be processed.");
+      if (response.ok && response.data.success) {
+        setCampaignName("");
+        await loadContext();
+        await viewReport(response.data.data.campaign_id);
+      }
+    } finally {
+      setSubmitting(false);
+    }
   };
 
-  const emailPreviewBody = `Dear Valued Customer,
+  const launchCampaign = async (campaignId: number) => {
+    setSubmitting(true);
+    try {
+      const response = await EmailService.launchCampaign(campaignId);
+      setMessage(response.data.message || "Campaign launch could not be processed.");
+      if (response.ok && response.data.success) {
+        await loadContext();
+        await viewReport(campaignId);
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
-We have detected unusual activity on your PayPal account. To protect your account security, you must verify your identity immediately.
-
-Your account access will be restricted in 24 hours unless you complete verification.
-
-Verify Account: https://paypa1-verify.com/secure/login?token=${trackingToken}
-
-If you did not request this, please contact support immediately.
-
-Regards,
-PayPal Security Team`;
+  const viewReport = async (campaignId: number) => {
+    const response = await EmailService.getCampaignReport(campaignId);
+    if (response.ok && response.data.success) {
+      setSelectedCampaign(response.data.data as Campaign);
+      return;
+    }
+    setMessage(response.data.message || "Unable to load campaign report.");
+  };
 
   return (
-    <div className="h-full flex flex-col" style={{ backgroundColor: '#f0f4f8' }}>
-      <div className="border-b p-4 flex items-center gap-4 bg-white">
-        <div>
-          <h2 className="text-xl font-semibold" style={{ color: '#0f2240' }}>Email Dispatcher</h2>
-          <p className="text-sm" style={{ color: '#64748b' }}>SMTP-based phishing simulation delivery &mdash; Administrator only</p>
-        </div>
-        <div className="ml-auto flex items-center gap-2">
-          <div className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium" style={{ backgroundColor: 'rgba(245,158,11,0.1)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.2)' }}>
-            <Shield className="w-3 h-3" />
-            Admin Only
-          </div>
-        </div>
+    <div className="h-full flex flex-col">
+      <div className="border-b p-4 flex items-center gap-4 bg-card">
+        <Button variant="ghost" size="icon" onClick={onBack} title="Back"><Mail className="w-5 h-5" /></Button>
+        <div><h2 className="text-xl font-semibold">Email Campaign Manager</h2><p className="text-sm text-muted-foreground">Authorized training delivery and reporting</p></div>
+        <Badge className="ml-auto"><Shield className="w-3 h-3 mr-1" />Admin</Badge>
       </div>
-
-      <div className="flex-1 overflow-y-auto p-6 space-y-6">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* SMTP Settings */}
-          <Card className="border-0 shadow-sm bg-white">
-            <CardHeader>
-              <div className="flex items-center gap-2">
-                <Settings className="w-4 h-4" style={{ color: '#1e3a5f' }} />
-                <CardTitle className="text-base" style={{ color: '#0f2240' }}>SMTP Configuration</CardTitle>
-              </div>
-              <CardDescription>Outgoing mail server settings</CardDescription>
-            </CardHeader>
+      <div className="flex-1 overflow-y-auto p-6 space-y-6 max-w-5xl w-full mx-auto">
+        {loading ? <p className="text-muted-foreground">Loading dispatcher configuration...</p> : <>
+          <Card>
+            <CardHeader><CardTitle className="flex items-center gap-2"><Settings className="w-4 h-4" />Delivery Configuration</CardTitle><CardDescription>Credentials are managed only in backend environment settings.</CardDescription></CardHeader>
+            <CardContent className="flex items-center justify-between gap-4"><span>SMTP provider: {context?.smtp_host}</span><Badge variant={context?.delivery_configured ? "default" : "destructive"}>{context?.delivery_configured ? "Configured" : "Not configured"}</Badge></CardContent>
+          </Card>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {[
+              { label: "Emails Sent", value: context?.overview.sent ?? 0 },
+              { label: "Click Rate", value: `${context?.overview.click_rate ?? 0}%` },
+              { label: "Report Rate", value: `${context?.overview.report_rate ?? 0}%` },
+              { label: "Campaigns", value: context?.overview.campaigns ?? 0 },
+            ].map((metric) => <Card key={metric.label}><CardContent className="p-4"><p className="text-2xl font-semibold">{metric.value}</p><p className="text-sm text-muted-foreground">{metric.label}</p></CardContent></Card>)}
+          </div>
+          <Card>
+            <CardHeader><CardTitle>Campaign Builder</CardTitle><CardDescription>Select an approved email template, target a learner group, then save a reviewable draft before launch.</CardDescription></CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <Label className="text-xs" style={{ color: '#64748b' }}>SMTP Host</Label>
-                  <Input
-                    value={smtpConfig.host}
-                    onChange={(e) => setSmtpConfig({ ...smtpConfig, host: e.target.value })}
-                    className="text-sm"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs" style={{ color: '#64748b' }}>Port</Label>
-                  <Input
-                    value={smtpConfig.port}
-                    onChange={(e) => setSmtpConfig({ ...smtpConfig, port: e.target.value })}
-                    className="text-sm"
-                  />
-                </div>
+              <Input value={campaignName} onChange={(event) => setCampaignName(event.target.value)} placeholder="Campaign name (for example, August password reset training)" maxLength={150} />
+              <div className="grid gap-4 md:grid-cols-2">
+                <label className="space-y-2 text-sm font-medium">Template Library
+                  <select className="w-full border rounded-md p-2 font-normal" value={selectedScenarioId ?? ""} onChange={(event) => setSelectedScenarioId(Number(event.target.value))}>
+                {!context?.scenarios.length && <option value="">No active email scenarios available</option>}
+                    {context?.scenarios.map((scenario) => <option key={scenario.scenario_id} value={scenario.scenario_id}>{scenario.title} · {scenario.category}</option>)}
+                  </select>
+                </label>
+                <label className="space-y-2 text-sm font-medium">Target Group
+                  <select className="w-full border rounded-md p-2 font-normal" value={targetOccupation} onChange={(event) => setTargetOccupation(event.target.value)}>
+                    <option value="ALL">All registered players ({context?.recipient_count ?? 0})</option>
+                    {context?.target_groups.map((group) => <option key={group} value={group}>{group}</option>)}
+                  </select>
+                </label>
               </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs" style={{ color: '#64748b' }}>Username</Label>
-                <Input
-                  value={smtpConfig.username}
-                  onChange={(e) => setSmtpConfig({ ...smtpConfig, username: e.target.value })}
-                  className="text-sm"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs" style={{ color: '#64748b' }}>Password</Label>
-                <Input
-                  type="password"
-                  placeholder="••••••••"
-                  value={smtpConfig.password}
-                  onChange={(e) => setSmtpConfig({ ...smtpConfig, password: e.target.value })}
-                  className="text-sm"
-                />
-              </div>
-              <div className="flex items-center justify-between p-3 rounded-lg" style={{ backgroundColor: 'rgba(22,163,74,0.06)', border: '1px solid rgba(22,163,74,0.15)' }}>
-                <div className="flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4" style={{ color: '#16a34a' }} />
-                  <span className="text-sm" style={{ color: '#16a34a' }}>TLS Encryption Enabled</span>
-                </div>
-                <Badge className="text-xs" style={{ backgroundColor: 'rgba(22,163,74,0.1)', color: '#16a34a' }}>
-                  Secure
-                </Badge>
+              {selectedScenario && <div className="border rounded-md overflow-hidden"><div className="p-4 bg-muted space-y-2 text-sm"><div className="flex flex-wrap gap-2"><Badge variant="secondary">{selectedScenario.category}</Badge><Badge variant="outline">{selectedScenario.difficulty}</Badge></div><p><span className="text-muted-foreground">From: </span>{selectedScenario.sender}</p><p><span className="text-muted-foreground">Subject: </span>{selectedScenario.subject}</p></div><pre className="p-4 whitespace-pre-wrap font-sans text-sm">{selectedScenario.message}</pre></div>}
+              <Button className="w-full" disabled={!selectedScenarioId || submitting} onClick={createCampaign}>Create Campaign Draft</Button>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader><CardTitle className="flex items-center gap-2"><Eye className="w-4 h-4" />Campaigns</CardTitle><CardDescription>Delivery and click results are stored per recipient.</CardDescription></CardHeader>
+            <CardContent className="space-y-4">
+              {!context?.delivery_configured && <div className="flex gap-2 text-sm text-amber-800 bg-amber-50 border border-amber-200 p-3 rounded"><AlertTriangle className="w-4 h-4 shrink-0" />SMTP is not configured. You can create drafts, but launch is disabled until authorized delivery is configured.</div>}
+              {message && <p className="text-sm text-muted-foreground">{message}</p>}
+              <div className="space-y-3">
+                {context?.campaigns.map((campaign) => <div key={campaign.campaign_id} className="border rounded-md p-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between"><div><div className="flex items-center gap-2"><p className="font-medium">{campaign.name}</p><Badge variant={campaign.status === "LAUNCHED" ? "default" : campaign.status === "FAILED" ? "destructive" : "secondary"}>{campaign.status}</Badge></div><p className="text-sm text-muted-foreground">{campaign.scenario_title} · {campaign.target_group} · {campaign.recipients} recipients · {campaign.clicked} clicks · {campaign.reported} reports</p></div><div className="flex gap-2"><Button size="sm" variant="outline" onClick={() => viewReport(campaign.campaign_id)}>View report</Button>{campaign.status === "DRAFT" && <Button size="sm" disabled={!context.delivery_configured || submitting} onClick={() => launchCampaign(campaign.campaign_id)}><Send className="w-4 h-4 mr-2" />Launch</Button>}</div></div>)}
+                {!context?.campaigns.length && <p className="text-sm text-muted-foreground">No campaigns have been created yet.</p>}
               </div>
             </CardContent>
           </Card>
-
-          {/* Campaign Settings */}
-          <Card className="border-0 shadow-sm bg-white">
-            <CardHeader>
-              <div className="flex items-center gap-2">
-                <Mail className="w-4 h-4" style={{ color: '#1e3a5f' }} />
-                <CardTitle className="text-base" style={{ color: '#0f2240' }}>Campaign Configuration</CardTitle>
-              </div>
-              <CardDescription>Sender details and target audience</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-1.5">
-                <Label className="text-xs" style={{ color: '#64748b' }}>From Name (Spoofed)</Label>
-                <Input
-                  value={campaignConfig.fromName}
-                  onChange={(e) => setCampaignConfig({ ...campaignConfig, fromName: e.target.value })}
-                  className="text-sm"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs" style={{ color: '#64748b' }}>From Email (Spoofed)</Label>
-                <Input
-                  value={campaignConfig.fromEmail}
-                  onChange={(e) => setCampaignConfig({ ...campaignConfig, fromEmail: e.target.value })}
-                  className="text-sm"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs" style={{ color: '#64748b' }}>Subject Line</Label>
-                <Input
-                  value={campaignConfig.subject}
-                  onChange={(e) => setCampaignConfig({ ...campaignConfig, subject: e.target.value })}
-                  className="text-sm"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs" style={{ color: '#64748b' }}>Target Player Group</Label>
-                <select
-                  value={campaignConfig.targetList}
-                  onChange={(e) => setCampaignConfig({ ...campaignConfig, targetList: e.target.value })}
-                  className="w-full text-sm rounded-md border px-3 py-2"
-                  style={{ borderColor: '#e2e8f0', backgroundColor: '#f8fafc', color: '#0f172a' }}
-                >
-                  <option value="player_group_a">Player Group A (34 players)</option>
-                  <option value="player_group_b">Player Group B (28 players)</option>
-                  <option value="all_players">All Players (142 players)</option>
-                </select>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Tracking Token */}
-        <Card className="border-0 shadow-sm bg-white">
-          <CardHeader>
-            <CardTitle className="text-base" style={{ color: '#0f2240' }}>Tracking Token</CardTitle>
-            <CardDescription>Unique identifier embedded in simulation links to track click-through events</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-center gap-3">
-              <div className="flex-1 flex items-center gap-3 p-3 rounded-lg font-mono text-sm" style={{ backgroundColor: '#f0f4f8', border: '1px solid #e2e8f0' }}>
-                <span style={{ color: '#1e3a5f' }}>{trackingToken}</span>
-              </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => navigator.clipboard?.writeText(trackingToken)}
-              >
-                <Copy className="w-3.5 h-3.5 mr-1.5" />
-                Copy
-              </Button>
-              <Badge className="text-xs" style={{ backgroundColor: 'rgba(22,163,74,0.1)', color: '#16a34a' }}>
-                Tracking Enabled
-              </Badge>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Email Preview */}
-        <Card className="border-0 shadow-sm bg-white">
-          <CardHeader>
-            <div className="flex items-center gap-2">
-              <Eye className="w-4 h-4" style={{ color: '#1e3a5f' }} />
-              <CardTitle className="text-base" style={{ color: '#0f2240' }}>Email Preview</CardTitle>
-            </div>
-            <CardDescription>How the phishing email will appear to recipients</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="rounded-xl border overflow-hidden" style={{ borderColor: '#e2e8f0' }}>
-              {/* Email Header */}
-              <div className="p-4 border-b" style={{ backgroundColor: '#f8fafc', borderColor: '#e2e8f0' }}>
-                <div className="space-y-1.5 text-sm">
-                  <div className="flex gap-2">
-                    <span className="w-14 font-medium text-xs" style={{ color: '#94a3b8' }}>From:</span>
-                    <span style={{ color: '#dc2626' }}>{campaignConfig.fromName} &lt;{campaignConfig.fromEmail}&gt;</span>
-                  </div>
-                  <div className="flex gap-2">
-                    <span className="w-14 font-medium text-xs" style={{ color: '#94a3b8' }}>Subject:</span>
-                    <span className="font-medium" style={{ color: '#0f2240' }}>{campaignConfig.subject}</span>
-                  </div>
-                </div>
-              </div>
-              {/* Email Body */}
-              <div className="p-5">
-                <pre className="text-sm whitespace-pre-wrap leading-relaxed" style={{ color: '#374151', fontFamily: 'inherit' }}>
-                  {emailPreviewBody}
-                </pre>
-              </div>
-              {/* Warning Banner */}
-              <div className="px-4 pb-4">
-                <div className="flex items-start gap-2 p-3 rounded-lg" style={{ backgroundColor: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)' }}>
-                  <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" style={{ color: '#f59e0b' }} />
-                  <p className="text-xs" style={{ color: '#92400e' }}>
-                    This is a simulated phishing email for training purposes. The link contains a tracking token to measure click-through rates.
-                  </p>
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Campaign Status & Actions */}
-        <Card className="border-0 shadow-sm bg-white">
-          <CardHeader>
-            <CardTitle className="text-base" style={{ color: '#0f2240' }}>Campaign Status</CardTitle>
-            <CardDescription>Send a test email or launch the full campaign</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid grid-cols-3 gap-3 p-4 rounded-xl" style={{ backgroundColor: '#f0f4f8' }}>
-              <div className="text-center">
-                <div className="text-xl font-bold" style={{ color: '#0f2240' }}>
-                  {campaignStatus === 'completed' ? '34' : '0'}
-                </div>
-                <div className="text-xs mt-0.5" style={{ color: '#64748b' }}>Emails Sent</div>
-              </div>
-              <div className="text-center">
-                <div className="text-xl font-bold" style={{ color: '#f59e0b' }}>
-                  {campaignStatus === 'completed' ? '12' : '0'}
-                </div>
-                <div className="text-xs mt-0.5" style={{ color: '#64748b' }}>Link Opens</div>
-              </div>
-              <div className="text-center">
-                <Badge
-                  className="text-xs px-3 py-1"
-                  style={{
-                    backgroundColor: campaignStatus === 'completed' ? 'rgba(22,163,74,0.1)' : campaignStatus === 'running' ? 'rgba(14,165,233,0.1)' : 'rgba(100,116,139,0.1)',
-                    color: campaignStatus === 'completed' ? '#16a34a' : campaignStatus === 'running' ? '#0ea5e9' : '#64748b',
-                  }}
-                >
-                  {campaignStatus === 'completed' ? 'Completed' : campaignStatus === 'running' ? 'Running...' : 'Idle'}
-                </Badge>
-                <div className="text-xs mt-1" style={{ color: '#64748b' }}>Status</div>
-              </div>
-            </div>
-
-            <div className="flex gap-3">
-              <Button
-                variant="outline"
-                onClick={handleSendTest}
-                className="flex-1"
-              >
-                {testSent
-                  ? <><CheckCircle2 className="w-4 h-4 mr-2" style={{ color: '#16a34a' }} />Test Sent!</>
-                  : <><Send className="w-4 h-4 mr-2" />Send Test Email</>
-                }
-              </Button>
-              <Button
-                onClick={handleLaunch}
-                disabled={campaignStatus === 'running'}
-                className="flex-1 text-white"
-                style={{ backgroundColor: '#1e3a5f' }}
-              >
-                <Send className="w-4 h-4 mr-2" />
-                {campaignStatus === 'running' ? 'Launching...' : 'Launch Campaign'}
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+          {selectedCampaign && <Card><CardHeader><CardTitle className="flex items-center gap-2"><BarChart3 className="w-4 h-4" />{selectedCampaign.name} Report</CardTitle><CardDescription>{selectedCampaign.scenario_title} · {selectedCampaign.target_group}</CardDescription></CardHeader><CardContent className="space-y-4"><div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-center"><div><p className="text-2xl font-semibold">{selectedCampaign.recipients}</p><p className="text-xs text-muted-foreground">Recipients</p></div><div><p className="text-2xl font-semibold">{selectedCampaign.sent}</p><p className="text-xs text-muted-foreground">Sent</p></div><div><p className="text-2xl font-semibold">{selectedCampaign.clicked}</p><p className="text-xs text-muted-foreground">Clicked</p></div><div><p className="text-2xl font-semibold">{selectedCampaign.click_rate}%</p><p className="text-xs text-muted-foreground">Click rate</p></div><div><p className="text-2xl font-semibold">{selectedCampaign.report_rate}%</p><p className="text-xs text-muted-foreground">Report rate</p></div></div><div className="border rounded-md overflow-x-auto"><table className="w-full text-sm"><thead><tr className="border-b bg-muted/50"><th className="p-2 text-left">Recipient</th><th className="p-2 text-left">Delivery</th><th className="p-2 text-left">Clicks</th><th className="p-2 text-left">Reported</th></tr></thead><tbody>{selectedCampaign.recipient_details?.map((recipient) => <tr key={recipient.email} className="border-b last:border-0"><td className="p-2">{recipient.email}</td><td className="p-2">{recipient.delivery_status}</td><td className="p-2">{recipient.click_count}</td><td className="p-2">{recipient.reported_at ? new Date(recipient.reported_at).toLocaleString() : "—"}</td></tr>)}</tbody></table></div></CardContent></Card>}
+        </>}
       </div>
     </div>
   );

@@ -1,46 +1,53 @@
-import { Users, Activity, Target, Database, Mail, MessageSquare, AlertTriangle, TrendingUp, BarChart3 } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Users, Activity, Target, Database, Mail, MessageSquare, AlertTriangle, TrendingUp, BarChart3, type LucideIcon } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Progress } from './ui/progress';
 import { Badge } from './ui/badge';
+import AnalyticsService from '../../services/analyticsService';
 
 interface AdminAnalyticsProps {
   onBack: () => void;
 }
 
+interface SimulationBreakdown {
+  type: string;
+  total: number;
+  rate: number;
+  icon: LucideIcon;
+  color: string;
+}
+
 export function AdminAnalytics({ onBack }: AdminAnalyticsProps) {
+  const [analytics, setAnalytics] = useState<any>(null);
+
+  useEffect(() => {
+    AnalyticsService.getAdminAnalytics().then((response) => {
+      if (response.ok) setAnalytics(response.data.data);
+    }).catch((error) => console.error('Unable to load administrator analytics.', error));
+  }, []);
+
   const platformStats = [
-    { label: 'Total Simulations', value: '4,567', icon: Activity, color: '#0ea5e9', bg: 'rgba(14,165,233,0.1)' },
-    { label: 'Average Accuracy', value: '76%', icon: Target, color: '#16a34a', bg: 'rgba(22,163,74,0.1)' },
-    { label: 'Avg. Baseline Score', value: '71%', icon: BarChart3, color: '#1e3a5f', bg: 'rgba(30,58,95,0.1)' },
-    { label: 'Active Users (7d)', value: '89', icon: Users, color: '#8b5cf6', bg: 'rgba(139,92,246,0.1)' },
+    { label: 'Total Simulations', value: analytics?.total_simulations, icon: Activity, color: '#38bdf8', bg: 'rgba(56,189,248,0.12)' },
+    { label: 'Average Accuracy', value: analytics ? `${analytics.average_accuracy}%` : undefined, icon: Target, color: '#3fb950', bg: 'rgba(63,185,80,0.12)' },
+    { label: 'Avg. Baseline Score', value: analytics ? `${analytics.average_baseline_score}%` : undefined, icon: BarChart3, color: '#2f81f7', bg: 'rgba(47,129,247,0.12)' },
+    { label: 'Active Users (7d)', value: analytics?.active_users_7d, icon: Users, color: '#bc8cff', bg: 'rgba(188,140,255,0.12)' },
   ];
 
-  const simulationBreakdown = [
-    { type: 'Email Simulations', total: 3245, rate: 76, icon: Mail, color: '#0ea5e9' },
-    { type: 'SMS Simulations', total: 1322, rate: 80, icon: MessageSquare, color: '#8b5cf6' },
-  ];
-
-  const datasetUsage = [
-    { name: 'corporate_phishing_v1.csv', uses: 1243, scenarios: 18, accuracy: 74 },
-    { name: 'smishing_dataset_2024.json', uses: 867, scenarios: 12, accuracy: 81 },
-    { name: 'advanced_email_threats.csv', uses: 512, scenarios: 9, accuracy: 68 },
-    { name: 'basic_phishing_intro.csv', uses: 389, scenarios: 7, accuracy: 89 },
-  ];
-
-  const systemActivity = [
-    { date: 'Jun 30', sessions: 48, newUsers: 3 },
-    { date: 'Jun 29', sessions: 61, newUsers: 5 },
-    { date: 'Jun 28', sessions: 34, newUsers: 2 },
-    { date: 'Jun 27', sessions: 72, newUsers: 8 },
-    { date: 'Jun 26', sessions: 55, newUsers: 4 },
-  ];
+  const simulationBreakdown: SimulationBreakdown[] = (analytics?.by_type || []).map((item: any) => ({
+    type: item.type === 'EMAIL' ? 'Email Simulations' : 'SMS Simulations',
+    total: item.attempts,
+    rate: item.accuracy,
+    icon: item.type === 'EMAIL' ? Mail : MessageSquare,
+    color: item.type === 'EMAIL' ? '#38bdf8' : '#bc8cff',
+  }));
+  const maxActivity = Math.max(...(analytics?.activity || []).map((day: any) => day.attempts), 1);
 
   return (
-    <div className="h-full flex flex-col" style={{ backgroundColor: '#f0f4f8' }}>
-      <div className="border-b p-4 flex items-center gap-4 bg-white">
+    <div className="h-full flex flex-col">
+      <div className="border-b p-4 flex items-center gap-4 bg-card">
         <div>
-          <h2 className="text-xl font-semibold" style={{ color: '#0f2240' }}>System Analytics</h2>
-          <p className="text-sm" style={{ color: '#64748b' }}>Platform-wide statistics — not individual player data</p>
+          <h2 className="text-xl font-semibold text-foreground">System Analytics</h2>
+          <p className="text-sm text-muted-foreground">Platform-wide statistics — not individual player data</p>
         </div>
       </div>
 
@@ -48,22 +55,22 @@ export function AdminAnalytics({ onBack }: AdminAnalyticsProps) {
         {/* Platform stats */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {platformStats.map((s) => (
-            <Card key={s.label} className="border-0 shadow-sm bg-white">
+            <Card key={s.label}>
               <CardContent className="p-4">
-                <div className="w-9 h-9 rounded-lg flex items-center justify-center mb-3" style={{ backgroundColor: s.bg }}>
+                <div className="w-9 h-9 rounded-md flex items-center justify-center mb-3" style={{ backgroundColor: s.bg }}>
                   <s.icon className="w-4 h-4" style={{ color: s.color }} />
                 </div>
-                <div className="text-2xl font-bold" style={{ color: '#0f2240' }}>{s.value}</div>
-                <div className="text-xs mt-0.5" style={{ color: '#64748b' }}>{s.label}</div>
+                <div className="text-2xl font-bold text-foreground">{s.value ?? '...'}</div>
+                <div className="text-xs mt-0.5 text-muted-foreground">{s.label}</div>
               </CardContent>
             </Card>
           ))}
         </div>
 
         {/* Simulation statistics */}
-        <Card className="border-0 shadow-sm bg-white">
+        <Card>
           <CardHeader>
-            <CardTitle className="text-base" style={{ color: '#0f2240' }}>Simulation Statistics</CardTitle>
+            <CardTitle className="text-base text-foreground">Simulation Statistics</CardTitle>
             <CardDescription>Email vs SMS completion and accuracy</CardDescription>
           </CardHeader>
           <CardContent className="space-y-5">
@@ -72,11 +79,11 @@ export function AdminAnalytics({ onBack }: AdminAnalyticsProps) {
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-2">
                     <sim.icon className="w-4 h-4" style={{ color: sim.color }} />
-                    <span className="text-sm font-medium" style={{ color: '#0f2240' }}>{sim.type}</span>
+                    <span className="text-sm font-medium text-foreground">{sim.type}</span>
                   </div>
                   <div className="text-right">
-                    <span className="text-xl font-bold" style={{ color: '#0f2240' }}>{sim.rate}%</span>
-                    <span className="text-xs ml-2" style={{ color: '#94a3b8' }}>{sim.total.toLocaleString()} completed</span>
+                    <span className="text-xl font-bold text-foreground">{sim.rate}%</span>
+                    <span className="text-xs ml-2 text-muted-foreground">{sim.total.toLocaleString()} completed</span>
                   </div>
                 </div>
                 <Progress value={sim.rate} className="h-2.5" />
@@ -87,26 +94,26 @@ export function AdminAnalytics({ onBack }: AdminAnalyticsProps) {
 
         {/* Key insights */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <Card className="border-0 shadow-sm bg-white">
+          <Card>
             <CardHeader>
-              <CardTitle className="text-base" style={{ color: '#0f2240' }}>Most Difficult Scenario</CardTitle>
+              <CardTitle className="text-base text-foreground">Most Difficult Scenario</CardTitle>
               <CardDescription>Highest fail rate in recent sessions</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="p-4 rounded-xl" style={{ backgroundColor: 'rgba(220,38,38,0.04)', border: '1px solid rgba(220,38,38,0.15)' }}>
+              <div className="p-4 rounded-md" style={{ backgroundColor: 'rgba(248,81,73,0.08)', border: '1px solid rgba(248,81,73,0.25)' }}>
                 <div className="flex items-start gap-3">
-                  <AlertTriangle className="w-5 h-5 flex-shrink-0 mt-0.5" style={{ color: '#dc2626' }} />
+                  <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5" style={{ color: '#f85149' }} />
                   <div>
-                    <div className="font-semibold text-sm" style={{ color: '#0f2240' }}>CEO Wire Transfer Request</div>
-                    <div className="text-xs mt-1" style={{ color: '#64748b' }}>Category: Business Email Compromise · Difficulty: Hard</div>
+                    <div className="font-semibold text-sm text-foreground">{analytics?.most_difficult?.title ?? 'No scenario attempts yet'}</div>
+                    <div className="text-xs mt-1 text-muted-foreground">{analytics?.most_difficult ? `Category: ${analytics.most_difficult.category} · Difficulty: ${analytics.most_difficult.difficulty}` : 'Complete simulations to identify difficult scenarios.'}</div>
                     <div className="flex items-center gap-3 mt-3">
                       <div>
-                        <div className="text-lg font-bold" style={{ color: '#dc2626' }}>34%</div>
-                        <div className="text-xs" style={{ color: '#94a3b8' }}>Success rate</div>
+                        <div className="text-lg font-bold" style={{ color: '#f85149' }}>{analytics?.most_difficult?.success_rate ?? 0}%</div>
+                        <div className="text-xs text-muted-foreground">Success rate</div>
                       </div>
                       <div>
-                        <div className="text-lg font-bold" style={{ color: '#0f2240' }}>287</div>
-                        <div className="text-xs" style={{ color: '#94a3b8' }}>Attempts</div>
+                        <div className="text-lg font-bold text-foreground">{analytics?.most_difficult?.attempts ?? 0}</div>
+                        <div className="text-xs text-muted-foreground">Attempts</div>
                       </div>
                     </div>
                   </div>
@@ -115,26 +122,26 @@ export function AdminAnalytics({ onBack }: AdminAnalyticsProps) {
             </CardContent>
           </Card>
 
-          <Card className="border-0 shadow-sm bg-white">
+          <Card>
             <CardHeader>
-              <CardTitle className="text-base" style={{ color: '#0f2240' }}>Most Missed Phishing Cue</CardTitle>
+              <CardTitle className="text-base text-foreground">Most Missed Phishing Cue</CardTitle>
               <CardDescription>What players miss most often</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="p-4 rounded-xl" style={{ backgroundColor: 'rgba(245,158,11,0.04)', border: '1px solid rgba(245,158,11,0.15)' }}>
+              <div className="p-4 rounded-md" style={{ backgroundColor: 'rgba(242,204,96,0.08)', border: '1px solid rgba(242,204,96,0.25)' }}>
                 <div className="flex items-start gap-3">
-                  <TrendingUp className="w-5 h-5 flex-shrink-0 mt-0.5" style={{ color: '#f59e0b' }} />
+                  <TrendingUp className="w-5 h-5 shrink-0 mt-0.5" style={{ color: '#f2cc60' }} />
                   <div>
-                    <div className="font-semibold text-sm" style={{ color: '#0f2240' }}>Lookalike Domain Names</div>
-                    <div className="text-xs mt-1" style={{ color: '#64748b' }}>e.g. paypa1.com, arnazon.com, micros0ft.net</div>
+                    <div className="font-semibold text-sm text-foreground">{analytics?.most_missed_cue?.cue ?? 'No missed cue data yet'}</div>
+                    <div className="text-xs mt-1 text-muted-foreground">Derived from incorrect attempts on scenarios containing this cue.</div>
                     <div className="flex items-center gap-3 mt-3">
                       <div>
-                        <div className="text-lg font-bold" style={{ color: '#f59e0b' }}>61%</div>
-                        <div className="text-xs" style={{ color: '#94a3b8' }}>Miss rate</div>
+                        <div className="text-lg font-bold" style={{ color: '#f2cc60' }}>{analytics?.most_missed_cue?.miss_rate ?? 0}%</div>
+                        <div className="text-xs text-muted-foreground">Miss rate</div>
                       </div>
                       <div>
-                        <div className="text-lg font-bold" style={{ color: '#0f2240' }}>1,104</div>
-                        <div className="text-xs" style={{ color: '#94a3b8' }}>Times missed</div>
+                        <div className="text-lg font-bold text-foreground">{analytics?.most_missed_cue?.missed_count ?? 0}</div>
+                        <div className="text-xs text-muted-foreground">Times missed</div>
                       </div>
                     </div>
                   </div>
@@ -145,46 +152,47 @@ export function AdminAnalytics({ onBack }: AdminAnalyticsProps) {
         </div>
 
         {/* Dataset Usage */}
-        <Card className="border-0 shadow-sm bg-white">
+        <Card>
           <CardHeader>
-            <CardTitle className="text-base" style={{ color: '#0f2240' }}>Dataset Usage</CardTitle>
+            <CardTitle className="text-base text-foreground">Dataset Usage</CardTitle>
             <CardDescription>How datasets are being utilised across simulations</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b" style={{ borderColor: '#f1f5f9' }}>
-                    <th className="text-left pb-3 text-xs font-medium" style={{ color: '#94a3b8' }}>Dataset</th>
-                    <th className="text-right pb-3 text-xs font-medium" style={{ color: '#94a3b8' }}>Scenario Uses</th>
-                    <th className="text-right pb-3 text-xs font-medium" style={{ color: '#94a3b8' }}>Sessions</th>
-                    <th className="text-right pb-3 text-xs font-medium" style={{ color: '#94a3b8' }}>Avg. Accuracy</th>
+                  <tr className="border-b border-border">
+                    <th className="text-left pb-3 text-xs font-medium text-muted-foreground">Dataset</th>
+                    <th className="text-right pb-3 text-xs font-medium text-muted-foreground">Records</th>
+                    <th className="text-right pb-3 text-xs font-medium text-muted-foreground">Processed Records</th>
+                    <th className="text-right pb-3 text-xs font-medium text-muted-foreground">Processing Status</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {datasetUsage.map((d, i) => (
-                    <tr key={i} className="border-b last:border-b-0" style={{ borderColor: '#f1f5f9' }}>
+                  {(analytics?.datasets || []).map((d: any) => (
+                    <tr key={d.name} className="border-b border-border last:border-b-0">
                       <td className="py-3">
                         <div className="flex items-center gap-2">
-                          <Database className="w-3.5 h-3.5 flex-shrink-0" style={{ color: '#8b5cf6' }} />
-                          <span className="font-medium text-xs" style={{ color: '#0f2240' }}>{d.name}</span>
+                          <Database className="w-3.5 h-3.5 shrink-0" style={{ color: '#bc8cff' }} />
+                          <span className="font-medium text-xs text-foreground">{d.name}</span>
                         </div>
                       </td>
-                      <td className="py-3 text-right text-xs" style={{ color: '#64748b' }}>{d.scenarios}</td>
-                      <td className="py-3 text-right text-xs" style={{ color: '#64748b' }}>{d.uses.toLocaleString()}</td>
+                      <td className="py-3 text-right text-xs text-muted-foreground">{d.records}</td>
+                      <td className="py-3 text-right text-xs text-muted-foreground">{d.processed_records}</td>
                       <td className="py-3 text-right">
                         <Badge
-                          className="text-xs"
+                          className="text-xs border-0"
                           style={{
-                            backgroundColor: d.accuracy >= 80 ? 'rgba(22,163,74,0.1)' : d.accuracy >= 70 ? 'rgba(245,158,11,0.1)' : 'rgba(220,38,38,0.1)',
-                            color: d.accuracy >= 80 ? '#16a34a' : d.accuracy >= 70 ? '#f59e0b' : '#dc2626',
+                            backgroundColor: 'rgba(56,189,248,0.12)',
+                            color: '#38bdf8',
                           }}
                         >
-                          {d.accuracy}%
+                          {d.processed_records} processed
                         </Badge>
                       </td>
                     </tr>
                   ))}
+                  {!analytics?.datasets?.length && <tr><td colSpan={4} className="py-6 text-center text-muted-foreground">No datasets uploaded yet.</td></tr>}
                 </tbody>
               </table>
             </div>
@@ -192,22 +200,22 @@ export function AdminAnalytics({ onBack }: AdminAnalyticsProps) {
         </Card>
 
         {/* System Activity */}
-        <Card className="border-0 shadow-sm bg-white">
+        <Card>
           <CardHeader>
-            <CardTitle className="text-base" style={{ color: '#0f2240' }}>System Activity (Last 5 Days)</CardTitle>
+            <CardTitle className="text-base text-foreground">System Activity (Last 5 Days)</CardTitle>
             <CardDescription>Daily sessions and new user registrations</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
-              {systemActivity.map((day, i) => (
-                <div key={i} className="flex items-center gap-4">
-                  <div className="w-14 text-xs font-medium" style={{ color: '#64748b' }}>{day.date}</div>
+              {(analytics?.activity || []).map((day: any) => (
+                <div key={day.date} className="flex items-center gap-4">
+                  <div className="w-20 text-xs font-medium text-muted-foreground">{day.date}</div>
                   <div className="flex-1">
                     <div className="flex items-center justify-between mb-1">
-                      <span className="text-xs" style={{ color: '#94a3b8' }}>Sessions: {day.sessions}</span>
-                      <span className="text-xs" style={{ color: '#94a3b8' }}>+{day.newUsers} new users</span>
+                      <span className="text-xs text-muted-foreground">Attempts: {day.attempts}</span>
+                      <span className="text-xs text-muted-foreground">+{day.new_users} new users</span>
                     </div>
-                    <Progress value={(day.sessions / 80) * 100} className="h-2" />
+                    <Progress value={(day.attempts / maxActivity) * 100} className="h-2" />
                   </div>
                 </div>
               ))}

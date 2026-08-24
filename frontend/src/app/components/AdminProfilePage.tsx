@@ -214,14 +214,14 @@ export function AdminProfilePage({
                 </div>
 
                 {successMessage && (
-                  <div className="rounded-md border border-green-200 bg-green-50 p-3">
-                    <p className="text-sm text-green-700">{successMessage}</p>
+                  <div className="rounded-md border border-green-500/30 bg-green-500/10 p-3">
+                    <p className="text-sm text-green-400">{successMessage}</p>
                   </div>
                 )}
 
                 {errorMessage && (
-                  <div className="rounded-md border border-red-200 bg-red-50 p-3">
-                    <p className="text-sm text-red-700">{errorMessage}</p>
+                  <div className="rounded-md border border-red-500/30 bg-red-500/10 p-3">
+                    <p className="text-sm text-red-400">{errorMessage}</p>
                   </div>
                 )}
 
@@ -287,16 +287,16 @@ export function AdminProfilePage({
                 </div>
 
                 {passwordSuccessMessage && (
-                  <div className="rounded-md border border-green-200 bg-green-50 p-3">
-                    <p className="text-sm text-green-700">
+                  <div className="rounded-md border border-green-500/30 bg-green-500/10 p-3">
+                    <p className="text-sm text-green-400">
                       {passwordSuccessMessage}
                     </p>
                   </div>
                 )}
 
                 {passwordErrorMessage && (
-                  <div className="rounded-md border border-red-200 bg-red-50 p-3">
-                    <p className="text-sm text-red-700">
+                  <div className="rounded-md border border-red-500/30 bg-red-500/10 p-3">
+                    <p className="text-sm text-red-400">
                       {passwordErrorMessage}
                     </p>
                   </div>

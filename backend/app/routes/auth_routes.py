@@ -160,3 +160,35 @@ def change_password():
             "message": "Password update failed.",
             "error": str(error)
         }), 500
+
+
+@auth_bp.route("/logout", methods=["POST"])
+@jwt_required()
+def logout():
+    """End the authenticated user's current application session."""
+
+    try:
+        success, message = AuthService.logout()
+
+        return jsonify({
+            "success": success,
+            "message": message,
+        }), 200
+    except Exception as error:
+        return jsonify({
+            "success": False,
+            "message": "Logout failed.",
+            "error": str(error),
+        }), 500
+
+
+@auth_bp.route("/forgot-password", methods=["POST"])
+def forgot_password():
+    data = request.get_json() or {}
+    email = data.get("email", "")
+
+    if not email:
+        return jsonify({"success": False, "message": "Email is required."}), 400
+
+    success, message = AuthService.request_password_reset(email)
+    return jsonify({"success": success, "message": message}), 200

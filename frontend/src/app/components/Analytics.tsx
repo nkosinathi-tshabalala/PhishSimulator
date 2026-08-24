@@ -1,37 +1,56 @@
-import { Target, AlertTriangle, TrendingUp, Award, BarChart3, Activity, ChevronUp, ChevronDown } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Target, Award, BarChart3, Activity, ChevronUp, ChevronDown } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Progress } from './ui/progress';
 import { Badge } from './ui/badge';
+import AnalyticsService from '../../services/analyticsService';
 
 interface AnalyticsProps {
   onBack: () => void;
 }
 
+interface PlayerPerformance {
+  overall_accuracy: number;
+  false_positive_rate: number;
+  false_negative_rate: number;
+  baseline_score: number | null;
+  correct_attempts: number;
+  total_attempts: number;
+  difficulty: string;
+  adaptive_reason: string;
+  rank: number;
+  player_count: number;
+  level: number;
+  xp_into_level: number;
+  by_type: Array<{ type: string; attempts: number; correct: number; accuracy: number }>;
+  history: Array<{ date: string; email: number; sms: number; accuracy: number }>;
+  recent_attempts: Array<{ scenario: string; type: string; correct: boolean; feedback: string; attempted_at: string }>;
+}
+
 export function Analytics({ onBack }: AnalyticsProps) {
-  const detectionStats = [
-    { category: 'Email Phishing', attempts: 22, correct: 18, rate: 82 },
-    { category: 'SMS / Smishing', attempts: 13, correct: 10, rate: 77 },
-  ];
+  const [performance, setPerformance] = useState<PlayerPerformance | null>(null);
 
-  const recentFeedback = [
-    { scenario: 'PayPal Account Suspended', type: 'Email', result: 'Correct', note: 'Correctly identified urgency language and domain spoof.', date: '2 hours ago' },
-    { scenario: 'Bank Verification Text', type: 'SMS', result: 'Incorrect', note: 'Missed the shortened URL and unknown sender indicators.', date: '5 hours ago' },
-    { scenario: 'IT Password Reset', type: 'Email', result: 'Correct', note: 'Recognised internal spoofing attempt.', date: 'Yesterday' },
-  ];
+  useEffect(() => {
+    AnalyticsService.getMyPerformance().then((response) => {
+      if (response.ok) setPerformance(response.data.data);
+    }).catch((error) => console.error('Unable to load player analytics.', error));
+  }, []);
 
-  const simulationHistory = [
-    { date: 'Jun 30', email: 3, sms: 1, accuracy: 80 },
-    { date: 'Jun 29', email: 4, sms: 2, accuracy: 75 },
-    { date: 'Jun 28', email: 2, sms: 1, accuracy: 85 },
-    { date: 'Jun 27', email: 5, sms: 0, accuracy: 70 },
-  ];
+  const detectionStats = performance?.by_type.map((stat) => ({
+    category: stat.type === 'EMAIL' ? 'Email Phishing' : 'SMS / Smishing',
+    attempts: stat.attempts,
+    correct: stat.correct,
+    rate: stat.accuracy,
+  })) ?? [];
+  const recentFeedback = performance?.recent_attempts ?? [];
+  const simulationHistory = performance?.history ?? [];
 
   return (
-    <div className="h-full flex flex-col" style={{ backgroundColor: '#f0f4f8' }}>
-      <div className="border-b p-4 flex items-center gap-4 bg-white">
+    <div className="h-full flex flex-col">
+      <div className="border-b p-4 flex items-center gap-4 bg-card">
         <div>
-          <h2 className="text-xl font-semibold" style={{ color: '#0f2240' }}>My Performance</h2>
-          <p className="text-sm" style={{ color: '#64748b' }}>Personal training statistics and progress</p>
+          <h2 className="text-xl font-semibold text-foreground">My Performance</h2>
+          <p className="text-sm text-muted-foreground">Personal training statistics and progress</p>
         </div>
       </div>
 
@@ -39,18 +58,18 @@ export function Analytics({ onBack }: AnalyticsProps) {
         {/* Summary cards */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {[
-            { label: 'Overall Accuracy', value: '78%', icon: Target, color: '#0ea5e9', bg: 'rgba(14,165,233,0.1)', trend: '+3% this week' },
-            { label: 'Baseline Score', value: '82%', icon: Award, color: '#16a34a', bg: 'rgba(22,163,74,0.1)', trend: 'Assessed 5 days ago' },
-            { label: 'Correct Decisions', value: '27', icon: Activity, color: '#1e3a5f', bg: 'rgba(30,58,95,0.1)', trend: 'of 35 simulations' },
-            { label: 'Current Difficulty', value: 'Medium', icon: BarChart3, color: '#f59e0b', bg: 'rgba(245,158,11,0.1)', trend: 'Adaptive engine' },
+            { label: 'Overall Accuracy', value: performance ? `${performance.overall_accuracy}%` : '...', icon: Target, color: '#38bdf8', bg: 'rgba(56,189,248,0.12)', trend: `${performance?.total_attempts ?? 0} simulations` },
+            { label: 'Baseline Score', value: performance?.baseline_score !== null && performance ? `${performance.baseline_score}%` : 'Not assessed', icon: Award, color: '#3fb950', bg: 'rgba(63,185,80,0.12)', trend: 'Latest completed assessment' },
+            { label: 'Correct Decisions', value: performance?.correct_attempts ?? '...', icon: Activity, color: '#2f81f7', bg: 'rgba(47,129,247,0.12)', trend: `of ${performance?.total_attempts ?? 0} simulations` },
+            { label: 'Current Difficulty', value: performance?.difficulty ?? '...', icon: BarChart3, color: '#f2cc60', bg: 'rgba(242,204,96,0.12)', trend: 'Adaptive engine recommendation' },
           ].map((s) => (
-            <Card key={s.label} className="border-0 shadow-sm">
+            <Card key={s.label}>
               <CardContent className="p-4">
-                <div className="w-9 h-9 rounded-lg flex items-center justify-center mb-3" style={{ backgroundColor: s.bg }}>
+                <div className="w-9 h-9 rounded-md flex items-center justify-center mb-3" style={{ backgroundColor: s.bg }}>
                   <s.icon className="w-4 h-4" style={{ color: s.color }} />
                 </div>
-                <div className="text-2xl font-bold" style={{ color: '#0f2240' }}>{s.value}</div>
-                <div className="text-xs mt-0.5" style={{ color: '#64748b' }}>{s.label}</div>
+                <div className="text-2xl font-bold text-foreground">{s.value}</div>
+                <div className="text-xs mt-0.5 text-muted-foreground">{s.label}</div>
                 <div className="text-xs mt-1" style={{ color: s.color }}>{s.trend}</div>
               </CardContent>
             </Card>
@@ -59,61 +78,61 @@ export function Analytics({ onBack }: AnalyticsProps) {
 
         {/* Error rates and ranking */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <Card className="border-0 shadow-sm">
+          <Card>
             <CardHeader>
-              <CardTitle className="text-base" style={{ color: '#0f2240' }}>Error Rate Analysis</CardTitle>
+              <CardTitle className="text-base text-foreground">Error Rate Analysis</CardTitle>
               <CardDescription>False positives and false negatives</CardDescription>
             </CardHeader>
             <CardContent className="space-y-5">
               <div>
                 <div className="flex justify-between mb-2">
-                  <span className="text-sm font-medium" style={{ color: '#0f2240' }}>False Positives</span>
-                  <span className="text-sm" style={{ color: '#f59e0b' }}>12%</span>
+                  <span className="text-sm font-medium text-foreground">False Positives</span>
+                  <span className="text-sm" style={{ color: '#f2cc60' }}>{performance?.false_positive_rate ?? 0}%</span>
                 </div>
-                <Progress value={12} className="h-2" />
-                <p className="text-xs mt-1" style={{ color: '#94a3b8' }}>Safe emails you marked as phishing</p>
+                <Progress value={performance?.false_positive_rate ?? 0} className="h-2" />
+                <p className="text-xs mt-1 text-muted-foreground">Safe emails you marked as phishing</p>
               </div>
               <div>
                 <div className="flex justify-between mb-2">
-                  <span className="text-sm font-medium" style={{ color: '#0f2240' }}>False Negatives</span>
-                  <span className="text-sm" style={{ color: '#dc2626' }}>8%</span>
+                  <span className="text-sm font-medium text-foreground">False Negatives</span>
+                  <span className="text-sm" style={{ color: '#f85149' }}>{performance?.false_negative_rate ?? 0}%</span>
                 </div>
-                <Progress value={8} className="h-2" />
-                <p className="text-xs mt-1" style={{ color: '#94a3b8' }}>Phishing emails you marked as safe</p>
+                <Progress value={performance?.false_negative_rate ?? 0} className="h-2" />
+                <p className="text-xs mt-1 text-muted-foreground">Phishing emails you marked as safe</p>
               </div>
             </CardContent>
           </Card>
 
-          <Card className="border-0 shadow-sm">
+          <Card>
             <CardHeader>
-              <CardTitle className="text-base" style={{ color: '#0f2240' }}>Ranking & Adaptive Status</CardTitle>
+              <CardTitle className="text-base text-foreground">Ranking & Adaptive Status</CardTitle>
               <CardDescription>Private ranking and engine status</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="flex items-center justify-between p-3 rounded-lg" style={{ backgroundColor: '#f0f4f8' }}>
+              <div className="flex items-center justify-between p-3 rounded-md bg-muted">
                 <div>
-                  <div className="text-sm font-medium" style={{ color: '#0f2240' }}>Private Rank</div>
-                  <div className="text-xs" style={{ color: '#64748b' }}>Among all players</div>
+                  <div className="text-sm font-medium text-foreground">Private Rank</div>
+                  <div className="text-xs text-muted-foreground">Among all players</div>
                 </div>
-                <div className="text-2xl font-bold" style={{ color: '#1e3a5f' }}>#12</div>
+                <div className="text-2xl font-bold" style={{ color: '#2f81f7' }}>#{performance?.rank ?? '...'}</div>
               </div>
-              <div className="flex items-center justify-between p-3 rounded-lg" style={{ backgroundColor: '#f0f4f8' }}>
+              <div className="flex items-center justify-between p-3 rounded-md bg-muted">
                 <div>
-                  <div className="text-sm font-medium" style={{ color: '#0f2240' }}>Adaptive Engine</div>
-                  <div className="text-xs" style={{ color: '#64748b' }}>Learning adjustment</div>
+                  <div className="text-sm font-medium text-foreground">Adaptive Engine</div>
+                  <div className="text-xs text-muted-foreground">{performance?.adaptive_reason ?? 'Calculating recommendation'}</div>
                 </div>
-                <Badge className="text-xs" style={{ backgroundColor: 'rgba(22,163,74,0.1)', color: '#16a34a' }}>
-                  Active
+                <Badge className="text-xs border-0" style={{ backgroundColor: 'rgba(63,185,80,0.12)', color: '#3fb950' }}>
+                  {performance ? performance.difficulty : 'Loading'}
                 </Badge>
               </div>
-              <div className="flex items-center justify-between p-3 rounded-lg" style={{ backgroundColor: '#f0f4f8' }}>
+              <div className="flex items-center justify-between p-3 rounded-md bg-muted">
                 <div>
-                  <div className="text-sm font-medium" style={{ color: '#0f2240' }}>XP Level</div>
-                  <div className="text-xs" style={{ color: '#64748b' }}>Current level progress</div>
+                  <div className="text-sm font-medium text-foreground">XP Level</div>
+                  <div className="text-xs text-muted-foreground">Current level progress</div>
                 </div>
                 <div className="text-right">
-                  <div className="text-lg font-bold" style={{ color: '#1e3a5f' }}>Level 3</div>
-                  <div className="text-xs" style={{ color: '#94a3b8' }}>78 / 100 XP</div>
+                  <div className="text-lg font-bold" style={{ color: '#2f81f7' }}>Level {performance?.level ?? '...'}</div>
+                  <div className="text-xs text-muted-foreground">{performance?.xp_into_level ?? 0} / 100 XP</div>
                 </div>
               </div>
             </CardContent>
@@ -121,9 +140,9 @@ export function Analytics({ onBack }: AnalyticsProps) {
         </div>
 
         {/* Detection by type */}
-        <Card className="border-0 shadow-sm">
+        <Card>
           <CardHeader>
-            <CardTitle className="text-base" style={{ color: '#0f2240' }}>Performance by Simulation Type</CardTitle>
+            <CardTitle className="text-base text-foreground">Performance by Simulation Type</CardTitle>
             <CardDescription>Accuracy across email and SMS scenarios</CardDescription>
           </CardHeader>
           <CardContent className="space-y-5">
@@ -131,10 +150,10 @@ export function Analytics({ onBack }: AnalyticsProps) {
               <div key={stat.category}>
                 <div className="flex items-center justify-between mb-2">
                   <div>
-                    <span className="text-sm font-medium" style={{ color: '#0f2240' }}>{stat.category}</span>
-                    <span className="text-xs ml-2" style={{ color: '#94a3b8' }}>{stat.correct}/{stat.attempts} correct</span>
+                    <span className="text-sm font-medium text-foreground">{stat.category}</span>
+                    <span className="text-xs ml-2 text-muted-foreground">{stat.correct}/{stat.attempts} correct</span>
                   </div>
-                  <span className="text-xl font-bold" style={{ color: '#0f2240' }}>{stat.rate}%</span>
+                  <span className="text-xl font-bold text-foreground">{stat.rate}%</span>
                 </div>
                 <Progress value={stat.rate} className="h-2.5" />
               </div>
@@ -143,41 +162,44 @@ export function Analytics({ onBack }: AnalyticsProps) {
         </Card>
 
         {/* Simulation History */}
-        <Card className="border-0 shadow-sm">
+        <Card>
           <CardHeader>
-            <CardTitle className="text-base" style={{ color: '#0f2240' }}>Simulation History</CardTitle>
+            <CardTitle className="text-base text-foreground">Simulation History</CardTitle>
             <CardDescription>Recent session activity</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b" style={{ borderColor: '#f1f5f9' }}>
-                    <th className="text-left pb-2 text-xs font-medium" style={{ color: '#94a3b8' }}>Date</th>
-                    <th className="text-left pb-2 text-xs font-medium" style={{ color: '#94a3b8' }}>Email Sessions</th>
-                    <th className="text-left pb-2 text-xs font-medium" style={{ color: '#94a3b8' }}>SMS Sessions</th>
-                    <th className="text-right pb-2 text-xs font-medium" style={{ color: '#94a3b8' }}>Accuracy</th>
+                  <tr className="border-b border-border">
+                    <th className="text-left pb-2 text-xs font-medium text-muted-foreground">Date</th>
+                    <th className="text-left pb-2 text-xs font-medium text-muted-foreground">Email Sessions</th>
+                    <th className="text-left pb-2 text-xs font-medium text-muted-foreground">SMS Sessions</th>
+                    <th className="text-right pb-2 text-xs font-medium text-muted-foreground">Accuracy</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {simulationHistory.map((row, i) => (
-                    <tr key={i} className="border-b last:border-b-0" style={{ borderColor: '#f1f5f9' }}>
-                      <td className="py-3 font-medium" style={{ color: '#0f2240' }}>{row.date}</td>
-                      <td className="py-3" style={{ color: '#64748b' }}>{row.email}</td>
-                      <td className="py-3" style={{ color: '#64748b' }}>{row.sms}</td>
+                  {simulationHistory.map((row) => (
+                    <tr key={row.date} className="border-b border-border last:border-b-0">
+                      <td className="py-3 font-medium text-foreground">{row.date}</td>
+                      <td className="py-3 text-muted-foreground">{row.email}</td>
+                      <td className="py-3 text-muted-foreground">{row.sms}</td>
                       <td className="py-3 text-right">
                         <div className="flex items-center justify-end gap-1">
                           {row.accuracy >= 80
-                            ? <ChevronUp className="w-3.5 h-3.5" style={{ color: '#16a34a' }} />
-                            : <ChevronDown className="w-3.5 h-3.5" style={{ color: '#dc2626' }} />
+                            ? <ChevronUp className="w-3.5 h-3.5" style={{ color: '#3fb950' }} />
+                            : <ChevronDown className="w-3.5 h-3.5" style={{ color: '#f85149' }} />
                           }
-                          <span className="font-medium" style={{ color: row.accuracy >= 80 ? '#16a34a' : '#dc2626' }}>
+                          <span className="font-medium" style={{ color: row.accuracy >= 80 ? '#3fb950' : '#f85149' }}>
                             {row.accuracy}%
                           </span>
                         </div>
                       </td>
                     </tr>
                   ))}
+                  {!simulationHistory.length && (
+                    <tr><td colSpan={4} className="py-6 text-center text-muted-foreground">No simulation history yet.</td></tr>
+                  )}
                 </tbody>
               </table>
             </div>
@@ -185,35 +207,36 @@ export function Analytics({ onBack }: AnalyticsProps) {
         </Card>
 
         {/* Recent Feedback */}
-        <Card className="border-0 shadow-sm">
+        <Card>
           <CardHeader>
-            <CardTitle className="text-base" style={{ color: '#0f2240' }}>Recent Feedback</CardTitle>
+            <CardTitle className="text-base text-foreground">Recent Feedback</CardTitle>
             <CardDescription>Feedback from your latest simulations</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
-            {recentFeedback.map((fb, i) => (
-              <div key={i} className="p-3 rounded-lg border" style={{ borderColor: '#e2e8f0', backgroundColor: '#fafafa' }}>
+            {recentFeedback.map((fb) => (
+              <div key={`${fb.scenario}-${fb.attempted_at}`} className="p-3 rounded-md border border-border bg-muted">
                 <div className="flex items-start justify-between mb-1">
                   <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium" style={{ color: '#0f2240' }}>{fb.scenario}</span>
-                    <Badge className="text-xs" style={{ backgroundColor: fb.type === 'Email' ? 'rgba(14,165,233,0.1)' : 'rgba(139,92,246,0.1)', color: fb.type === 'Email' ? '#0ea5e9' : '#8b5cf6' }}>
+                    <span className="text-sm font-medium text-foreground">{fb.scenario}</span>
+                    <Badge className="text-xs border-0" style={{ backgroundColor: fb.type === 'EMAIL' ? 'rgba(56,189,248,0.12)' : 'rgba(188,140,255,0.12)', color: fb.type === 'EMAIL' ? '#38bdf8' : '#bc8cff' }}>
                       {fb.type}
                     </Badge>
                   </div>
                   <Badge
-                    className="text-xs"
+                    className="text-xs border-0"
                     style={{
-                      backgroundColor: fb.result === 'Correct' ? 'rgba(22,163,74,0.1)' : 'rgba(220,38,38,0.1)',
-                      color: fb.result === 'Correct' ? '#16a34a' : '#dc2626',
+                      backgroundColor: fb.correct ? 'rgba(63,185,80,0.12)' : 'rgba(248,81,73,0.12)',
+                      color: fb.correct ? '#3fb950' : '#f85149',
                     }}
                   >
-                    {fb.result}
+                    {fb.correct ? 'Correct' : 'Incorrect'}
                   </Badge>
                 </div>
-                <p className="text-xs" style={{ color: '#64748b' }}>{fb.note}</p>
-                <p className="text-xs mt-1" style={{ color: '#94a3b8' }}>{fb.date}</p>
+                <p className="text-xs text-muted-foreground">{fb.feedback}</p>
+                <p className="text-xs mt-1 text-muted-foreground">{new Date(fb.attempted_at).toLocaleString()}</p>
               </div>
             ))}
+            {!recentFeedback.length && <p className="text-sm text-muted-foreground">No simulation feedback yet.</p>}
           </CardContent>
         </Card>
       </div>

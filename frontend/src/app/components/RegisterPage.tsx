@@ -87,7 +87,33 @@ export function RegisterPage({ onNavigate, onRegister }: RegisterPageProps) {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background p-4">
+    <div className="min-h-screen flex bg-background">
+      <div
+        className="relative hidden w-1/2 overflow-hidden lg:flex lg:flex-col lg:justify-between lg:p-12"
+        style={{
+          backgroundImage:
+            "linear-gradient(180deg, rgba(5,8,12,0.85) 0%, rgba(5,8,12,0.7) 60%, rgba(5,8,12,0.95) 100%), url('/assets/IMG_5596.jpeg')",
+          backgroundPosition: "center",
+          backgroundSize: "cover",
+        }}
+      >
+        <div className="flex items-center gap-3">
+          <span className="flex h-10 w-10 items-center justify-center border border-sky-400/30 bg-sky-400/10">
+            <Shield className="h-5 w-5 text-sky-400" />
+          </span>
+          <span className="text-sm font-semibold tracking-[0.12em] text-white">PHISHSIMULATOR</span>
+        </div>
+        <div>
+          <h2 className="max-w-md text-3xl font-semibold leading-tight text-white">
+            Build the habits that stop phishing before it starts.
+          </h2>
+          <p className="mt-4 max-w-sm text-sm leading-6 text-slate-400">
+            Create your learner account to start adaptive, scenario-based training.
+          </p>
+        </div>
+      </div>
+
+      <div className="flex w-full items-center justify-center p-4 lg:w-1/2">
       <Card className="w-full max-w-xl">
         <CardHeader className="space-y-4">
           <Button
@@ -264,14 +290,14 @@ export function RegisterPage({ onNavigate, onRegister }: RegisterPageProps) {
             </div>
 
             {successMessage && (
-              <Alert className="border-green-200 bg-green-50">
-                <CheckCircle2 className="h-4 w-4 text-green-600" />
+              <Alert className="border-green-500/30 bg-green-500/10">
+                <CheckCircle2 className="h-4 w-4 text-green-400" />
 
-                <AlertTitle className="text-green-700">
+                <AlertTitle className="text-green-400">
                   Registration Successful
                 </AlertTitle>
 
-                <AlertDescription className="text-green-600">
+                <AlertDescription className="text-green-400/80">
                   {successMessage}
                 </AlertDescription>
               </Alert>
@@ -307,6 +333,7 @@ export function RegisterPage({ onNavigate, onRegister }: RegisterPageProps) {
           </form>
         </CardContent>
       </Card>
+      </div>
     </div>
   );
 }

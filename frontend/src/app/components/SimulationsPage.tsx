@@ -1,12 +1,25 @@
-import { ArrowLeft, Mail, MessageSquare } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { ArrowLeft, BarChart3, Mail, MessageSquare } from 'lucide-react';
 import { Button } from './ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
+import AnalyticsService from '../../services/analyticsService';
 
 interface SimulationsPageProps {
   onNavigate: (page: string) => void;
 }
 
 export function SimulationsPage({ onNavigate }: SimulationsPageProps) {
+  const [performance, setPerformance] = useState<{ by_type: Array<{ type: string; attempts: number }>; overall_accuracy: number } | null>(null);
+
+  useEffect(() => {
+    AnalyticsService.getMyPerformance().then((response) => {
+      if (response.ok) setPerformance(response.data.data);
+    }).catch((error) => console.error('Unable to load simulation progress.', error));
+  }, []);
+
+  const emailAttempts = performance?.by_type.find((item) => item.type === 'EMAIL')?.attempts ?? 0;
+  const smsAttempts = performance?.by_type.find((item) => item.type === 'SMS')?.attempts ?? 0;
+
   return (
     <div className="h-screen flex flex-col">
       <div className="border-b p-4 flex items-center gap-4">
@@ -80,17 +93,21 @@ export function SimulationsPage({ onNavigate }: SimulationsPageProps) {
               <div className="space-y-3">
                 <div className="flex justify-between items-center">
                   <span className="text-sm">Email Simulations Completed</span>
-                  <span className="font-semibold">22</span>
+                  <span className="font-semibold">{emailAttempts}</span>
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-sm">SMS Simulations Completed</span>
-                  <span className="font-semibold">13</span>
+                  <span className="font-semibold">{smsAttempts}</span>
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-sm">Overall Success Rate</span>
-                  <span className="font-semibold">78%</span>
+                  <span className="font-semibold">{performance?.overall_accuracy ?? 0}%</span>
                 </div>
               </div>
+              <Button variant="outline" className="w-full mt-4" onClick={() => onNavigate('performance')}>
+                <BarChart3 className="w-4 h-4 mr-2" />
+                View Detailed Performance
+              </Button>
             </CardContent>
           </Card>
         </div>

@@ -254,19 +254,16 @@ export function BaselineQuiz({ onBack }: BaselineQuizProps) {
 
   if (showResults) {
     return (
-      <div
-        className="h-full overflow-y-auto"
-        style={{ backgroundColor: "#f0f4f8" }}
-      >
-        <div className="border-b p-4 flex items-center gap-4 bg-white">
+      <div className="h-full overflow-y-auto">
+        <div className="border-b p-4 flex items-center gap-4 bg-card">
           <Button variant="ghost" size="icon" onClick={onBack}>
             <ArrowLeft className="w-5 h-5" />
           </Button>
           <div>
-            <h2 className="text-xl font-semibold" style={{ color: "#0f2240" }}>
+            <h2 className="text-xl font-semibold text-foreground">
               Baseline Assessment Results
             </h2>
-            <p className="text-sm" style={{ color: "#64748b" }}>
+            <p className="text-sm text-muted-foreground">
               Open-text evaluation complete
             </p>
           </div>
@@ -274,66 +271,60 @@ export function BaselineQuiz({ onBack }: BaselineQuizProps) {
 
         <div className="p-6 max-w-3xl mx-auto space-y-6">
           {/* Score Summary */}
-          <Card className="border-0 shadow-sm">
+          <Card>
             <CardContent className="p-6">
               <div className="flex items-center gap-6">
                 <div className="text-center">
                   <div
                     className="text-5xl font-bold"
-                    style={{ color: "#1e3a5f" }}
+                    style={{ color: "#2f81f7" }}
                   >
                     {overallPercent}%
                   </div>
-                  <div className="text-sm mt-1" style={{ color: "#64748b" }}>
+                  <div className="text-sm mt-1 text-muted-foreground">
                     Overall Score
                   </div>
                 </div>
-                <div
-                  className="h-16 w-px"
-                  style={{ backgroundColor: "#e2e8f0" }}
-                />
+                <div className="h-16 w-px bg-border" />
                 <div className="grid grid-cols-2 gap-4 flex-1">
                   <div>
                     <div
                       className="text-2xl font-bold"
-                      style={{ color: "#16a34a" }}
+                      style={{ color: "#3fb950" }}
                     >
                       {passed}/{questions.length}
                     </div>
-                    <div className="text-xs" style={{ color: "#64748b" }}>
+                    <div className="text-xs text-muted-foreground">
                       Questions Passed
                     </div>
                   </div>
                   <div>
                     <div
                       className="text-2xl font-bold"
-                      style={{ color: "#0ea5e9" }}
+                      style={{ color: "#38bdf8" }}
                     >
                       {totalScore}
                     </div>
-                    <div className="text-xs" style={{ color: "#64748b" }}>
+                    <div className="text-xs text-muted-foreground">
                       Keywords Matched
                     </div>
                   </div>
                   <div>
-                    <div
-                      className="text-2xl font-bold"
-                      style={{ color: "#0f2240" }}
-                    >
+                    <div className="text-2xl font-bold text-foreground">
                       {confidenceLevel}
                     </div>
-                    <div className="text-xs" style={{ color: "#64748b" }}>
+                    <div className="text-xs text-muted-foreground">
                       Confidence Level
                     </div>
                   </div>
                   <div>
                     <div
                       className="text-2xl font-bold"
-                      style={{ color: "#1e3a5f" }}
+                      style={{ color: "#2f81f7" }}
                     >
                       {startingDifficulty}
                     </div>
-                    <div className="text-xs" style={{ color: "#64748b" }}>
+                    <div className="text-xs text-muted-foreground">
                       Starting Difficulty
                     </div>
                   </div>
@@ -350,41 +341,35 @@ export function BaselineQuiz({ onBack }: BaselineQuizProps) {
             {results.map((result, i) => {
               const q = questions[i];
               return (
-                <Card key={i} className="border-0 shadow-sm">
+                <Card key={i}>
                   <CardHeader className="pb-2">
                     <div className="flex items-start gap-3">
                       {result.passed ? (
                         <CheckCircle2
-                          className="w-5 h-5 mt-0.5 flex-shrink-0"
-                          style={{ color: "#16a34a" }}
+                          className="w-5 h-5 mt-0.5 shrink-0"
+                          style={{ color: "#3fb950" }}
                         />
                       ) : (
                         <XCircle
-                          className="w-5 h-5 mt-0.5 flex-shrink-0"
-                          style={{ color: "#dc2626" }}
+                          className="w-5 h-5 mt-0.5 shrink-0"
+                          style={{ color: "#f85149" }}
                         />
                       )}
                       <div className="flex-1">
-                        <div
-                          className="font-medium text-sm"
-                          style={{ color: "#0f2240" }}
-                        >
+                        <div className="font-medium text-sm text-foreground">
                           {q.question}
                         </div>
                         <div className="flex items-center gap-3 mt-1">
-                          <span
-                            className="text-xs"
-                            style={{ color: "#64748b" }}
-                          >
+                          <span className="text-xs text-muted-foreground">
                             {result.score} / {result.maxScore} keywords matched
                           </span>
                           <Badge
-                            className="text-xs"
+                            className="text-xs border-0"
                             style={{
                               backgroundColor: result.passed
-                                ? "rgba(22,163,74,0.1)"
-                                : "rgba(220,38,38,0.1)",
-                              color: result.passed ? "#16a34a" : "#dc2626",
+                                ? "rgba(63,185,80,0.12)"
+                                : "rgba(248,81,73,0.12)",
+                              color: result.passed ? "#3fb950" : "#f85149",
                             }}
                           >
                             {result.passed ? "Passed" : "Needs Review"}
@@ -394,26 +379,17 @@ export function BaselineQuiz({ onBack }: BaselineQuizProps) {
                     </div>
                   </CardHeader>
                   <CardContent className="pt-0 space-y-3">
-                    <div
-                      className="p-3 rounded-lg"
-                      style={{ backgroundColor: "#f0f4f8" }}
-                    >
-                      <div
-                        className="text-xs font-medium mb-1"
-                        style={{ color: "#64748b" }}
-                      >
+                    <div className="p-3 rounded-lg bg-muted">
+                      <div className="text-xs font-medium mb-1 text-muted-foreground">
                         Your answer:
                       </div>
-                      <div className="text-sm" style={{ color: "#0f2240" }}>
+                      <div className="text-sm text-foreground">
                         {result.userAnswer || "(no answer provided)"}
                       </div>
                     </div>
                     {result.matchedKeywords.length > 0 && (
                       <div>
-                        <div
-                          className="text-xs font-medium mb-1.5"
-                          style={{ color: "#64748b" }}
-                        >
+                        <div className="text-xs font-medium mb-1.5 text-muted-foreground">
                           Matched keywords:
                         </div>
                         <div className="flex flex-wrap gap-1.5">
@@ -422,8 +398,8 @@ export function BaselineQuiz({ onBack }: BaselineQuizProps) {
                               key={kw}
                               className="px-2 py-0.5 rounded text-xs font-medium"
                               style={{
-                                backgroundColor: "rgba(22,163,74,0.1)",
-                                color: "#16a34a",
+                                backgroundColor: "rgba(63,185,80,0.12)",
+                                color: "#3fb950",
                               }}
                             >
                               {kw}
@@ -433,10 +409,7 @@ export function BaselineQuiz({ onBack }: BaselineQuizProps) {
                       </div>
                     )}
                     <div>
-                      <div
-                        className="text-xs font-medium mb-1.5"
-                        style={{ color: "#64748b" }}
-                      >
+                      <div className="text-xs font-medium mb-1.5 text-muted-foreground">
                         Expected keywords:
                       </div>
                       <div className="flex flex-wrap gap-1.5">
@@ -448,11 +421,11 @@ export function BaselineQuiz({ onBack }: BaselineQuizProps) {
                               backgroundColor: result.matchedKeywords.includes(
                                 kw,
                               )
-                                ? "rgba(22,163,74,0.1)"
-                                : "rgba(220,38,38,0.08)",
+                                ? "rgba(63,185,80,0.12)"
+                                : "rgba(248,81,73,0.12)",
                               color: result.matchedKeywords.includes(kw)
-                                ? "#16a34a"
-                                : "#dc2626",
+                                ? "#3fb950"
+                                : "#f85149",
                             }}
                           >
                             {kw}
@@ -463,15 +436,15 @@ export function BaselineQuiz({ onBack }: BaselineQuizProps) {
                     <div
                       className="flex items-start gap-2 p-3 rounded-lg"
                       style={{
-                        backgroundColor: "rgba(14,165,233,0.06)",
-                        border: "1px solid rgba(14,165,233,0.15)",
+                        backgroundColor: "rgba(56,189,248,0.08)",
+                        border: "1px solid rgba(56,189,248,0.2)",
                       }}
                     >
                       <Info
-                        className="w-4 h-4 flex-shrink-0 mt-0.5"
-                        style={{ color: "#0ea5e9" }}
+                        className="w-4 h-4 shrink-0 mt-0.5"
+                        style={{ color: "#38bdf8" }}
                       />
-                      <p className="text-xs" style={{ color: "#0f2240" }}>
+                      <p className="text-xs text-foreground">
                         {q.feedback}
                       </p>
                     </div>
@@ -482,11 +455,7 @@ export function BaselineQuiz({ onBack }: BaselineQuizProps) {
           </div>
 
           <div className="flex gap-3 pb-6">
-            <Button
-              onClick={onBack}
-              className="flex-1 text-white"
-              style={{ backgroundColor: "#1e3a5f" }}
-            >
+            <Button onClick={onBack} className="flex-1">
               Return to Dashboard
             </Button>
 
@@ -500,38 +469,32 @@ export function BaselineQuiz({ onBack }: BaselineQuizProps) {
   }
 
   return (
-    <div
-      className="h-full flex flex-col"
-      style={{ backgroundColor: "#f0f4f8" }}
-    >
+    <div className="h-full flex flex-col">
       {/* Header */}
-      <div className="border-b p-4 flex items-center gap-4 bg-white">
+      <div className="border-b p-4 flex items-center gap-4 bg-card">
         <Button variant="ghost" size="icon" onClick={onBack}>
           <ArrowLeft className="w-5 h-5" />
         </Button>
         <div className="flex-1">
-          <h2 className="text-xl font-semibold" style={{ color: "#0f2240" }}>
+          <h2 className="text-xl font-semibold text-foreground">
             Baseline Assessment
           </h2>
-          <p className="text-sm" style={{ color: "#64748b" }}>
+          <p className="text-sm text-muted-foreground">
             Open-text knowledge evaluation
           </p>
         </div>
         <Badge
           variant="outline"
           className="font-medium"
-          style={{ color: "#1e3a5f", borderColor: "#1e3a5f" }}
+          style={{ color: "#2f81f7", borderColor: "#2f81f7" }}
         >
           Question {currentIndex + 1} of {questions.length}
         </Badge>
       </div>
 
       {/* Progress */}
-      <div className="bg-white px-6 pb-4">
-        <div
-          className="flex justify-between text-xs mb-2"
-          style={{ color: "#94a3b8" }}
-        >
+      <div className="bg-card px-6 pb-4">
+        <div className="flex justify-between text-xs mb-2 text-muted-foreground">
           <span>Progress</span>
           <span>{Math.round(progress)}% complete</span>
         </div>
@@ -545,22 +508,22 @@ export function BaselineQuiz({ onBack }: BaselineQuizProps) {
           <div
             className="flex items-start gap-3 p-4 rounded-xl"
             style={{
-              backgroundColor: "rgba(30,58,95,0.06)",
-              border: "1px solid rgba(30,58,95,0.12)",
+              backgroundColor: "rgba(47,129,247,0.08)",
+              border: "1px solid rgba(47,129,247,0.2)",
             }}
           >
             <Info
-              className="w-4 h-4 flex-shrink-0 mt-0.5"
-              style={{ color: "#1e3a5f" }}
+              className="w-4 h-4 shrink-0 mt-0.5"
+              style={{ color: "#2f81f7" }}
             />
             <div>
               <div
                 className="text-sm font-medium mb-1"
-                style={{ color: "#1e3a5f" }}
+                style={{ color: "#2f81f7" }}
               >
                 Instructions
               </div>
-              <p className="text-sm" style={{ color: "#64748b" }}>
+              <p className="text-sm text-muted-foreground">
                 This assessment uses open-text responses. Write your answers in
                 your own words. Your response will be evaluated based on key
                 concepts and terminology.
@@ -569,23 +532,20 @@ export function BaselineQuiz({ onBack }: BaselineQuizProps) {
           </div>
 
           {/* Question Card */}
-          <Card className="border-0 shadow-sm">
+          <Card>
             <CardHeader>
               <div className="flex items-start gap-3">
                 <div
-                  className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold text-white flex-shrink-0"
-                  style={{ backgroundColor: "#1e3a5f" }}
+                  className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold text-white shrink-0"
+                  style={{ backgroundColor: "#2f81f7" }}
                 >
                   {currentIndex + 1}
                 </div>
                 <div>
-                  <CardTitle
-                    className="text-base leading-normal"
-                    style={{ color: "#0f2240" }}
-                  >
+                  <CardTitle className="text-base leading-normal text-foreground">
                     {currentQuestion.question}
                   </CardTitle>
-                  <p className="text-sm mt-2" style={{ color: "#64748b" }}>
+                  <p className="text-sm mt-2 text-muted-foreground">
                     {currentQuestion.instruction}
                   </p>
                 </div>
@@ -596,18 +556,15 @@ export function BaselineQuiz({ onBack }: BaselineQuizProps) {
                 placeholder="Type your answer here..."
                 value={userAnswer}
                 onChange={(e) => setUserAnswer(e.target.value)}
-                className="min-h-[160px] resize-none text-sm"
-                style={{ borderColor: "#e2e8f0" }}
+                className="min-h-40 resize-none text-sm"
               />
               <div className="flex items-center justify-between">
-                <span className="text-xs" style={{ color: "#94a3b8" }}>
+                <span className="text-xs text-muted-foreground">
                   {userAnswer.length} characters — try to be thorough
                 </span>
                 <Button
                   onClick={handleSubmit}
                   disabled={userAnswer.trim().length < 10}
-                  className="text-white"
-                  style={{ backgroundColor: "#1e3a5f" }}
                 >
                   {currentIndex < questions.length - 1
                     ? "Next Question"
