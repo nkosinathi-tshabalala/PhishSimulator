@@ -1,3 +1,5 @@
+# Database table: the player profile linked to a user account
+
 from datetime import datetime
 
 from app.extensions import db
@@ -8,13 +10,11 @@ class Player(db.Model):
 
     __tablename__ = "player"
 
-    # Primary Key
     player_id = db.Column(
         db.Integer,
         primary_key=True
     )
 
-    # Foreign Key
     user_id = db.Column(
         db.Integer,
         db.ForeignKey("user.user_id"),
@@ -22,7 +22,6 @@ class Player(db.Model):
         unique=True
     )
 
-    # Player Details
     full_name = db.Column(
         db.String(150),
         nullable=False
@@ -34,7 +33,6 @@ class Player(db.Model):
         nullable=False
     )
 
-    # Relationships
     user = db.relationship(
         "User",
         back_populates="player"
@@ -54,4 +52,5 @@ class Player(db.Model):
     )   
 
     def __repr__(self):
+        """Short text shown when debugging."""
         return f"<Player {self.full_name}>"

@@ -1,8 +1,11 @@
+// Admin page: home dashboard
+
 import { useEffect, useState } from 'react';
-import { Users, Database, FileText, Activity, BarChart3, Send, ChevronRight, TrendingUp, UserCheck } from 'lucide-react';
+import { Users, Database, FileText, Activity, BarChart3, Send, ChevronRight, TrendingUp, UserCheck, MousePointerClick } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
 import AnalyticsService from '../../services/analyticsService';
+import { StatCard, type StatTone } from './StatCard';
 
 interface AdminDashboardProps {
   onNavigate: (page: string) => void;
@@ -14,9 +17,14 @@ interface DashboardStats {
   datasets: number;
   scenarios: number;
   active_scenarios: number;
+  scenarios_awaiting_review: number;
   simulation_sessions: number;
   sessions_today: number;
   average_accuracy: number;
+  campaigns_launched: number;
+  campaign_emails_delivered: number;
+  campaign_click_rate: number;
+  campaign_report_rate: number;
   recent_activity: RecentActivity[];
 }
 
@@ -27,6 +35,15 @@ interface RecentActivity {
   type: 'user' | 'dataset' | 'scenario' | 'simulation';
 }
 
+// Where each kind of recent activity takes the admin when clicked
+const ACTIVITY_PAGES: Record<string, string> = {
+  user: "users",
+  dataset: "datasets",
+  scenario: "scenarios",
+  simulation: "analytics",
+};
+
+/** Admin home: platform totals, recent activity and shortcuts. */
 export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
   const [dashboardStats, setDashboardStats] = useState<DashboardStats | null>(null);
   const [statsError, setStatsError] = useState(false);
@@ -50,18 +67,21 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
     loadDashboardStats();
   }, []);
 
-  const stats = [
-    { label: 'Total Users', value: dashboardStats?.total_users, icon: Users, color: '#38bdf8', bg: 'rgba(56,189,248,0.12)', delta: 'All registered accounts' },
-    { label: 'Registered Players', value: dashboardStats?.registered_players, icon: UserCheck, color: '#3fb950', bg: 'rgba(63,185,80,0.12)', delta: 'Player accounts' },
-    { label: 'Datasets', value: dashboardStats?.datasets, icon: Database, color: '#bc8cff', bg: 'rgba(188,140,255,0.12)', delta: 'Uploaded datasets' },
-    { label: 'Scenarios', value: dashboardStats?.scenarios, icon: FileText, color: '#2f81f7', bg: 'rgba(47,129,247,0.12)', delta: `${dashboardStats?.active_scenarios ?? 0} active` },
-    { label: 'Simulation Sessions', value: dashboardStats?.simulation_sessions, icon: Activity, color: '#f2cc60', bg: 'rgba(242,204,96,0.12)', delta: `+${dashboardStats?.sessions_today ?? 0} today` },
-    { label: 'Average Accuracy', value: dashboardStats ? `${dashboardStats.average_accuracy}%` : undefined, icon: BarChart3, color: '#38bdf8', bg: 'rgba(56,189,248,0.12)', delta: 'Platform-wide' },
+  // Each card opens the page it summarises
+  const stats: Array<{ label: string; value: string | number | undefined; icon: typeof Users; tone: StatTone; delta: string; page: string }> = [
+    { label: 'Total Users', value: dashboardStats?.total_users, icon: Users, tone: 'sky', delta: 'All registered accounts', page: 'users' },
+    { label: 'Registered Players', value: dashboardStats?.registered_players, icon: UserCheck, tone: 'green', delta: 'Player accounts', page: 'users' },
+    { label: 'Datasets', value: dashboardStats?.datasets, icon: Database, tone: 'violet', delta: 'Uploaded datasets', page: 'datasets' },
+    { label: 'Scenarios', value: dashboardStats?.scenarios, icon: FileText, tone: 'blue', delta: `${dashboardStats?.active_scenarios ?? 0} active · ${dashboardStats?.scenarios_awaiting_review ?? 0} awaiting review`, page: 'scenarios' },
+    { label: 'Simulation Sessions', value: dashboardStats?.simulation_sessions, icon: Activity, tone: 'amber', delta: `+${dashboardStats?.sessions_today ?? 0} today`, page: 'analytics' },
+    { label: 'Average Accuracy', value: dashboardStats ? `${dashboardStats.average_accuracy}%` : undefined, icon: BarChart3, tone: 'orange', delta: 'Training and campaigns', page: 'analytics' },
+    { label: 'Email Campaigns', value: dashboardStats?.campaigns_launched, icon: Send, tone: 'pink', delta: `${dashboardStats?.campaign_emails_delivered ?? 0} emails delivered`, page: 'email-dispatcher' },
+    { label: 'Campaign Click Rate', value: dashboardStats ? `${dashboardStats.campaign_click_rate}%` : undefined, icon: MousePointerClick, tone: 'red', delta: `${dashboardStats?.campaign_report_rate ?? 0}% reported instead`, page: 'email-dispatcher' },
   ];
 
   const shortcuts = [
     { label: 'Manage Datasets', icon: Database, page: 'datasets', description: 'Upload, generate, and manage training datasets' },
-    { label: 'Manage Scenarios', icon: FileText, page: 'scenarios', description: 'Create, edit, and preview phishing scenarios' },
+    { label: 'Scenario Review', icon: FileText, page: 'scenarios', description: 'Approve drafts with the QA checklist and activate them' },
     { label: 'Manage Users', icon: Users, page: 'users', description: 'Monitor player profiles and activity' },
     { label: 'System Analytics', icon: TrendingUp, page: 'analytics', description: 'Platform-wide statistics and insights' },
     { label: 'Email Campaign Manager', icon: Send, page: 'email-dispatcher', description: 'Send phishing simulations via SMTP' },
@@ -85,7 +105,6 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
 
   return (
     <div className="p-6 space-y-6 overflow-y-auto h-full">
-      {/* Header */}
       <div className="flex items-start justify-between">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Administrator Dashboard</h1>
@@ -96,21 +115,17 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
         </Badge>
       </div>
 
-      {/* Stats Grid */}
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {stats.map((stat) => (
-          <Card key={stat.label}>
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between mb-3">
-                <div className="w-9 h-9 rounded-md flex items-center justify-center" style={{ backgroundColor: stat.bg }}>
-                  <stat.icon className="w-4 h-4" style={{ color: stat.color }} />
-                </div>
-              </div>
-              <div className="text-2xl font-bold text-foreground">{stat.value ?? '...'}</div>
-              <div className="text-xs mt-0.5 text-muted-foreground">{stat.label}</div>
-              <div className="text-xs mt-1 font-medium" style={{ color: stat.color }}>{stat.delta}</div>
-            </CardContent>
-          </Card>
+          <StatCard
+            key={stat.label}
+            label={stat.label}
+            value={stat.value}
+            hint={stat.delta}
+            icon={stat.icon}
+            tone={stat.tone}
+            onClick={() => onNavigate(stat.page)}
+          />
         ))}
       </div>
 
@@ -121,7 +136,6 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Shortcuts */}
         <div className="lg:col-span-2">
           <Card>
             <CardHeader className="pb-3">
@@ -151,7 +165,6 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
           </Card>
         </div>
 
-        {/* Recent Activity */}
         <div className="lg:col-span-1">
           <Card className="h-full">
             <CardHeader className="pb-3">
@@ -160,14 +173,19 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
             </CardHeader>
             <CardContent className="p-4 pt-0 space-y-3">
               {dashboardStats?.recent_activity.length ? dashboardStats.recent_activity.map((item) => (
-                <div key={`${item.type}-${item.occurred_at}-${item.detail}`} className="flex items-start gap-3">
+                <button
+                  type="button"
+                  key={`${item.type}-${item.occurred_at}-${item.detail}`}
+                  onClick={() => onNavigate(ACTIVITY_PAGES[item.type] ?? "admin-dashboard")}
+                  className="flex w-full items-start gap-3 rounded-md p-2 -mx-2 text-left transition-colors hover:bg-white/5"
+                >
                   <div className="w-2 h-2 rounded-full mt-1.5 shrink-0" style={{ backgroundColor: typeColor[item.type]?.color || '#8b949e' }} />
                   <div>
                     <div className="text-sm font-medium text-foreground">{item.action}</div>
                     <div className="text-xs text-muted-foreground">{item.detail}</div>
                     <div className="text-xs mt-0.5 text-muted-foreground">{formatActivityTime(item.occurred_at)}</div>
                   </div>
-                </div>
+                </button>
               )) : (
                 <p className="text-sm text-muted-foreground">No platform activity yet.</p>
               )}

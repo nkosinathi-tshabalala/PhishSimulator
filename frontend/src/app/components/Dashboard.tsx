@@ -1,27 +1,39 @@
+// Player page: Home
+
+import { useEffect, useState, type ReactNode } from "react";
 import {
+  Activity,
+  AlertTriangle,
   Award,
+  ChevronRight,
+  ClipboardList,
+  Flame,
+  History,
+  ListChecks,
   Mail,
   MessageSquare,
+  ShieldCheck,
+  Sparkles,
   Target,
-  TrendingUp,
-  AlertTriangle,
-  CheckCircle2,
-  ClipboardList,
-  Activity,
-  ChevronRight,
+  Trophy,
+  Zap,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
 import { Button } from "./ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "./ui/card";
-import { Progress } from "./ui/progress";
-import { Badge } from "./ui/badge";
+import { Skeleton } from "./ui/skeleton";
 import AnalyticsService from "../../services/analyticsService";
+import {
+  BADGE_ICONS,
+  BadgeGrid,
+  DailyGoalRing,
+  SkillRankCard,
+  StreakFlame,
+  XpProgress,
+} from "./progress/ProgressWidgets";
+import { goalPercent, pickGoals, type Goal, type GoalKind } from "./progress/goals";
+import { ChannelBadge, DifficultyBadge } from "./visuals";
+import { CampaignInbox, CampaignTag, formatXp } from "./CampaignInbox";
+import type { Progress as PlayerProgress } from "../../types/catch";
 
 interface CurrentUser {
   user_id: number;
@@ -38,321 +50,480 @@ interface DashboardProps {
   onNavigate: (page: string) => void;
 }
 
-interface PlayerPerformance {
+interface PlayerPerformance extends PlayerProgress {
   overall_accuracy: number;
   false_positive_rate: number;
   false_negative_rate: number;
+  phishing_links_clicked: number;
+  malicious_files_opened: number;
   total_attempts: number;
   correct_attempts: number;
   baseline_score: number | null;
   difficulty: string;
-  xp_into_level: number;
-  level: number;
-  rank: number;
-  recent_attempts: Array<{ scenario: string; type: string; correct: boolean; attempted_at: string }>;
+  adaptive_reason: string;
+  recent_attempts: Array<{
+    scenario: string;
+    type: string;
+    correct: boolean;
+    xp_earned: number;
+    attempted_at: string;
+    /** CAMPAIGN when it came from a real email the player received, TRAINING otherwise. */
+    source?: "CAMPAIGN" | "TRAINING";
+  }>;
 }
 
+const GOAL_ICONS: Record<GoalKind, typeof Target> = {
+  quiz: ClipboardList,
+  daily: Target,
+  rating: ShieldCheck,
+  tier: ShieldCheck,
+  level: Sparkles,
+  badge: Award,
+  streak: Flame,
+  decisions: ListChecks,
+};
+
+/** Good morning, afternoon or evening. */
+function greeting() {
+  const hour = new Date().getHours();
+  if (hour < 12) return "Good morning";
+  if (hour < 18) return "Good afternoon";
+  return "Good evening";
+}
+
+/** Player home page: level, daily goal, stats, goals, rank and badges. */
 export function Dashboard({ user, onNavigate }: DashboardProps) {
   const [performance, setPerformance] = useState<PlayerPerformance | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
+  // Runs each time the player comes back to Home, so goals always reflect the latest progress
   useEffect(() => {
-    AnalyticsService.getMyPerformance().then((response) => {
-      if (response.ok) setPerformance(response.data.data);
-    }).catch((error) => console.error("Unable to load player dashboard.", error));
+    AnalyticsService.getMyPerformance()
+      .then((response) => {
+        if (response.ok) setPerformance(response.data.data);
+      })
+      .finally(() => setIsLoading(false));
   }, []);
 
-  const stats = [
-    {
-      label: "Overall Accuracy",
-      value: performance ? `${performance.overall_accuracy}%` : "...",
-      icon: Target,
-      color: "#38bdf8",
-      bg: "rgba(56,189,248,0.12)",
-    },
-    {
-      label: "False Positives",
-      value: performance ? `${performance.false_positive_rate}%` : "...",
-      icon: AlertTriangle,
-      color: "#f2cc60",
-      bg: "rgba(242,204,96,0.12)",
-    },
-    {
-      label: "False Negatives",
-      value: performance ? `${performance.false_negative_rate}%` : "...",
-      icon: AlertTriangle,
-      color: "#f85149",
-      bg: "rgba(248,81,73,0.12)",
-    },
-    {
-      label: "Simulations Done",
-      value: performance?.total_attempts ?? "...",
-      icon: CheckCircle2,
-      color: "#3fb950",
-      bg: "rgba(63,185,80,0.12)",
-    },
-  ];
-
-  const quickActions = [
-    {
-      label: "Start Baseline Assessment",
-      icon: ClipboardList,
-      page: "quiz",
-      description: "Evaluate your current knowledge",
-    },
-    {
-      label: "Email Simulation",
-      icon: Mail,
-      page: "email",
-      description: "Identify phishing emails",
-    },
-    {
-      label: "SMS Simulation",
-      icon: MessageSquare,
-      page: "sms",
-      description: "Detect smishing attacks",
-    },
-    {
-      label: "View Performance",
-      icon: Activity,
-      page: "performance",
-      description: "Track your progress",
-    },
-  ];
-
-  const formatTime = (value: string) => new Date(value).toLocaleString();
+  const firstName = user?.full_name?.split(" ")[0] ?? "there";
 
   return (
     <div className="p-6 space-y-6 overflow-y-auto h-full">
-      {/* Header */}
-      <div className="flex items-start justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">
-            Welcome back, {user?.full_name ?? "Player"}
-          </h1>
+      <WelcomeBanner
+        firstName={firstName}
+        performance={performance}
+        isLoading={isLoading}
+        onNavigate={onNavigate}
+      />
 
-          <p className="text-sm mt-1 text-muted-foreground">
-            {user?.occupation} • Ready for today's phishing awareness training.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Badge className="text-xs px-3 py-1">
-            Level {performance?.level ?? "..."}
-          </Badge>
-          <Badge variant="outline" className="text-xs px-3 py-1">
-            Rank #{performance?.rank ?? "..."}
-          </Badge>
-        </div>
-      </div>
+      <CampaignInbox />
 
-      {/* Profile Summary Row */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 p-4 rounded-md bg-secondary border border-border">
-        {[
-          { label: "Current Level", value: performance?.level ?? "..." },
-          { label: "Baseline Score", value: performance?.baseline_score !== null && performance ? `${performance.baseline_score}%` : "Not assessed" },
-          { label: "Current Difficulty", value: performance?.difficulty ?? "..." },
-          { label: "Current Rank", value: performance ? `#${performance.rank}` : "..." },
-        ].map((item) => (
-          <div key={item.label} className="text-center">
-            <div className="text-2xl font-bold text-foreground">{item.value}</div>
-            <div className="text-xs mt-0.5 text-muted-foreground">
-              {item.label}
-            </div>
+      <TrainingCards onNavigate={onNavigate} />
+
+      {isLoading ? (
+        <DashboardSkeletons />
+      ) : performance && (
+        <>
+          <StatCards performance={performance} />
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <GoalsPanel performance={performance} onNavigate={onNavigate} />
+            <Panel icon={ShieldCheck} iconClass="text-violet-300" title="Rank & level" description="Private: only you can see your rank">
+              <div className="space-y-5">
+                <SkillRankCard skill={performance.skill} showNextTier={false} />
+                <div className="border-t border-border pt-4">
+                  <XpProgress progress={performance} />
+                </div>
+              </div>
+            </Panel>
+            <RecentActivity performance={performance} onNavigate={onNavigate} />
           </div>
-        ))}
-      </div>
 
-      {/* Stat Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {stats.map((stat) => (
-          <Card key={stat.label}>
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between mb-3">
-                <div
-                  className="w-9 h-9 rounded-md flex items-center justify-center"
-                  style={{ backgroundColor: stat.bg }}
-                >
-                  <stat.icon
-                    className="w-4 h-4"
-                    style={{ color: stat.color }}
-                  />
-                </div>
-              </div>
-              <div className="text-2xl font-bold text-foreground">
-                {stat.value}
-              </div>
-              <div className="text-xs mt-0.5 text-muted-foreground">
-                {stat.label}
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+          <Panel
+            icon={Trophy}
+            iconClass="text-amber-400"
+            title="Badges"
+            description={`${performance.badges.filter((badge) => badge.earned).length} of ${performance.badges.length} earned. Hover or tap one to see how to earn it.`}
+          >
+            <BadgeGrid badges={performance.badges} />
+          </Panel>
+        </>
+      )}
+    </div>
+  );
+}
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Quick Actions */}
-        <div className="lg:col-span-1">
-          <Card className="h-full">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base text-foreground">
-                Quick Actions
-              </CardTitle>
-              <CardDescription>Jump into a training session</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-2 p-4 pt-0">
-              {quickActions.map((action) => (
-                <button
-                  key={action.label}
-                  onClick={() => onNavigate(action.page)}
-                  className="w-full flex items-center justify-between p-3 rounded-md border border-border transition-colors text-left hover:border-primary hover:bg-primary/5 group"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-md flex items-center justify-center bg-muted">
-                      <action.icon className="w-4 h-4 text-primary" />
-                    </div>
-                    <div>
-                      <div className="text-sm font-medium text-foreground">
-                        {action.label}
-                      </div>
-                      <div className="text-xs text-muted-foreground">
-                        {action.description}
-                      </div>
-                    </div>
-                  </div>
-                  <ChevronRight className="w-4 h-4 text-muted-foreground" />
-                </button>
-              ))}
-            </CardContent>
-          </Card>
+/** Card with the same header layout everywhere on this page, so panels line up. */
+function Panel({ icon: Icon, iconClass, title, description, action, className = "", children }: {
+  icon: typeof Target;
+  iconClass: string;
+  title: string;
+  description?: string;
+  action?: ReactNode;
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <Card className={`h-full gap-4 ${className}`}>
+      <CardHeader className="flex flex-row items-start justify-between gap-3">
+        <div className="space-y-1.5 min-w-0">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Icon className={`w-4 h-4 ${iconClass}`} />
+            {title}
+          </CardTitle>
+          {description && <CardDescription className="text-sm">{description}</CardDescription>}
         </div>
+        {action}
+      </CardHeader>
+      <CardContent className="flex-1 flex flex-col">{children}</CardContent>
+    </Card>
+  );
+}
 
-        {/* Progress & Recent Activity */}
-        <div className="lg:col-span-2 space-y-6">
-          {/* Adaptive Progress */}
-          <Card>
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-base text-foreground">
-                  Adaptive Learning Progress
-                </CardTitle>
-                <Badge className="text-xs bg-primary/10 text-primary border-0">
-                  {performance?.difficulty ?? "..."} Difficulty
-                </Badge>
-              </div>
-              <CardDescription>Progress toward next level</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4 p-4 pt-0">
-              <div>
-                <div className="flex justify-between text-sm mb-2">
-                  <span className="text-muted-foreground">Level {performance?.level ?? "..."} Progress</span>
-                  <span className="font-medium text-foreground">
-                    {performance?.xp_into_level ?? 0} / 100 XP
-                  </span>
-                </div>
-                <Progress value={performance?.xp_into_level ?? 0} className="h-2.5" />
-              </div>
-              <div className="grid grid-cols-3 gap-3 pt-1">
-                <div className="text-center p-3 rounded-md bg-muted">
-                  <div className="font-bold text-lg" style={{ color: "#3fb950" }}>
-                    {performance?.correct_attempts ?? 0}
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    Correct
-                  </div>
-                </div>
-                <div className="text-center p-3 rounded-md bg-muted">
-                  <div className="font-bold text-lg" style={{ color: "#f2cc60" }}>
-                    {performance ? Math.round((performance.false_positive_rate / 100) * performance.total_attempts) : 0}
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    False +
-                  </div>
-                </div>
-                <div className="text-center p-3 rounded-md bg-muted">
-                  <div className="font-bold text-lg" style={{ color: "#f85149" }}>
-                    {performance ? Math.round((performance.false_negative_rate / 100) * performance.total_attempts) : 0}
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    False -
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+/** Greeting with level, streak, difficulty, the daily goal ring and a start button. */
+function WelcomeBanner({ firstName, performance, isLoading, onNavigate }: {
+  firstName: string;
+  performance: PlayerPerformance | null;
+  isLoading: boolean;
+  onNavigate: (page: string) => void;
+}) {
+  const percent = performance?.xp_for_next_level
+    ? Math.round((performance.xp_into_level / performance.xp_for_next_level) * 100)
+    : 100;
 
-          {/* Recent Activity */}
-          <Card>
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-base text-foreground">
-                  Recent Simulations
-                </CardTitle>
-                <button
-                  onClick={() => onNavigate("performance")}
-                  className="text-xs font-medium text-primary hover:underline"
-                >
-                  View All
-                </button>
-              </div>
-            </CardHeader>
-            <CardContent className="p-4 pt-0">
-              <div className="space-y-2">
-                {performance?.recent_attempts.map((activity) => (
-                  <div
-                    key={`${activity.scenario}-${activity.attempted_at}`}
-                    className="flex items-center justify-between py-2.5 border-b border-border last:border-b-0"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div
-                        className="w-7 h-7 rounded-md flex items-center justify-center"
-                        style={{
-                          backgroundColor:
-                            activity.type === "EMAIL"
-                              ? "rgba(56,189,248,0.12)"
-                              : "rgba(188,140,255,0.12)",
-                        }}
-                      >
-                        {activity.type === "EMAIL" ? (
-                          <Mail
-                            className="w-3.5 h-3.5"
-                            style={{ color: "#38bdf8" }}
-                          />
-                        ) : (
-                          <MessageSquare
-                            className="w-3.5 h-3.5"
-                            style={{ color: "#bc8cff" }}
-                          />
-                        )}
-                      </div>
-                      <div>
-                        <div className="text-sm font-medium text-foreground">
-                          {activity.scenario}
-                        </div>
-                        <div className="text-xs text-muted-foreground">
-                          {formatTime(activity.attempted_at)}
-                        </div>
-                      </div>
-                    </div>
-                    <Badge
-                      className="text-xs border-0"
-                      style={{
-                        backgroundColor: activity.correct
-                          ? "rgba(63,185,80,0.12)"
-                          : "rgba(248,81,73,0.12)",
-                        color: activity.correct ? "#3fb950" : "#f85149",
-                      }}
-                    >
-                      {activity.correct ? "Correct" : "Incorrect"}
-                    </Badge>
-                  </div>
-                ))}
-                {!performance?.recent_attempts.length && (
-                  <p className="text-sm text-muted-foreground">No simulations completed yet.</p>
-                )}
-              </div>
-            </CardContent>
-          </Card>
+  return (
+    <div className="relative overflow-hidden rounded-2xl border border-sky-500/20 bg-linear-to-br from-sky-600/30 via-indigo-600/20 to-violet-700/20 p-6">
+      <div className="absolute -right-10 -top-10 w-48 h-48 rounded-full bg-sky-400/10 blur-2xl" aria-hidden />
+      <div className="relative flex flex-col md:flex-row md:items-center gap-6">
+        <LevelRing level={performance?.level} percent={percent} />
+        <div className="flex-1 min-w-0">
+          <h1 className="text-2xl font-bold text-white">
+            {greeting()}, {firstName}!
+          </h1>
+          <p className="text-sm text-sky-100/80 mt-1">
+            {isLoading
+              ? "Loading your progress..."
+              : performance?.total_attempts
+                ? `You've made ${performance.total_attempts} decisions. Next up: ${performance.difficulty} scenarios.`
+                : "Ready for your first scenario? Spot the phish before it spots you."}
+          </p>
+          {performance && (
+            <div className="flex flex-wrap items-center gap-2 mt-3">
+              <span className="inline-flex items-center gap-1 rounded-full bg-black/25 px-3 py-1 text-xs text-white">
+                <StreakFlame days={performance.daily_streak} className="text-xs" />
+                day streak
+              </span>
+              <DifficultyBadge difficulty={performance.difficulty} title={performance.adaptive_reason} />
+            </div>
+          )}
+        </div>
+        <div className="flex items-center gap-5">
+          {performance && (
+            <div className="flex flex-col items-center" title="Decisions today towards your daily goal">
+              <DailyGoalRing progress={performance} />
+              <span className="mt-1 text-[10px] uppercase tracking-wide text-sky-100/70">Daily goal</span>
+            </div>
+          )}
+          <Button size="lg" className="bg-white text-slate-900 hover:bg-sky-100" onClick={() => onNavigate("simulations")}>
+            <Flame className="w-4 h-4 mr-2 text-orange-500" />
+            {performance?.practised_today ? "Keep training" : "Start training"}
+          </Button>
         </div>
       </div>
     </div>
+  );
+}
+
+/** Circular progress towards the next level. */
+function LevelRing({ level, percent }: { level?: number; percent: number }) {
+  const radius = 34;
+  const circumference = 2 * Math.PI * radius;
+  return (
+    <div className="relative w-24 h-24 shrink-0">
+      <svg viewBox="0 0 80 80" className="w-24 h-24 -rotate-90">
+        <circle cx="40" cy="40" r={radius} strokeWidth="7" className="fill-none stroke-white/15" />
+        <circle
+          cx="40"
+          cy="40"
+          r={radius}
+          strokeWidth="7"
+          strokeLinecap="round"
+          className="fill-none stroke-amber-300 transition-all duration-700"
+          strokeDasharray={circumference}
+          strokeDashoffset={circumference * (1 - percent / 100)}
+        />
+      </svg>
+      <div className="absolute inset-0 flex flex-col items-center justify-center">
+        <span className="text-[10px] uppercase tracking-wide text-sky-100/70">Level</span>
+        <span className="text-2xl font-bold text-white">{level ?? "–"}</span>
+      </div>
+    </div>
+  );
+}
+
+/** Shortcuts to email, SMS and Inbox Rush training. */
+function TrainingCards({ onNavigate }: { onNavigate: (page: string) => void }) {
+  const cards = [
+    {
+      page: "email",
+      title: "Email training",
+      text: "Inspect a realistic inbox",
+      icon: Mail,
+      tone: "from-sky-500/30 to-sky-700/10 border-sky-500/30 text-sky-200",
+    },
+    {
+      page: "sms",
+      title: "SMS training",
+      text: "Spot smishing on a phone",
+      icon: MessageSquare,
+      tone: "from-purple-500/30 to-purple-700/10 border-purple-500/30 text-purple-200",
+    },
+    {
+      page: "triage",
+      title: "Inbox Rush",
+      text: "Sort a whole inbox against the clock",
+      icon: Zap,
+      tone: "from-orange-500/30 via-pink-500/15 to-violet-600/10 border-orange-400/30 text-orange-200",
+    },
+  ];
+
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      {cards.map((card) => (
+        <button
+          key={card.page}
+          onClick={() => onNavigate(card.page)}
+          className={`group flex items-center gap-4 rounded-xl border bg-linear-to-br p-4 text-left transition-transform hover:-translate-y-0.5 ${card.tone}`}
+        >
+          <div className="w-11 h-11 rounded-lg bg-white/10 flex items-center justify-center shrink-0">
+            <card.icon className="w-6 h-6 transition-transform group-hover:scale-110" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="font-semibold text-white">{card.title}</div>
+            <div className="text-xs opacity-80 truncate">{card.text}</div>
+          </div>
+          <ChevronRight className="w-4 h-4 opacity-60 transition-transform group-hover:translate-x-0.5" />
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** Accuracy, missed phishing, false alarms and risky clicks. */
+function StatCards({ performance }: { performance: PlayerPerformance }) {
+  const stats = [
+    {
+      label: "Accuracy",
+      value: `${performance.overall_accuracy}%`,
+      hint: `${performance.correct_attempts} of ${performance.total_attempts} correct`,
+      icon: Target,
+      tone: "from-sky-500/25 to-sky-500/5 text-sky-300",
+    },
+    {
+      label: "Missed phishing",
+      value: `${performance.false_negative_rate}%`,
+      hint: "Phishing you marked safe",
+      icon: AlertTriangle,
+      tone: "from-red-500/25 to-red-500/5 text-red-300",
+    },
+    {
+      label: "False alarms",
+      value: `${performance.false_positive_rate}%`,
+      hint: "Safe messages you reported",
+      icon: Activity,
+      tone: "from-amber-500/25 to-amber-500/5 text-amber-300",
+    },
+    {
+      label: "Risky clicks",
+      value: performance.phishing_links_clicked + performance.malicious_files_opened,
+      hint: `${performance.phishing_links_clicked} links, ${performance.malicious_files_opened} files. Aim for zero`,
+      icon: Flame,
+      tone: "from-orange-500/25 to-orange-500/5 text-orange-300",
+    },
+  ];
+
+  return (
+    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      {stats.map((stat) => (
+        <div key={stat.label} className={`rounded-xl border border-border bg-linear-to-br p-4 ${stat.tone}`}>
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-foreground">{stat.label}</span>
+            <stat.icon className="w-4 h-4" />
+          </div>
+          <div className="mt-2 text-2xl font-bold text-white">{stat.value}</div>
+          <div className="text-xs text-muted-foreground mt-0.5 truncate" title={stat.hint}>{stat.hint}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** One current goal to act on now, and the next four lined up behind it. */
+function GoalsPanel({ performance, onNavigate }: {
+  performance: PlayerPerformance;
+  onNavigate: (page: string) => void;
+}) {
+  const { current, next } = pickGoals(performance);
+
+  return (
+    <Panel icon={Zap} iconClass="text-orange-300" title="Goals" description="Finish one and the next moves up">
+      {current ? (
+        <div className="space-y-5">
+          <CurrentGoal goal={current} onNavigate={onNavigate} />
+          {next.length > 0 && (
+            <div>
+              <p className="mb-3 text-[11px] uppercase tracking-wide text-muted-foreground">Up next</p>
+              <ul className="space-y-3">
+                {next.map((goal) => <GoalRow key={goal.id} goal={goal} onNavigate={onNavigate} />)}
+              </ul>
+            </div>
+          )}
+        </div>
+      ) : (
+        <p className="text-sm text-muted-foreground">Every goal is done. New ones appear as you keep training.</p>
+      )}
+    </Panel>
+  );
+}
+
+/** Icon for a goal: a badge goal uses that badge's own icon. */
+function goalIcon(goal: Goal) {
+  return goal.badgeKey ? BADGE_ICONS[goal.badgeKey] ?? Award : GOAL_ICONS[goal.kind];
+}
+
+/** The highlighted goal at the top, with a button to go and work on it. */
+function CurrentGoal({ goal, onNavigate }: { goal: Goal; onNavigate: (page: string) => void }) {
+  const Icon = goalIcon(goal);
+  const percent = goalPercent(goal);
+
+  return (
+    <div className="rounded-lg border border-orange-400/30 bg-linear-to-br from-orange-500/15 to-transparent p-4">
+      <div className="flex items-start gap-3">
+        <div className="w-9 h-9 rounded-lg bg-orange-500/20 flex items-center justify-center shrink-0">
+          <Icon className="w-5 h-5 text-orange-300" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-[10px] uppercase tracking-wide text-orange-300/80">Current goal</p>
+          <p className="text-sm font-semibold text-foreground">{goal.title}</p>
+          <p className="text-xs text-muted-foreground">{goal.detail}</p>
+        </div>
+      </div>
+      <div className="mt-3 flex items-center gap-3">
+        <div className="h-2 flex-1 rounded-full bg-muted overflow-hidden">
+          <div
+            className="h-full rounded-full bg-linear-to-r from-orange-400 to-pink-400 transition-all duration-700"
+            style={{ width: `${percent}%` }}
+          />
+        </div>
+        <span className="text-xs text-muted-foreground tabular-nums shrink-0">{goal.label ?? `${goal.progress} / ${goal.target}`}</span>
+      </div>
+      {goal.action && (
+        <Button size="sm" className="mt-3 w-full" onClick={() => onNavigate(goal.action!)}>
+          {goal.kind === "quiz" ? "Take the quiz" : "Train now"}
+          <ChevronRight className="w-4 h-4" />
+        </Button>
+      )}
+    </div>
+  );
+}
+
+/** A queued goal: icon, name, progress. */
+function GoalRow({ goal, onNavigate }: { goal: Goal; onNavigate: (page: string) => void }) {
+  const Icon = goalIcon(goal);
+  return (
+    <li>
+      <button
+        type="button"
+        title={goal.detail}
+        onClick={() => onNavigate(goal.action ?? "simulations")}
+        className="flex w-full items-center gap-3 rounded-md p-1 -m-1 text-left transition-colors hover:bg-white/5"
+      >
+      <div className="w-7 h-7 rounded-md bg-muted flex items-center justify-center shrink-0">
+        <Icon className="w-4 h-4 text-muted-foreground" />
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center justify-between gap-2 text-sm">
+          <span className="truncate">{goal.title}</span>
+          <span className="text-xs text-muted-foreground tabular-nums shrink-0">{goal.label ?? `${goal.progress} / ${goal.target}`}</span>
+        </div>
+        <div className="mt-1 h-1.5 rounded-full bg-muted overflow-hidden">
+          <div className="h-full rounded-full bg-sky-400 transition-all duration-700" style={{ width: `${goalPercent(goal)}%` }} />
+        </div>
+      </div>
+      </button>
+    </li>
+  );
+}
+
+/** The player's last five decisions. */
+function RecentActivity({ performance, onNavigate }: {
+  performance: PlayerPerformance;
+  onNavigate: (page: string) => void;
+}) {
+  const recent = performance.recent_attempts.slice(0, 5);
+
+  return (
+    <Panel
+      icon={History}
+      iconClass="text-sky-300"
+      title="Recent decisions"
+      description="Your last five scenarios"
+      className="md:col-span-2 lg:col-span-1"
+      action={<Button variant="ghost" size="sm" onClick={() => onNavigate("performance")}>View all</Button>}
+    >
+      {recent.length ? (
+        <div className="space-y-2">
+          {recent.map((activity) => (
+            <button
+              type="button"
+              key={`${activity.scenario}-${activity.attempted_at}`}
+              onClick={() => onNavigate("performance")}
+              title="See the feedback on My Progress"
+              className="flex w-full items-center gap-3 rounded-lg border border-border p-2 text-left transition-colors hover:border-sky-500/40 hover:bg-sky-500/5"
+            >
+              <span className={`w-1.5 h-8 rounded-full shrink-0 ${activity.correct ? "bg-green-400" : "bg-red-400"}`} />
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-medium truncate">{activity.scenario}</div>
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <ChannelBadge channel={activity.type} />
+                  {activity.source === "CAMPAIGN" && <CampaignTag />}
+                  {new Date(activity.attempted_at).toLocaleDateString()}
+                </div>
+              </div>
+              <span
+                className={`text-xs font-semibold shrink-0 ${
+                  activity.xp_earned > 0 ? "text-amber-300" : activity.xp_earned < 0 ? "text-red-300" : "text-muted-foreground"
+                }`}
+              >
+                {formatXp(activity.xp_earned)}
+              </span>
+            </button>
+          ))}
+        </div>
+      ) : (
+        <div className="flex-1 flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-border p-6 text-center">
+          <History className="w-8 h-8 text-muted-foreground" />
+          <p className="text-sm text-muted-foreground">No decisions yet. Your first scenario is waiting.</p>
+          <Button size="sm" variant="outline" onClick={() => onNavigate("simulations")}>
+            Start training
+            <ChevronRight className="w-4 h-4" />
+          </Button>
+        </div>
+      )}
+    </Panel>
+  );
+}
+
+/** Placeholders shaped like the loaded page. */
+function DashboardSkeletons() {
+  return (
+    <>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {[1, 2, 3, 4].map((item) => <Skeleton key={item} className="h-28 rounded-xl" />)}
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {[1, 2, 3].map((item) => <Skeleton key={item} className="h-80 rounded-xl" />)}
+      </div>
+    </>
   );
 }

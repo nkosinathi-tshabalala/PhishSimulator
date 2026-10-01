@@ -1,11 +1,10 @@
+# Database table: rows imported from a dataset
+
 from app.extensions import db
 
 
 class DatasetRecord(db.Model):
-    """
-    Stores every email or SMS imported
-    from a dataset.
-    """
+    """One email or SMS row imported from a dataset."""
 
     __tablename__ = "dataset_record"
 
@@ -24,7 +23,6 @@ class DatasetRecord(db.Model):
         db.String(20),
         nullable=False
     )
-    # EMAIL / SMS
 
     category = db.Column(
         db.String(100)
@@ -51,7 +49,6 @@ class DatasetRecord(db.Model):
     label = db.Column(
         db.String(30)
     )
-    # phishing / legitimate
 
     processed = db.Column(
         db.Boolean,
@@ -64,4 +61,5 @@ class DatasetRecord(db.Model):
     )
 
     def __repr__(self):
+        """Short text shown when debugging."""
         return f"<DatasetRecord {self.record_id}>"

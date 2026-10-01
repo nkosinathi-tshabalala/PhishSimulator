@@ -1,3 +1,5 @@
+# Database table: feedback stored for each attempt
+
 from datetime import datetime
 
 from app.extensions import db

@@ -1,3 +1,5 @@
+# Database table: login sessions
+
 from datetime import datetime
 
 from app.extensions import db
@@ -9,20 +11,17 @@ class UserSession(db.Model):
 
     __tablename__ = "user_session"
 
-    # Primary Key
     session_id = db.Column(
         db.Integer,
         primary_key=True
     )
 
-    # Foreign Key
     user_id = db.Column(
         db.Integer,
         db.ForeignKey("user.user_id"),
         nullable=False
     )
 
-    # Session Information
     login_time = db.Column(
         db.DateTime,
         default=datetime.utcnow,
@@ -40,11 +39,11 @@ class UserSession(db.Model):
         default=SessionStatus.ACTIVE
     )
 
-    # Relationship
     user = db.relationship(
         "User",
         back_populates="sessions"
     )
 
     def __repr__(self):
+        """Short text shown when debugging."""
         return f"<UserSession {self.session_id}>"

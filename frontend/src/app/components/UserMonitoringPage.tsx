@@ -1,9 +1,17 @@
+// Admin page: see and manage users
+
 import { useEffect, useState } from 'react';
-import { ArrowLeft, Search, Eye, UserX } from 'lucide-react';
+import { Activity, Download, LifeBuoy, ShieldCheck, Target, TrendingUp, UserCheck, UserX, Users } from 'lucide-react';
+import { toast } from 'sonner';
+import { confirmToast } from './confirmToast';
+import { StatCard, type StatTone } from './StatCard';
+import { PageHeader } from './PageHeader';
+import { SortButton, useSort } from './sorting';
 import { Button } from './ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
-import { Input } from './ui/input';
+import { Skeleton } from './ui/skeleton';
+import { FilterBar, toOptions } from './FilterBar';
 import { Badge } from './ui/badge';
 import {
   Dialog,
@@ -44,9 +52,11 @@ interface MonitoringData {
   performance_distribution: Record<string, number>;
 }
 
+/** Admin page to see and manage every user. */
 export function UserMonitoringPage({ onBack }: UserMonitoringPageProps) {
   const [monitoringData, setMonitoringData] = useState<MonitoringData | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [filters, setFilters] = useState({ role: '', occupation: '', performance: '', status: '' });
   const [selectedUser, setSelectedUser] = useState<MonitoredUser | null>(null);
   const [error, setError] = useState('');
   const [deletingUserId, setDeletingUserId] = useState<number | null>(null);
@@ -88,11 +98,16 @@ export function UserMonitoringPage({ onBack }: UserMonitoringPageProps) {
     }
   };
 
-  const handleDeleteUser = async (user: MonitoredUser) => {
-    if (!window.confirm(`Delete ${user.full_name}'s account? This cannot be undone.`)) {
-      return;
-    }
+  const handleDeleteUser = (user: MonitoredUser) => {
+    confirmToast({
+      id: `confirm-delete-user-${user.user_id}`,
+      title: `Delete ${user.full_name}'s account?`,
+      description: "Their progress and history go with it. This cannot be undone.",
+      onConfirm: () => deleteUser(user),
+    });
+  };
 
+  const deleteUser = async (user: MonitoredUser) => {
     setDeletingUserId(user.user_id);
     try {
       const response = await AnalyticsService.deleteUser(user.user_id);
@@ -101,6 +116,7 @@ export function UserMonitoringPage({ onBack }: UserMonitoringPageProps) {
         if (selectedUser?.user_id === user.user_id) {
           setSelectedUser(null);
         }
+        toast.success(`${user.full_name}'s account was deleted.`);
         await loadUsers();
         return;
       }
@@ -113,16 +129,36 @@ export function UserMonitoringPage({ onBack }: UserMonitoringPageProps) {
     }
   };
 
+  const performanceBand = (accuracy: number) =>
+    accuracy >= 80 ? 'High (80%+)' : accuracy >= 60 ? 'Okay (60-79%)' : 'Needs support (<60%)';
+
   const filteredUsers = (monitoringData?.users || []).filter((user) => {
     const query = searchTerm.toLowerCase();
-    return user.full_name.toLowerCase().includes(query) || user.email.toLowerCase().includes(query);
+    const matchesSearch = user.full_name.toLowerCase().includes(query) || user.email.toLowerCase().includes(query);
+    return matchesSearch
+      && (!filters.role || user.role === filters.role)
+      && (!filters.occupation || (user.occupation || 'Administrator') === filters.occupation)
+      && (!filters.status || user.status === filters.status)
+      && (!filters.performance || (user.role === 'PLAYER' && performanceBand(user.accuracy) === filters.performance));
   });
 
-  const stats = [
-    { label: 'Registered Players', value: monitoringData?.stats.total_players },
-    { label: 'Active Users', value: monitoringData?.stats.active_users },
-    { label: 'Average Accuracy', value: monitoringData ? `${monitoringData.stats.average_accuracy}%` : undefined },
-    { label: 'Avg Simulations', value: monitoringData?.stats.average_simulations },
+  const table = useSort(filteredUsers, {
+    name: (user) => user.full_name,
+    role: (user) => user.role,
+    occupation: (user) => user.occupation || 'Administrator',
+    accuracy: (user) => (user.role === 'PLAYER' ? user.accuracy : null),
+    simulations: (user) => (user.role === 'PLAYER' ? user.simulations : null),
+    lastActive: (user) => user.last_active,
+    status: (user) => user.status,
+  }, { key: 'name', direction: 'asc' });
+
+  const setFilter = (key: keyof typeof filters, value: string) => setFilters((current) => ({ ...current, [key]: value }));
+
+  const stats: Array<{ label: string; value: string | number | undefined; icon: typeof Users; tone: StatTone; hint: string }> = [
+    { label: 'Registered Players', value: monitoringData?.stats.total_players, icon: Users, tone: 'sky', hint: 'Player accounts' },
+    { label: 'Active Users', value: monitoringData?.stats.active_users, icon: UserCheck, tone: 'green', hint: 'Signed in recently' },
+    { label: 'Average Accuracy', value: monitoringData ? `${monitoringData.stats.average_accuracy}%` : undefined, icon: Target, tone: 'violet', hint: 'Across all players' },
+    { label: 'Avg Simulations', value: monitoringData?.stats.average_simulations, icon: Activity, tone: 'amber', hint: 'Decisions per player' },
   ];
 
   const formatLastActive = (value: string | null) => value
@@ -130,70 +166,81 @@ export function UserMonitoringPage({ onBack }: UserMonitoringPageProps) {
     : 'Never';
 
   return (
-    <div className="h-screen flex flex-col">
-      <div className="border-b p-4 flex items-center gap-4">
-        <Button variant="ghost" size="icon" onClick={onBack}>
-          <ArrowLeft className="w-5 h-5" />
-        </Button>
-        <h2 className="text-xl font-semibold">User Monitoring</h2>
-      </div>
+    <div className="h-full flex flex-col">
+      <PageHeader
+        title="User Monitoring"
+        description="Every account, its activity and accuracy"
+        icon={Users}
+        tone="bg-pink-500/20 text-pink-300"
+        onBack={onBack}
+        actions={(
+          <Button
+            variant="outline"
+            title="Download every player's progress (the private skill rank is not included)"
+            onClick={async () => {
+              const saved = await AnalyticsService.exportPlayerProgress();
+              if (saved) toast.success('Player progress exported.');
+              else toast.error('Unable to export player progress.');
+            }}
+          >
+            <Download className="w-4 h-4 mr-2" />
+            Export CSV
+          </Button>
+        )}
+      />
 
       <div className="flex-1 overflow-y-auto p-6 space-y-6">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           {stats.map((stat) => (
-            <Card key={stat.label}>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">
-                  {stat.label}
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-3xl font-bold">{stat.value ?? '...'}</div>
-              </CardContent>
-            </Card>
+            <StatCard key={stat.label} label={stat.label} value={stat.value} hint={stat.hint} icon={stat.icon} tone={stat.tone} />
           ))}
         </div>
 
         <Card>
           <CardHeader>
-            <CardTitle>Search Users</CardTitle>
-            <CardDescription>Find users by name or email</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <Input
-                placeholder="Search users..."
-                className="pl-10"
-                value={searchTerm}
-                onChange={(event) => setSearchTerm(event.target.value)}
-              />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
             <CardTitle>All Users</CardTitle>
-            <CardDescription>Monitor user activity and performance</CardDescription>
+            <CardDescription>Click a user to see their details</CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-4">
+            <FilterBar
+              search={searchTerm}
+              onSearchChange={setSearchTerm}
+              searchPlaceholder="Search name or email"
+              filters={[
+                { key: 'role', label: 'Roles', value: filters.role, options: toOptions(['PLAYER', 'ADMIN']), onChange: (value) => setFilter('role', value) },
+                { key: 'occupation', label: 'Occupations', value: filters.occupation, options: toOptions(['Student', 'Employee', 'Other', 'Administrator']), onChange: (value) => setFilter('occupation', value) },
+                { key: 'performance', label: 'Performance', value: filters.performance, options: toOptions(['High (80%+)', 'Okay (60-79%)', 'Needs support (<60%)']), onChange: (value) => setFilter('performance', value) },
+                { key: 'status', label: 'Statuses', value: filters.status, options: toOptions(['ACTIVE', 'LOGGED_OUT', 'INACTIVE']), onChange: (value) => setFilter('status', value) },
+              ]}
+              onClear={() => {
+                setSearchTerm('');
+                setFilters({ role: '', occupation: '', performance: '', status: '' });
+              }}
+              resultText={`${filteredUsers.length} user(s)`}
+            />
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>User</TableHead>
-                  <TableHead>Role</TableHead>
-                  <TableHead>Occupation</TableHead>
-                  <TableHead>Accuracy</TableHead>
-                  <TableHead>Simulations</TableHead>
-                  <TableHead>Last Active</TableHead>
-                  <TableHead>Status</TableHead>
+                  <TableHead><SortButton label="User" column="name" sort={table.sort} onSort={table.toggle} /></TableHead>
+                  <TableHead><SortButton label="Role" column="role" sort={table.sort} onSort={table.toggle} /></TableHead>
+                  <TableHead><SortButton label="Occupation" column="occupation" sort={table.sort} onSort={table.toggle} /></TableHead>
+                  <TableHead><SortButton label="Accuracy" column="accuracy" sort={table.sort} onSort={table.toggle} /></TableHead>
+                  <TableHead><SortButton label="Simulations" column="simulations" sort={table.sort} onSort={table.toggle} /></TableHead>
+                  <TableHead><SortButton label="Last Active" column="lastActive" sort={table.sort} onSort={table.toggle} /></TableHead>
+                  <TableHead><SortButton label="Status" column="status" sort={table.sort} onSort={table.toggle} /></TableHead>
                   <TableHead>Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredUsers.map((user) => (
-                  <TableRow key={user.user_id}>
+                {!monitoringData && [1, 2, 3, 4].map((row) => (
+                  <TableRow key={row}><TableCell colSpan={8}><Skeleton className="h-8" /></TableCell></TableRow>
+                ))}
+                {table.sorted.map((user) => (
+                  <TableRow
+                    key={user.user_id}
+                    className="cursor-pointer hover:bg-sky-500/5"
+                    onClick={() => handleViewUser(user.user_id)}
+                  >
                     <TableCell>
                       <div>
                         <div className="font-medium">{user.full_name}</div>
@@ -202,20 +249,32 @@ export function UserMonitoringPage({ onBack }: UserMonitoringPageProps) {
                     </TableCell>
                     <TableCell>{user.role}</TableCell>
                     <TableCell>{user.occupation || 'Administrator'}</TableCell>
-                    <TableCell>{user.role === 'PLAYER' ? `${user.accuracy}%` : '—'}</TableCell>
+                    <TableCell>
+                      {user.role === 'PLAYER' ? (
+                        <span className={user.accuracy >= 80 ? 'text-green-400' : user.accuracy >= 60 ? 'text-amber-300' : 'text-red-400'}>
+                          {user.accuracy}%
+                        </span>
+                      ) : '—'}
+                    </TableCell>
                     <TableCell>{user.role === 'PLAYER' ? user.simulations : '—'}</TableCell>
                     <TableCell>{formatLastActive(user.last_active)}</TableCell>
                     <TableCell>
-                      <Badge variant={user.status === 'ACTIVE' ? 'default' : 'secondary'}>
-                        {user.status}
+                      <Badge className={user.status === 'ACTIVE' ? 'bg-green-500/20 text-green-300 border-0' : 'bg-muted text-muted-foreground border-0'}>
+                        {user.status === 'ACTIVE' ? '● Online' : user.status.replace('_', ' ').toLowerCase()}
                       </Badge>
                     </TableCell>
                     <TableCell>
                       <div className="flex gap-2">
-                        <Button variant="ghost" size="icon" title={`View ${user.full_name}`} onClick={() => handleViewUser(user.user_id)}>
-                          <Eye className="w-4 h-4" />
-                        </Button>
-                        <Button variant="ghost" size="icon" title={`Delete ${user.full_name}`} onClick={() => handleDeleteUser(user)} disabled={deletingUserId === user.user_id}>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          title={`Delete ${user.full_name}`}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            handleDeleteUser(user);
+                          }}
+                          disabled={deletingUserId === user.user_id}
+                        >
                           <UserX className="w-4 h-4" />
                         </Button>
                       </div>
@@ -224,7 +283,7 @@ export function UserMonitoringPage({ onBack }: UserMonitoringPageProps) {
                 ))}
               </TableBody>
             </Table>
-            {!filteredUsers.length && (
+            {monitoringData && !filteredUsers.length && (
               <p className="py-6 text-center text-sm text-muted-foreground">No users found.</p>
             )}
           </CardContent>
@@ -239,22 +298,10 @@ export function UserMonitoringPage({ onBack }: UserMonitoringPageProps) {
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div className="border rounded-lg p-4 text-center">
-                <div className="text-2xl font-bold mb-1">{monitoringData?.role_distribution.ADMIN ?? '...'}</div>
-                <div className="text-sm text-muted-foreground">Administrators</div>
-              </div>
-              <div className="border rounded-lg p-4 text-center">
-                <div className="text-2xl font-bold mb-1">{monitoringData?.role_distribution.PLAYER ?? '...'}</div>
-                <div className="text-sm text-muted-foreground">Players</div>
-              </div>
-              <div className="border rounded-lg p-4 text-center">
-                <div className="text-2xl font-bold mb-1">{monitoringData?.performance_distribution.high_accuracy ?? '...'}</div>
-                <div className="text-sm text-muted-foreground">High Accuracy (80%+)</div>
-              </div>
-              <div className="border rounded-lg p-4 text-center">
-                <div className="text-2xl font-bold mb-1">{monitoringData?.performance_distribution.needs_support ?? '...'}</div>
-                <div className="text-sm text-muted-foreground">Needs Support (&lt;60%)</div>
-              </div>
+              <StatCard label="Administrators" value={monitoringData?.role_distribution.ADMIN} icon={ShieldCheck} tone="amber" />
+              <StatCard label="Players" value={monitoringData?.role_distribution.PLAYER} icon={Users} tone="sky" />
+              <StatCard label="High accuracy" value={monitoringData?.performance_distribution.high_accuracy} hint="80% or more" icon={TrendingUp} tone="green" />
+              <StatCard label="Needs support" value={monitoringData?.performance_distribution.needs_support} hint="Below 60%" icon={LifeBuoy} tone="red" />
             </div>
           </CardContent>
         </Card>

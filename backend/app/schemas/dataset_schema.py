@@ -1,3 +1,5 @@
+# Checks uploaded dataset files
+
 from app.enums.scenario_type import ScenarioType
 
 
@@ -8,6 +10,7 @@ class DatasetSchema:
 
     @staticmethod
     def validate_upload(file, dataset_type):
+        """Check the uploaded file is a CSV or JSON dataset."""
         if file is None or not file.filename:
             return False, "A CSV or JSON dataset file is required."
 

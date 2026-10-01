@@ -1,17 +1,27 @@
+// Admin page: manage baseline quiz questions
+
 import BaselineService from "../../services/baselineService";
 
 import { useEffect, useState } from "react";
+import { toast } from "sonner";
 
 import {
   Plus,
   Edit,
   Trash2,
   Eye,
-  Search,
   X,
   ClipboardList,
   AlertTriangle,
+  Gauge,
+  KeyRound,
+  Tags,
+  type LucideIcon,
 } from "lucide-react";
+import { StatCard, type StatTone } from "./StatCard";
+import { PageHeader } from "./PageHeader";
+import { FilterBar, toOptions } from "./FilterBar";
+import { SortButton, useSort } from "./sorting";
 import { Button } from "./ui/button";
 import {
   Card,
@@ -71,13 +81,8 @@ const emptyForm: FormState = {
   confidenceThreshold: 2,
 };
 
-interface BaselineManagementPageProps {
-  onBack: () => void;
-}
-
-export function BaselineManagementPage({
-  onBack,
-}: BaselineManagementPageProps) {
+/** Admin page to add, edit and delete baseline quiz questions. */
+export function BaselineManagementPage() {
   const [questions, setQuestions] = useState<BaselineQuestion[]>([]);
 
   const loadQuestions = async () => {
@@ -99,6 +104,7 @@ export function BaselineManagementPage({
   }, []);
 
   const [searchQuery, setSearchQuery] = useState("");
+  const [thresholdFilter, setThresholdFilter] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [viewModalOpen, setViewModalOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -108,13 +114,29 @@ export function BaselineManagementPage({
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [form, setForm] = useState<FormState>(emptyForm);
 
-  const filtered = questions.filter(
-    (q) =>
-      q.question.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      q.expectedKeywords.some((kw) =>
-        kw.toLowerCase().includes(searchQuery.toLowerCase()),
-      ),
+  const search = searchQuery.toLowerCase();
+  const filtered = questions.filter((q) =>
+    (q.question.toLowerCase().includes(search)
+      || q.expectedKeywords.some((keyword) => keyword.toLowerCase().includes(search)))
+    && (!thresholdFilter || String(q.confidenceThreshold) === thresholdFilter),
   );
+  const table = useSort(filtered, {
+    id: (q) => q.id,
+    question: (q) => q.question,
+    keywords: (q) => q.expectedKeywords.length,
+    threshold: (q) => q.confidenceThreshold,
+  }, { key: "id", direction: "asc" });
+  const isFiltered = Boolean(searchQuery || thresholdFilter);
+
+  const totalKeywords = questions.reduce((total, q) => total + q.expectedKeywords.length, 0);
+  const totalThreshold = questions.reduce((total, q) => total + q.confidenceThreshold, 0);
+  const average = (total: number) => (questions.length ? total / questions.length : 0);
+  const stats: Array<{ label: string; value: string; icon: LucideIcon; tone: StatTone }> = [
+    { label: "Total Questions", value: String(questions.length), icon: ClipboardList, tone: "amber" },
+    { label: "Avg. Keywords", value: String(Math.round(average(totalKeywords))), icon: KeyRound, tone: "sky" },
+    { label: "Avg. Threshold", value: average(totalThreshold).toFixed(1), icon: Gauge, tone: "violet" },
+    { label: "Total Keywords", value: String(totalKeywords), icon: Tags, tone: "green" },
+  ];
 
   const openAdd = () => {
     setEditingId(null);
@@ -203,16 +225,17 @@ export function BaselineManagementPage({
       }
 
       if (response.ok && response.data.success) {
+        toast.success(response.data.message || "Question saved.");
         await loadQuestions();
         setModalOpen(false);
         setEditingId(null);
         setForm(emptyForm);
       } else {
-        alert(response.data.message);
+        toast.error(response.data.message || "Failed to save question.");
       }
     } catch (error) {
       console.error(error);
-      alert("Failed to save question.");
+      toast.error("Failed to save question.");
     }
   };
 
@@ -223,13 +246,14 @@ export function BaselineManagementPage({
       const response = await BaselineService.deleteQuestion(deletingId);
 
       if (response.ok && response.data.success) {
+        toast.success(response.data.message || "Question deleted.");
         await loadQuestions();
       } else {
-        alert(response.data.message);
+        toast.error(response.data.message || "Failed to delete question.");
       }
     } catch (error) {
       console.error(error);
-      alert("Failed to delete question.");
+      toast.error("Failed to delete question.");
     } finally {
       setDeleteDialogOpen(false);
       setDeletingId(null);
@@ -244,100 +268,47 @@ export function BaselineManagementPage({
 
   return (
     <div className="h-full flex flex-col">
-      {/* Header */}
-      <div className="border-b p-4 flex items-center gap-4 bg-card">
-        <div className="flex-1">
-          <h2 className="text-xl font-semibold text-foreground">
-            Baseline Assessment Management
-          </h2>
-          <p className="text-sm mt-0.5 text-muted-foreground">
-            Create and manage baseline assessment questions presented to players
-            before phishing training.
-          </p>
-        </div>
-        <Button onClick={openAdd} className="shrink-0">
-          <Plus className="w-4 h-4 mr-2" />
-          Add Question
-        </Button>
-      </div>
+      <PageHeader
+        title="Baseline Assessment Management"
+        description="Create and manage the questions players answer before phishing training"
+        icon={ClipboardList}
+        tone="bg-amber-500/15 text-amber-300"
+        actions={(
+          <Button onClick={openAdd}>
+            <Plus className="w-4 h-4 mr-2" />
+            Add Question
+          </Button>
+        )}
+      />
 
       <div className="flex-1 overflow-y-auto p-6 space-y-6">
-        {/* Stat Cards */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          {[
-            { label: "Total Questions", value: String(questions.length) },
-            {
-              label: "Avg. Keywords",
-              value: questions.length
-                ? String(
-                    Math.round(
-                      questions.reduce(
-                        (a, q) => a + q.expectedKeywords.length,
-                        0,
-                      ) / questions.length,
-                    ),
-                  )
-                : "0",
-            },
-            {
-              label: "Avg. Threshold",
-              value: questions.length
-                ? String(
-                    (
-                      questions.reduce((a, q) => a + q.confidenceThreshold, 0) /
-                      questions.length
-                    ).toFixed(1),
-                  )
-                : "0",
-            },
-            {
-              label: "Total Keywords",
-              value: String(
-                questions.reduce(
-                  (total, question) => total + question.expectedKeywords.length,
-                  0,
-                ),
-              ),
-            },
-          ].map((s) => (
-            <Card key={s.label}>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">
-                  {s.label}
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-3xl font-bold text-foreground">
-                  {s.value}
-                </div>
-              </CardContent>
-            </Card>
+          {stats.map((stat) => (
+            <StatCard key={stat.label} label={stat.label} value={stat.value} icon={stat.icon} tone={stat.tone} />
           ))}
         </div>
 
-        {/* Questions Table */}
         <Card>
           <CardHeader>
-            <div className="flex items-center justify-between gap-4 flex-wrap">
-              <div>
-                <CardTitle className="text-base text-foreground">
-                  Assessment Questions
-                </CardTitle>
-                <CardDescription>
-                  Questions are presented to players in order during the
-                  baseline assessment.
-                </CardDescription>
-              </div>
-              <div className="relative w-64">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                <Input
-                  placeholder="Search questions or keywords..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-9 text-sm"
-                />
-              </div>
-            </div>
+            <CardTitle className="text-base text-foreground">Assessment Questions</CardTitle>
+            <CardDescription>Questions are presented to players in order during the baseline assessment.</CardDescription>
+            <FilterBar
+              search={searchQuery}
+              onSearchChange={setSearchQuery}
+              searchPlaceholder="Search questions or keywords"
+              filters={[{
+                key: "threshold",
+                label: "Thresholds",
+                value: thresholdFilter,
+                options: toOptions([...new Set(questions.map((q) => String(q.confidenceThreshold)))].sort()),
+                onChange: setThresholdFilter,
+              }]}
+              onClear={() => {
+                setSearchQuery("");
+                setThresholdFilter("");
+              }}
+              resultText={`${filtered.length} question(s)`}
+            />
           </CardHeader>
           <CardContent className="p-0">
             {filtered.length === 0 ? (
@@ -352,16 +323,16 @@ export function BaselineManagementPage({
                   />
                 </div>
                 <p className="font-semibold mb-1 text-foreground">
-                  {searchQuery
+                  {isFiltered
                     ? "No matching questions found"
                     : "No baseline questions available"}
                 </p>
                 <p className="text-sm mb-6 text-muted-foreground">
-                  {searchQuery
-                    ? "Try a different search term."
+                  {isFiltered
+                    ? "Try a different search or filter."
                     : "Get started by creating your first question."}
                 </p>
-                {!searchQuery && (
+                {!isFiltered && (
                   <Button onClick={openAdd}>
                     <Plus className="w-4 h-4 mr-2" />
                     Create First Question
@@ -372,25 +343,10 @@ export function BaselineManagementPage({
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="text-xs font-medium pl-6 text-muted-foreground">
-                      ID
-                    </TableHead>
-                    <TableHead
-                      className="text-xs font-medium"
-                    >
-                      Question Preview
-                    </TableHead>
-                    <TableHead
-                      className="text-xs font-medium"
-                    >
-                      Expected Keywords
-                    </TableHead>
-                    <TableHead
-                      className="text-xs font-medium text-center"
-                    >
-                      Threshold
-                    </TableHead>
-
+                    <TableHead className="text-xs pl-6"><SortButton label="ID" column="id" sort={table.sort} onSort={table.toggle} /></TableHead>
+                    <TableHead className="text-xs"><SortButton label="Question Preview" column="question" sort={table.sort} onSort={table.toggle} /></TableHead>
+                    <TableHead className="text-xs"><SortButton label="Expected Keywords" column="keywords" sort={table.sort} onSort={table.toggle} /></TableHead>
+                    <TableHead className="text-xs text-center"><SortButton label="Threshold" column="threshold" sort={table.sort} onSort={table.toggle} /></TableHead>
                     <TableHead
                       className="text-xs font-medium text-right pr-6"
                     >
@@ -399,146 +355,39 @@ export function BaselineManagementPage({
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filtered.map((q) => (
-                    <TableRow key={q.id}>
+                  {table.sorted.map((q) => (
+                    <TableRow key={q.id} className="cursor-pointer hover:bg-sky-500/5" onClick={() => openView(q)}>
                       <TableCell className="pl-6">
-                        <span
-                          className="text-xs font-mono font-semibold px-2 py-1 rounded"
-                          style={{
-                            backgroundColor: "rgba(47,129,247,0.12)",
-                            color: "#2f81f7",
-                          }}
-                        >
+                        <span className="rounded bg-blue-500/15 px-2 py-1 font-mono text-xs font-semibold text-blue-400">
                           Q{String(q.id).padStart(2, "0")}
                         </span>
                       </TableCell>
-                      <TableCell className="max-w-xs">
-                        <p
-                          className="text-sm font-medium line-clamp-2 text-foreground"
-                        >
-                          {q.question}
-                        </p>
+                      <TableCell className="max-w-xs whitespace-normal">
+                        <p className="line-clamp-2 text-sm font-medium text-foreground">{q.question}</p>
                       </TableCell>
                       <TableCell>
-                        <div className="flex flex-wrap gap-1 max-w-55">
-                          {q.expectedKeywords.slice(0, 4).map((kw) => (
-                            <span
-                              key={kw}
-                              className="px-1.5 py-0.5 rounded text-xs"
-                              style={{
-                                backgroundColor: "rgba(56,189,248,0.12)",
-                                color: "#38bdf8",
-                              }}
-                            >
-                              {kw}
-                            </span>
+                        <div className="flex max-w-55 flex-wrap gap-1">
+                          {q.expectedKeywords.slice(0, 4).map((keyword) => (
+                            <span key={keyword} className="rounded bg-sky-400/15 px-1.5 py-0.5 text-xs text-sky-400">{keyword}</span>
                           ))}
                           {q.expectedKeywords.length > 4 && (
-                            <span
-                              className="px-1.5 py-0.5 rounded text-xs"
-                              style={{
-                                backgroundColor: "rgba(230,237,243,0.1)",
-                                color: "#8b949e",
-                              }}
-                            >
+                            <span className="rounded bg-white/10 px-1.5 py-0.5 text-xs text-muted-foreground">
                               +{q.expectedKeywords.length - 4}
                             </span>
                           )}
                         </div>
                       </TableCell>
                       <TableCell className="text-center">
-                        <Badge
-                          className="text-xs font-semibold border-0"
-                          style={{
-                            backgroundColor:
-                              q.confidenceThreshold >= 4
-                                ? "rgba(248,81,73,0.12)"
-                                : q.confidenceThreshold === 3
-                                  ? "rgba(242,204,96,0.12)"
-                                  : "rgba(63,185,80,0.12)",
-                            color:
-                              q.confidenceThreshold >= 4
-                                ? "#f85149"
-                                : q.confidenceThreshold === 3
-                                  ? "#f2cc60"
-                                  : "#3fb950",
-                          }}
-                        >
+                        <Badge className={`border-0 text-xs font-semibold ${thresholdTone(q.confidenceThreshold)}`}>
                           {q.confidenceThreshold}
                         </Badge>
                       </TableCell>
-
                       <TableCell className="pr-6">
-                        <div className="flex items-center justify-end gap-1">
-                          <button
-                            onClick={() => openView(q)}
-                            className="p-1.5 rounded-md transition-colors text-muted-foreground"
-                            title="View"
-                            onMouseEnter={(e) => {
-                              (
-                                e.currentTarget as HTMLButtonElement
-                              ).style.backgroundColor = "rgba(255,255,255,0.06)";
-                              (
-                                e.currentTarget as HTMLButtonElement
-                              ).style.color = "#2f81f7";
-                            }}
-                            onMouseLeave={(e) => {
-                              (
-                                e.currentTarget as HTMLButtonElement
-                              ).style.backgroundColor = "transparent";
-                              (
-                                e.currentTarget as HTMLButtonElement
-                              ).style.color = "";
-                            }}
-                          >
-                            <Eye className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => openEdit(q)}
-                            className="p-1.5 rounded-md transition-colors text-muted-foreground"
-                            title="Edit"
-                            onMouseEnter={(e) => {
-                              (
-                                e.currentTarget as HTMLButtonElement
-                              ).style.backgroundColor = "rgba(56,189,248,0.12)";
-                              (
-                                e.currentTarget as HTMLButtonElement
-                              ).style.color = "#38bdf8";
-                            }}
-                            onMouseLeave={(e) => {
-                              (
-                                e.currentTarget as HTMLButtonElement
-                              ).style.backgroundColor = "transparent";
-                              (
-                                e.currentTarget as HTMLButtonElement
-                              ).style.color = "";
-                            }}
-                          >
-                            <Edit className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => openDelete(q.id)}
-                            className="p-1.5 rounded-md transition-colors text-muted-foreground"
-                            title="Delete"
-                            onMouseEnter={(e) => {
-                              (
-                                e.currentTarget as HTMLButtonElement
-                              ).style.backgroundColor = "rgba(248,81,73,0.12)";
-                              (
-                                e.currentTarget as HTMLButtonElement
-                              ).style.color = "#f85149";
-                            }}
-                            onMouseLeave={(e) => {
-                              (
-                                e.currentTarget as HTMLButtonElement
-                              ).style.backgroundColor = "transparent";
-                              (
-                                e.currentTarget as HTMLButtonElement
-                              ).style.color = "";
-                            }}
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                        {/* stopPropagation: the buttons do their own thing instead of opening the row */}
+                        <div className="flex items-center justify-end gap-1" onClick={(event) => event.stopPropagation()}>
+                          <RowAction title="View" icon={Eye} hover="hover:text-blue-400" onClick={() => openView(q)} />
+                          <RowAction title="Edit" icon={Edit} hover="hover:bg-sky-400/15 hover:text-sky-400" onClick={() => openEdit(q)} />
+                          <RowAction title="Delete" icon={Trash2} hover="hover:bg-red-500/15 hover:text-red-400" onClick={() => openDelete(q.id)} />
                         </div>
                       </TableCell>
                     </TableRow>
@@ -550,7 +399,6 @@ export function BaselineManagementPage({
         </Card>
       </div>
 
-      {/* Add / Edit Modal */}
       <Dialog open={modalOpen} onOpenChange={setModalOpen}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
@@ -565,7 +413,6 @@ export function BaselineManagementPage({
           </DialogHeader>
 
           <div className="space-y-5 pt-2">
-            {/* Question Text */}
             <div className="space-y-1.5">
               <Label className="text-sm font-medium">
                 Question Text <span style={{ color: "#f85149" }}>*</span>
@@ -579,7 +426,6 @@ export function BaselineManagementPage({
               />
             </div>
 
-            {/* Instruction */}
             <div className="space-y-1.5">
               <Label className="text-sm font-medium">
                 Instruction
@@ -594,7 +440,6 @@ export function BaselineManagementPage({
               />
             </div>
 
-            {/* Expected Keywords */}
             <div className="space-y-1.5">
               <Label className="text-sm font-medium">
                 Expected Keywords <span style={{ color: "#f85149" }}>*</span>
@@ -638,7 +483,6 @@ export function BaselineManagementPage({
               </div>
             </div>
 
-            {/* Example Answer */}
             <div className="space-y-1.5">
               <Label className="text-sm font-medium">
                 Example Answer
@@ -654,7 +498,6 @@ export function BaselineManagementPage({
               />
             </div>
 
-            {/* Feedback */}
             <div className="space-y-1.5">
               <Label className="text-sm font-medium">
                 Feedback
@@ -668,7 +511,6 @@ export function BaselineManagementPage({
               />
             </div>
 
-            {/* Confidence Threshold */}
             <div className="space-y-2">
               <Label className="text-sm font-medium">
                 Confidence Threshold <span style={{ color: "#f85149" }}>*</span>
@@ -710,7 +552,6 @@ export function BaselineManagementPage({
               </div>
             </div>
 
-            {/* Actions */}
             <div className="flex gap-3 pt-2 border-t border-border">
               <Button
                 variant="outline"
@@ -731,7 +572,6 @@ export function BaselineManagementPage({
         </DialogContent>
       </Dialog>
 
-      {/* View Modal */}
       <Dialog open={viewModalOpen} onOpenChange={setViewModalOpen}>
         <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
@@ -858,7 +698,6 @@ export function BaselineManagementPage({
         </DialogContent>
       </Dialog>
 
-      {/* Delete Confirmation Dialog */}
       <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
@@ -906,5 +745,27 @@ export function BaselineManagementPage({
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+/** Colour for a keyword threshold: higher means stricter marking. */
+function thresholdTone(threshold: number) {
+  if (threshold >= 4) return "bg-red-500/15 text-red-400";
+  if (threshold === 3) return "bg-amber-400/15 text-amber-300";
+  return "bg-green-500/15 text-green-400";
+}
+
+/** A small icon button in a table row. */
+function RowAction({ title, icon: Icon, hover, onClick }: {
+  title: string;
+  icon: LucideIcon;
+  hover: string;
+  onClick: () => void;
+}) {
+  return (
+    <button type="button" title={title} aria-label={title} onClick={onClick}
+      className={`rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-white/5 ${hover}`}>
+      <Icon className="w-4 h-4" />
+    </button>
   );
 }

@@ -1,3 +1,5 @@
+# Database table: running totals of a player's attempts and score
+
 from datetime import datetime
 
 from app.extensions import db
@@ -22,4 +24,5 @@ class PerformanceTracker(db.Model):
 
     @property
     def accuracy(self):
+        """Percentage of correct attempts."""
         return round((self.correct_attempts / self.total_attempts) * 100) if self.total_attempts else 0

@@ -1,5 +1,7 @@
+// Player page: account details and password
+
 import { useEffect, useState } from "react";
-import { ArrowLeft, User, Mail, Lock, Briefcase } from "lucide-react";
+import { UserRound } from "lucide-react";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
@@ -18,9 +20,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "./ui/select";
-import { Separator } from "./ui/separator";
 
 import AuthService from "../../services/authService";
+import { PageHeader } from "./PageHeader";
 
 interface CurrentUser {
   user_id: number;
@@ -38,6 +40,7 @@ interface ProfilePageProps {
   onBack: () => void;
 }
 
+/** Player account details and password change. */
 export function ProfilePage({
   user,
   setCurrentUser,
@@ -132,11 +135,9 @@ export function ProfilePage({
   const handlePasswordUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // Clear previous messages
     setPasswordSuccessMessage("");
     setPasswordErrorMessage("");
 
-    // Validate required fields BEFORE enabling loading
     if (
       !passwordData.currentPassword ||
       !passwordData.newPassword ||
@@ -146,7 +147,6 @@ export function ProfilePage({
       return;
     }
 
-    // Prevent using the same password
     if (passwordData.currentPassword === passwordData.newPassword) {
       showPasswordError(
         "Your new password must be different from your current password.",
@@ -170,7 +170,6 @@ export function ProfilePage({
 
       showPasswordSuccess(response.data.message);
 
-      // Clear the password fields after a successful update
       setPasswordData({
         currentPassword: "",
         newPassword: "",
@@ -186,13 +185,14 @@ export function ProfilePage({
   };
 
   return (
-    <div className="h-screen flex flex-col">
-      <div className="border-b p-4 flex items-center gap-4">
-        <Button variant="ghost" size="icon" onClick={onBack}>
-          <ArrowLeft className="w-5 h-5" />
-        </Button>
-        <h2 className="text-xl font-semibold">Profile Management</h2>
-      </div>
+    <div className="h-full flex flex-col">
+      <PageHeader
+        title="My Profile"
+        description="Your details and password"
+        icon={UserRound}
+        tone="bg-sky-500/15 text-sky-300"
+        onBack={onBack}
+      />
 
       <div className="flex-1 overflow-y-auto p-6">
         <div className="max-w-3xl mx-auto space-y-6">

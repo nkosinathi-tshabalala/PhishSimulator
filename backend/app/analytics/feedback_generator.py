@@ -1,40 +1,130 @@
+# Builds the feedback a player sees after answering a scenario
+
+from app.utils.clues import CLUE_TIPS, real_clues
+
+
 class FeedbackGenerator:
-    """Creates consistent learner feedback from a scenario and answer result."""
+    """CATCH "Correct" stage: explains the result straight after each decision."""
+
+    CATEGORY_GUIDANCE = {
+        "Banking": (
+            "Fake bank messages try to steal card details or trick you into paying.",
+            "Open your banking app yourself instead of using links in a message.",
+        ),
+        "Delivery": (
+            "Parcel scams use small 'redelivery fees' to capture your card details.",
+            "Track parcels on the courier's official website or app only.",
+        ),
+        "Government": (
+            "Tax and government scams use authority and fines to rush you.",
+            "Government bodies won't demand payment by SMS or email link. Phone them directly.",
+        ),
+        "Employment": (
+            "Job scams collect ID documents or ask for 'training fees' up front.",
+            "Check the company and recruiter independently before sharing documents.",
+        ),
+        "University": (
+            "Student scams imitate campus IT or bursaries to steal university logins.",
+            "Log in through the university portal you normally use, not an emailed link.",
+        ),
+        "Password Reset": (
+            "Fake reset messages capture your password on a look-alike login page.",
+            "If you didn't ask for a reset, ignore it and change your password from the real site.",
+        ),
+        "Microsoft 365": (
+            "Fake Microsoft alerts harvest work credentials to break into company email.",
+            "Report suspicious Microsoft alerts to IT and sign in only at office.com.",
+        ),
+        "Social Media": (
+            "Social media scams hijack accounts or lure you with prizes and messages.",
+            "Check alerts inside the app itself rather than through links you're sent.",
+        ),
+    }
+
+    DEFAULT_GUIDANCE = (
+        "Phishing messages imitate trusted senders to make you click, pay, or share details.",
+        "When unsure, contact the organisation using details you already trust.",
+    )
 
     LEGACY_DATASET_FEEDBACK = {
         "This message is labelled phishing. Review the listed indicators before reporting it.",
         "This message is labelled legitimate. Verify the sender and context before marking messages safe.",
     }
 
+    LEGITIMATE_EXPLANATION = (
+        "Real messages look different: a known sender, no password request, "
+        "consistent branding and no artificial pressure."
+    )
+
+    TRAP_WARNINGS = {
+        "LINK": (
+            "In a real attack this click could install malware or open a fake login page "
+            "that steals your password. Report the message to IT straight away."
+        ),
+        "ATTACHMENT": (
+            "In a real attack this file could run malware or a fake login page the moment it "
+            "opens. Risky types include .htm, .zip, .docm and .iso. Tell IT straight away."
+        ),
+    }
+
+    @staticmethod
+    def _headline(scenario, correct, trap=None):
+        """One-line verdict shown at the top of the feedback."""
+        is_phishing = scenario.correct_answer.upper() == "REPORT"
+        kind = "smishing" if scenario.simulation_type.upper() == "SMS" else "phishing"
+
+        if trap == "LINK" and is_phishing:
+            return f"You've been phished: that link was part of a {kind} attack"
+        if trap == "ATTACHMENT" and is_phishing:
+            return "You've been phished: that attachment was malicious"
+        if trap:
+            return "Safe choice: this message was genuine"
+
+        if correct and is_phishing:
+            return f"Correct: this was {kind}"
+        if correct:
+            return "Correct: this message was safe"
+        if is_phishing:
+            return f"Missed: this was {kind} (the safe choice was Report)"
+        return "Not quite: this message was legitimate (the right choice was Mark Safe)"
+
+    @staticmethod
+    def build(scenario, correct, clue_result, trap=None):
+        """Return the full feedback shown to the player after an attempt."""
+        is_phishing = scenario.correct_answer.upper() == "REPORT"
+        threat, tip = FeedbackGenerator.CATEGORY_GUIDANCE.get(
+            scenario.category, FeedbackGenerator.DEFAULT_GUIDANCE,
+        )
+
+        def with_tips(clues):
+            """Pair each clue with its tip."""
+            return [{"name": clue, "tip": CLUE_TIPS.get(clue, "")} for clue in clues]
+
+        return {
+            "headline": FeedbackGenerator._headline(scenario, correct, trap),
+            "trap": trap,
+            "trap_warning": FeedbackGenerator.TRAP_WARNINGS.get(trap) if is_phishing else None,
+            "summary": FeedbackGenerator.for_attempt(scenario, correct),
+            "threat_explanation": threat if is_phishing else FeedbackGenerator.LEGITIMATE_EXPLANATION,
+            "safe_tip": tip,
+            "clues_spotted": with_tips(clue_result["spotted"]),
+            "clues_missed": with_tips(clue_result["missed"]),
+            "also_present": with_tips(clue_result["also_present"]),
+            "wrong_picks": clue_result["wrong_picks"],
+            "admin_note": (
+                scenario.feedback
+                if scenario.feedback and scenario.feedback not in FeedbackGenerator.LEGACY_DATASET_FEEDBACK
+                else None
+            ),
+        }
+
     @staticmethod
     def for_attempt(scenario, correct):
-        cues = scenario.get_phishing_cues()
-        is_phishing = scenario.correct_answer.upper() == "REPORT"
-        message_kind = "smishing" if scenario.simulation_type.upper() == "SMS" else "phishing"
+        """One-sentence feedback, stored with the attempt and shown in history."""
+        headline = FeedbackGenerator._headline(scenario, correct)
+        clues = real_clues(scenario)
+        if not clues:
+            return f"{headline}."
 
-        if correct:
-            result = (
-                f"Correct — reporting this {message_kind} message was the safe choice."
-                if is_phishing
-                else "Correct — marking this legitimate message as safe was appropriate."
-            )
-        elif is_phishing:
-            result = (
-                f"This was a {message_kind} attempt. The safer choice was REPORT, not SAFE."
-            )
-        else:
-            result = "This message was legitimate. The appropriate choice was SAFE, not REPORT."
-
-        if cues:
-            result += f" Key indicators: {', '.join(cues)}."
-        elif is_phishing:
-            result += " Review the sender, request, and context for subtle warning signs."
-        else:
-            result += " Legitimate messages should still be checked for an expected sender and context."
-
-        # Administrator-authored guidance supplements, rather than replaces,
-        # the decision-specific feedback above.
-        if scenario.feedback and scenario.feedback not in FeedbackGenerator.LEGACY_DATASET_FEEDBACK:
-            result += f" {scenario.feedback}"
-
-        return result
+        label = "Key clues" if scenario.correct_answer.upper() == "REPORT" else "Trust signals"
+        return f"{headline}. {label}: {', '.join(clues)}."

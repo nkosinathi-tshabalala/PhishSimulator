@@ -1,4 +1,5 @@
-from app.models.authentication import Player
+# Checks baseline quiz data before it is saved
+
 from app.models.baseline import (
     BaselineAssessment,
     BaselineQuestion,
@@ -8,22 +9,8 @@ class BaselineSchema:
     """Validation rules for baseline assessment requests."""
 
     @staticmethod
-    def validate_start_assessment(data):
-        player_id = data.get("player_id")
-
-        if not player_id:
-            return False, "Player ID is required."
-
-        if not isinstance(player_id, int):
-            return False, "Player ID must be an integer."
-
-        if not Player.query.get(player_id):
-            return False, "Player not found."
-
-        return True, None
-
-    @staticmethod
     def validate_submit_response(data):
+        """Check a quiz answer submission."""
         assessment_id = data.get("assessment_id")
         question_id = data.get("question_id")
         answer_text = data.get("answer_text", "").strip()
@@ -50,6 +37,7 @@ class BaselineSchema:
 
     @staticmethod
     def validate_complete_assessment(data):
+        """Check a quiz completion request."""
         assessment_id = data.get("assessment_id")
 
         if not assessment_id:
@@ -63,19 +51,6 @@ class BaselineSchema:
 
         return True, None
 
-    @staticmethod
-    def validate_get_results(assessment_id):
-        if not assessment_id:
-            return False, "Assessment ID is required."
-
-        if not isinstance(assessment_id, int):
-            return False, "Assessment ID must be an integer."
-
-        if not BaselineAssessment.query.get(assessment_id):
-            return False, "Assessment not found."
-
-        return True, None
-    
     @staticmethod
     def validate_question(data):
         """Validate creating/updating a baseline question."""
@@ -127,7 +102,7 @@ class BaselineSchema:
     
     @staticmethod
     def validate_question_exists(question_id):
-
+        """Check a question id was given."""
         if not question_id:
             return False, "Question ID is required."
 
@@ -143,7 +118,7 @@ class BaselineSchema:
     
     @staticmethod
     def validate_delete_question(question_id):
-
+        """Check a question can be deleted."""
         return BaselineSchema.validate_question_exists(
             question_id
         )

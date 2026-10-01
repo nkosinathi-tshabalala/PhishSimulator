@@ -1,10 +1,12 @@
+# Database table: training sessions
+
 from datetime import datetime
 
 from app.extensions import db
 
 
 class SimulationSession(db.Model):
-
+    """A training session that groups a player's attempts."""
     __tablename__ = "simulation_session"
 
     session_id = db.Column(
@@ -22,7 +24,6 @@ class SimulationSession(db.Model):
         db.String(20),
         nullable=False
     )
-    # EMAIL / SMS
 
     started_at = db.Column(
         db.DateTime,

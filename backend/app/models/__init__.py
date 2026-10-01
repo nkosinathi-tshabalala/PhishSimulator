@@ -1,4 +1,5 @@
-from app.models.authentication import *
+# Imports every model so SQLAlchemy and Alembic know about all tables
+
 from .authentication import *
 from .baseline import *
 from .scenario import *

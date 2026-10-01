@@ -1,3 +1,5 @@
+# Database table: baseline quiz questions and their marking guide
+
 from app.extensions import db
 
 
@@ -6,13 +8,11 @@ class BaselineQuestion(db.Model):
 
     __tablename__ = "baseline_question"
 
-    # Primary Key
     question_id = db.Column(
         db.Integer,
         primary_key=True
     )
 
-    # Question Details
     question_text = db.Column(
         db.Text,
         nullable=False
@@ -44,7 +44,6 @@ class BaselineQuestion(db.Model):
         default=2
     )
 
-    # Relationships
     responses = db.relationship(
         "BaselineResponse",
         back_populates="question",
@@ -52,12 +51,7 @@ class BaselineQuestion(db.Model):
     )
 
     def get_expected_keywords(self):
-        """
-        Returns the expected keywords as a list.
-
-        Example:
-        "urgent,password,verify"becomes ["urgent", "password", "verify"]
-        """
+        """Return the expected keywords as a list."""
 
         return [
             keyword.strip()
@@ -66,6 +60,7 @@ class BaselineQuestion(db.Model):
         ]
 
     def __repr__(self):
+        """Short text shown when debugging."""
         return (
             f"<BaselineQuestion "
             f"{self.question_id}>"

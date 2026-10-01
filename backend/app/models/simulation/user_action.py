@@ -1,8 +1,10 @@
+# Database table: risky actions during an attempt
+
 from app.extensions import db
 
 
 class UserAction(db.Model):
-
+    """A risky action during an attempt, like clicking a link."""
     __tablename__ = "user_action"
 
     action_id = db.Column(

@@ -1,11 +1,13 @@
+// Public home page
+
 import { useEffect, useState } from "react";
 import {
   ArrowRight,
   BarChart3,
-  CheckCircle2,
+  Fish,
   Mail,
   MessageSquare,
-  ShieldCheck,
+  Sparkles,
   Target,
 } from "lucide-react";
 import { Button } from "./ui/button";
@@ -15,6 +17,7 @@ interface LandingPageProps {
   onNavigate: (page: string) => void;
 }
 
+/** Public home page with the sign-in and register links. */
 export function LandingPage({ onNavigate }: LandingPageProps) {
   const [platformSummary, setPlatformSummary] = useState({
     registered_players: 0,
@@ -38,21 +41,25 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
       icon: Mail,
       title: "Email simulations",
       description: "Analyze sender identity, message content, and social-engineering signals in realistic inbox scenarios.",
+      tone: "bg-sky-500/15 text-sky-300",
     },
     {
       icon: MessageSquare,
       title: "SMS simulations",
       description: "Practice identifying smishing attempts built around the urgency and link patterns used in mobile attacks.",
+      tone: "bg-purple-500/15 text-purple-300",
     },
     {
       icon: Target,
       title: "Adaptive training",
       description: "Difficulty responds to learner performance so every scenario remains relevant and useful.",
+      tone: "bg-amber-500/15 text-amber-300",
     },
     {
       icon: BarChart3,
       title: "Evidence-led progress",
       description: "Track accuracy, missed cues, false positives, and simulation history in one operational view.",
+      tone: "bg-green-500/15 text-green-300",
     },
   ];
 
@@ -69,12 +76,12 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
         <div className="absolute inset-0 bg-[linear-gradient(rgba(56,189,248,0.06)_1px,transparent_1px),linear-gradient(90deg,rgba(56,189,248,0.06)_1px,transparent_1px)] bg-size-[48px_48px] opacity-30" />
         <nav className="relative mx-auto flex max-w-7xl items-center justify-between px-6 py-6 lg:px-8">
           <button className="flex items-center gap-3 text-left" onClick={() => onNavigate("landing")}>
-            <span className="flex h-10 w-10 items-center justify-center border border-sky-400/30 bg-sky-400/10">
-              <ShieldCheck className="h-5 w-5 text-sky-400" />
+            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-linear-to-br from-sky-400 to-indigo-500 shadow-lg shadow-sky-500/20">
+              <Fish className="h-5 w-5 text-white" />
             </span>
             <span>
               <span className="block text-sm font-semibold tracking-[0.12em] text-white">PHISHSIMULATOR</span>
-              <span className="block text-xs text-slate-400">Security awareness operations</span>
+              <span className="block text-xs text-sky-400">Security awareness training</span>
             </span>
           </button>
           <div className="flex items-center gap-3">
@@ -93,8 +100,8 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
 
         <div className="relative mx-auto flex min-h-152.5 max-w-7xl flex-col justify-center px-6 pb-36 pt-16 lg:px-8">
           <div className="max-w-3xl">
-            <div className="mb-7 inline-flex items-center gap-2 border border-sky-400/30 bg-sky-400/10 px-3 py-1.5 text-xs font-medium tracking-[0.14em] text-sky-300">
-              <span className="h-1.5 w-1.5 bg-sky-400" />
+            <div className="mb-7 inline-flex items-center gap-2 rounded-full border border-sky-400/30 bg-sky-400/10 px-3 py-1.5 text-xs font-medium tracking-[0.14em] text-sky-300">
+              <Sparkles className="h-3.5 w-3.5" />
               LIVE TRAINING ENVIRONMENT
             </div>
             <h1 className="max-w-3xl text-5xl font-semibold leading-[1.05] tracking-normal text-white md:text-7xl">
@@ -153,7 +160,7 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
           <div className="grid divide-y divide-white/10 md:grid-cols-2 md:divide-x md:divide-y-0">
             {capabilities.map((capability) => (
               <article key={capability.title} className="group flex gap-5 py-8 md:px-8 md:first:pl-0 md:nth-[2n+1]:pl-0">
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center border border-sky-400/20 bg-sky-400/10 text-sky-300">
+                <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-lg ${capability.tone}`}>
                   <capability.icon className="h-5 w-5" />
                 </span>
                 <div>

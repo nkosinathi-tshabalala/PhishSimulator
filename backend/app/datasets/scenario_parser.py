@@ -1,41 +1,24 @@
+# Reads rows from uploaded datasets and turns them into scenario fields
+
 import re
+
+from app.utils.clues import detect_message_signs
 
 
 class ScenarioParser:
-    """
-    Parses phishing datasets and extracts
-    phishing indicators for scenario generation.
-    """
+    """Turns raw dataset rows into draft scenarios with clues and a difficulty."""
 
     URL_REGEX = r"(?:https?://|www\.)[^\s<>\"']+"
+    EMAIL_REGEX = r"[\w.+-]+@[\w-]+\.[\w.-]+"
+    PHONE_REGEX = r"(?:\+?\d[\d\s-]{8,}\d)"
+    MIN_MESSAGE_LENGTH = 10
 
-    URGENCY_KEYWORDS = [
-
-        "urgent",
-        "immediately",
-        "verify",
-        "suspend",
-        "limited",
-        "expire",
-        "click",
-        "action required"
-
-    ]
-
-    CREDENTIAL_KEYWORDS = [
-
-        "password",
-        "login",
-        "username",
-        "verify account",
-        "confirm identity"
-
-    ]
+    SENDER_BAIT_WORDS = ("secure", "verify", "support", "account", "update", "login")
 
     CATEGORY_KEYWORDS = {
         "Banking": ("bank", "account", "payment", "invoice"),
         "Delivery": ("delivery", "parcel", "shipment", "package"),
-        "Government": ("government", "tax", "irs", "benefit"),
+        "Government": ("government", "tax", "irs", "sars", "benefit"),
         "Employment": ("job", "recruit", "interview", "employment"),
         "University": ("university", "student", "campus", "course"),
         "Password Reset": ("password", "reset", "login", "credential"),
@@ -43,96 +26,149 @@ class ScenarioParser:
         "Social Media": ("facebook", "instagram", "linkedin", "social"),
     }
 
+    PHISHING_TYPE_CATEGORIES = {
+        "credential_harvesting": "Password Reset",
+        "account_takeover": "Password Reset",
+        "authority_scam": "Government",
+        "romance_dating": "Social Media",
+        "job_scam": "Employment",
+        "delivery_scam": "Delivery",
+        "invoice_scam": "Banking",
+        "financial_scam": "Banking",
+        "urgency": "Password Reset",
+        "generic_phishing": "Password Reset",
+        "threats": "Government",
+        "tech_support": "Microsoft 365",
+        "social_engineering": "Social Media",
+        "social_engineering_advanced": "Social Media",
+    }
+
     @staticmethod
     def extract_urls(text):
-
-        return re.findall(
-            ScenarioParser.URL_REGEX,
-            text
-        )
+        """Find every URL in the text."""
+        return [url.rstrip(".,;:!?)") for url in re.findall(ScenarioParser.URL_REGEX, text)]
 
     @staticmethod
-    def extract_cues(text):
+    def sender_address(sender):
+        """The email address inside "Display Name <address>", or the sender as-is."""
+        match = re.search(r"<([^>]+)>", sender or "")
+        return (match.group(1) if match else sender or "").strip()
 
+    @staticmethod
+    def is_suspicious_sender(sender):
+        """Flag look-alike senders such as security@micr0soft-support.co."""
+        sender = ScenarioParser.sender_address(sender)
+        if "@" not in sender:
+            return False
+
+        domain = sender.rsplit("@", 1)[1].lower()
+        name = domain.split(".")[0]
+        has_swapped_digit = re.search(r"[a-z]\d[a-z]", name) is not None
+        has_bait_word = "-" in name and any(
+            word in name for word in ScenarioParser.SENDER_BAIT_WORDS
+        )
+        return has_swapped_digit or has_bait_word
+
+    @staticmethod
+    def extract_cues(text, sender=""):
+        """Detect the warning signs present in a message."""
         cues = []
 
-        lower = text.lower()
-
         if ScenarioParser.extract_urls(text):
+            cues.append("Suspicious link")
+        if ScenarioParser.is_suspicious_sender(sender):
+            cues.append("Fake sender")
 
-            cues.append("Suspicious URL")
+        return cues + detect_message_signs(text)
 
-        if any(
+    @staticmethod
+    def infer_difficulty(cues, is_phishing, severity=""):
+        """Easy messages show many obvious clues; hard ones hide them."""
+        if severity == "high":
+            return "Hard"
 
-            word in lower
+        if is_phishing:
+            if len(cues) >= 3:
+                difficulty = "Easy"
+            elif len(cues) == 2:
+                difficulty = "Medium"
+            else:
+                difficulty = "Hard"
+        else:
+            difficulty = "Hard" if len(cues) >= 2 else "Medium" if cues else "Easy"
 
-            for word in ScenarioParser.URGENCY_KEYWORDS
+        if severity == "medium" and difficulty == "Easy":
+            return "Medium"
+        return difficulty
 
-        ):
+    @staticmethod
+    def find_personal_data(text):
+        """Return the kinds of personal data found in a message body."""
+        found = []
+        if re.search(ScenarioParser.EMAIL_REGEX, text):
+            found.append("email address")
+        if re.search(ScenarioParser.PHONE_REGEX, text):
+            found.append("phone number")
+        return found
 
-            cues.append("Urgency")
+    MAX_MESSAGE_LENGTH = 5000
 
-        if any(
-
-            word in lower
-
-            for word in ScenarioParser.CREDENTIAL_KEYWORDS
-
-        ):
-
-            cues.append("Credential Request")
-
-        return cues
+    @staticmethod
+    def is_unreadable(text):
+        """True for pre-processed corpus text that can't pass as a real message."""
+        tokenised = re.search(r"\w \, \w|\w \. \w|\w \: \w", text) is not None
+        stripped = len(text) > 80 and text == text.lower() and not re.search(r"[.,!?]", text)
+        return tokenised or stripped
 
     @staticmethod
     def normalize_label(value):
+        """Turn a dataset label (text, number or bool) into PHISHING or LEGITIMATE."""
         if isinstance(value, bool):
             return "PHISHING" if value else "LEGITIMATE"
 
         normalized = str(value or "").strip().lower()
         if normalized in {
-            "1", "true", "phishing", "phish", "spam", "smishing", "malicious", "fraud",
+            "1", "true", "phishing", "phish", "smishing", "malicious", "fraud",
         }:
             return "PHISHING"
         if normalized in {"0", "false", "legitimate", "safe", "ham", "benign"}:
             return "LEGITIMATE"
         return None
 
+    EMPTY_VALUES = {"", "nan", "none", "null", "yes", "no"}
+
     @staticmethod
     def _value(row, *names):
-        """Return the first non-empty value from a normalised dataset row."""
+        """Return the first real value found under any of the given column names."""
         for name in names:
-            value = row.get(name)
-            if value is not None and str(value).strip() and str(value).strip().lower() != "nan":
-                return str(value).strip()
+            value = str(row.get(name) or "").strip()
+            if value.lower() not in ScenarioParser.EMPTY_VALUES:
+                return value
         return ""
 
     @staticmethod
-    def _category_from_phishing_type(value):
-        normalised = str(value or "").strip().lower().replace("-", "_").replace(" ", "_")
-        mapping = {
-            "credential_harvesting": "Password Reset",
-            "account_takeover": "Password Reset",
-            "authority_scam": "Government",
-            "romance_dating": "Social Media",
-            "job_scam": "Employment",
-            "delivery_scam": "Delivery",
-            "invoice_scam": "Banking",
-        }
-        return mapping.get(normalised)
+    def anonymise_recipient(text, receiver):
+        """Replace the original mailbox owner's address with a neutral one."""
+        match = re.search(ScenarioParser.EMAIL_REGEX, receiver or "")
+        if not match:
+            return text
+        address = match.group(0)
+        domain = address.split("@")[1]
+        text = re.sub(re.escape(address), "you@example.com", text, flags=re.IGNORECASE)
+        return re.sub(re.escape(domain), "example.com", text, flags=re.IGNORECASE)
 
     @staticmethod
     def build_scenario_title(message_type, subject, message):
         """Create a distinct, readable title when the source has no subject."""
         prefix = f"{str(message_type).upper()} training"
-        source = subject or message
-        compact = re.sub(r"\s+", " ", str(source or "")).strip()
+        compact = re.sub(r"\s+", " ", str(subject or message or "")).strip()
         if not compact:
             return prefix
         return f"{prefix}: {compact[:180]}"
 
     @staticmethod
     def infer_category(text):
+        """Guess a training category from keywords in the message."""
         lower = text.lower()
 
         for category, keywords in ScenarioParser.CATEGORY_KEYWORDS.items():
@@ -142,82 +178,51 @@ class ScenarioParser:
         return "Password Reset" if "verify" in lower else "Social Media"
 
     @staticmethod
-    def parse_dataset(records, dataset_type="EMAIL"):
-        """
-        Converts dataset rows into processed records
-        ready for scenario generation.
-        """
+    def _category_for(row, full_text):
+        """Use the dataset's own phishing type column if it has one, else guess."""
+        phishing_type = ScenarioParser._value(row, "phishing_type", "type")
+        key = phishing_type.lower().replace("-", "_").replace(" ", "_")
+        return (
+            ScenarioParser.PHISHING_TYPE_CATEGORIES.get(key)
+            or ScenarioParser.infer_category(full_text)
+        )
 
-        processed_records = []
+    @staticmethod
+    def parse_row(row, dataset_type="EMAIL"):
+        """Convert one dataset row into a processed record, or None if unusable."""
+        row = {str(key).strip().lower(): value for key, value in row.items()}
 
-        for row in records:
+        sender = ScenarioParser._value(row, "sender", "from", "email_from")
+        subject = ScenarioParser._value(row, "subject", "title")
+        message = ScenarioParser._value(
+            row, "body", "content", "text", "email_body", "message", "text_combined",
+        )
+        if not message:
+            return None
 
-            normalized_row = {
-                str(key).strip().lower(): value
-                for key, value in row.items()
-            }
-            sender = ScenarioParser._value(
-                normalized_row, "sender", "from", "email_from", "email", "phone",
-            )
-            subject = ScenarioParser._value(normalized_row, "subject", "title")
-            message = ScenarioParser._value(
-                normalized_row,
-                "body", "content", "text", "email_body", "message", "text_combined",
-            )
+        receiver = ScenarioParser._value(row, "receiver", "to")
+        subject = ScenarioParser.anonymise_recipient(subject, receiver)
+        message = ScenarioParser.anonymise_recipient(message, receiver)
 
-            if not str(message).strip():
-                continue
+        # Email headers can be folded over several lines; keep them on one line and
+        # within the 255-character database columns
+        sender = " ".join(sender.split())[:255]
+        subject = " ".join(subject.split())[:255]
 
-            full_text = f"{subject} {message}"
+        full_text = f"{subject} {message}"
+        label = ScenarioParser.normalize_label(
+            ScenarioParser._value(row, "label", "class", "is_phishing", "correct_answer")
+        )
+        cues = ScenarioParser.extract_cues(full_text, sender)
+        severity = ScenarioParser._value(row, "severity").lower()
 
-            cues = ScenarioParser.extract_cues(
-                full_text
-            )
-
-            difficulty = "Easy"
-
-            if len(cues) >= 3:
-                difficulty = "Hard"
-
-            elif len(cues) == 2:
-                difficulty = "Medium"
-
-            label = ScenarioParser.normalize_label(
-                ScenarioParser._value(
-                    normalized_row, "label", "class", "is_phishing", "correct_answer",
-                )
-            )
-            severity = ScenarioParser._value(normalized_row, "severity").lower()
-            if severity == "high":
-                difficulty = "Hard"
-            elif severity == "medium" and difficulty == "Easy":
-                difficulty = "Medium"
-
-            category = (
-                ScenarioParser._category_from_phishing_type(
-                    ScenarioParser._value(normalized_row, "phishing_type", "type")
-                )
-                or ScenarioParser.infer_category(full_text)
-            )
-
-            processed_records.append({
-
-                "message_type": dataset_type.upper(),
-
-                "sender": str(sender).strip(),
-
-                "subject": str(subject).strip(),
-
-                "message": str(message).strip(),
-
-                "difficulty": difficulty,
-
-                "phishing_cues": cues,
-
-                "category": category,
-
-                "label": label,
-
-            })
-
-        return processed_records
+        return {
+            "message_type": dataset_type.upper(),
+            "sender": sender,
+            "subject": subject,
+            "message": message,
+            "difficulty": ScenarioParser.infer_difficulty(cues, label == "PHISHING", severity),
+            "phishing_cues": cues,
+            "category": ScenarioParser._category_for(row, full_text),
+            "label": label,
+        }

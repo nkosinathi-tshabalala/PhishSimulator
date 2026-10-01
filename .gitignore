@@ -1,49 +1,40 @@
-# =========================
-# Environment Variables
-# =========================
-**/.env
-**/.env.local
-**/.env.development
-**/.env.production
+# Keeps secrets, local data and generated files out of git.
+# .githooks/pre-commit double-checks every commit (enable it once, see README).
+
+# Secrets: every .env file except the .example templates, and key files
+.env
+.env.*
 !.env.example
+*.pem
+*.key
+*.p12
+*.pfx
 
-# =========================
-# Node
-# =========================
-**/node_modules/
-**/dist/
-**/coverage/
+# Uploaded datasets and database dumps stay on your machine
+backend/uploads/
+*.db
+*.sqlite3
+*.dump
 
-# =========================
 # Python
-# =========================
-**/__pycache__/
-**/*.py[cod]
-**/.pytest_cache/
-**/.venv/
-**/venv/
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.coverage
 
-# =========================
-# IDE
-# =========================
+# Node
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+
+# Editors and OS
 .vscode/
 .idea/
-
-# =========================
-# OS
-# =========================
 .DS_Store
 Thumbs.db
 
-# =========================
 # Logs
-# =========================
 *.log
-
-# Runtime uploads
-# Uploaded training datasets belong in object storage (for example S3) in
-# production and must never be committed to the source repository.
-backend/uploads/datasets/
-
-# Local runtime database
-backend/instance/
