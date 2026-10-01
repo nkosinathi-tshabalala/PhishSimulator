@@ -1,28 +1,33 @@
+// Root of the app: handles login state and shows the right page
+
 import { useEffect, useState } from "react";
 import { LandingPage } from "./components/LandingPage";
 import { LoginPage } from "./components/LoginPage";
 import { RegisterPage } from "./components/RegisterPage";
 import { ResetPasswordPage } from "./components/ResetPasswordPage";
+import { Sidebar } from "./components/Sidebar";
+import { AdminSidebar } from "./components/AdminSidebar";
+import { AppLayout } from "./components/AppLayout";
 import { Dashboard } from "./components/Dashboard";
-import { AdminDashboard } from "./components/AdminDashboard";
+import { SimulationsPage } from "./components/SimulationsPage";
 import { EmailSimulation } from "./components/EmailSimulation";
 import { SMSSimulation } from "./components/SMSSimulation";
+import { InboxTriage } from "./components/InboxTriage";
 import { BaselineQuiz } from "./components/BaselineQuiz";
 import { Analytics } from "./components/Analytics";
-import { AdminAnalytics } from "./components/AdminAnalytics";
 import { ProfilePage } from "./components/ProfilePage";
-import { SimulationsPage } from "./components/SimulationsPage";
+import { AdminDashboard } from "./components/AdminDashboard";
+import { AdminAnalytics } from "./components/AdminAnalytics";
 import { DatasetManagementPage } from "./components/DatasetManagementPage";
 import { ScenarioManagementPage } from "./components/ScenarioManagementPage";
 import { UserMonitoringPage } from "./components/UserMonitoringPage";
 import { EmailDispatcherPage } from "./components/EmailDispatcherPage";
-import { Sidebar } from "./components/Sidebar";
-import { AdminSidebar } from "./components/AdminSidebar";
 import { BaselineManagementPage } from "./components/BaselineManagementPage";
 import { AdminProfilePage } from "./components/AdminProfilePage";
-
 import AuthService from "../services/authService";
+import { SessionWatcher } from "./components/SessionWatcher";
 
+/** Root component: restores the login and shows the right page for the user's role. */
 export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [userRole, setUserRole] = useState<"player" | "admin">("player");
@@ -41,16 +46,50 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
 
   const [isLoading, setIsLoading] = useState(true);
+  const [loginNotice, setLoginNotice] = useState("");
+  const [loginEmail, setLoginEmail] = useState("");
+  const [resetToken, setResetToken] = useState("");
 
   useEffect(() => {
     restoreSession();
   }, []);
 
+  /** Go to the login page after the session has ended. */
+  const handleSessionEnd = () => {
+    localStorage.removeItem("access_token");
+    localStorage.removeItem("current_page");
+    setCurrentUser(null);
+    setIsLoggedIn(false);
+    setLoginNotice("Your session ended. Please sign in again.");
+    setCurrentPage("login");
+  };
+
+  /** Open the login form for one account (used when a training email sends someone here). */
+  const showLoginFor = (email: string) => {
+    setLoginEmail(email);
+    setLoginNotice(`Sign in as ${email} to continue your training.`);
+    setCurrentPage("login");
+  };
+
   const restoreSession = async () => {
+    // A password reset email links to /reset-password?token=...; the token is read, then removed from the address bar
+    const params = new URLSearchParams(window.location.search);
+    if (window.location.pathname === "/reset-password" && params.get("token")) {
+      setResetToken(params.get("token") ?? "");
+      setCurrentPage("reset");
+      window.history.replaceState(null, "", "/");
+      setIsLoading(false);
+      return;
+    }
+
+    // A training email's landing page links here with ?login=<recipient>
+    const loginFor = params.get("login")?.trim().toLowerCase() || "";
+    if (loginFor) window.history.replaceState(null, "", window.location.pathname);
+
     const token = localStorage.getItem("access_token");
 
-    // No stored session
     if (!token) {
+      if (loginFor) showLoginFor(loginFor);
       setIsLoading(false);
       return;
     }
@@ -63,7 +102,8 @@ export default function App() {
 
         setIsLoggedIn(false);
         setUserRole("player");
-        setCurrentPage("landing");
+        if (loginFor) showLoginFor(loginFor);
+        else setCurrentPage("landing");
 
         setIsLoading(false);
         return;
@@ -71,10 +111,19 @@ export default function App() {
 
       const user = response.data.data;
 
+      // Signed in as someone else (e.g. the admin who sent the campaign): sign out first
+      if (loginFor && String(user.email).toLowerCase() !== loginFor) {
+        await AuthService.logout();
+        localStorage.removeItem("current_page");
+        setIsLoggedIn(false);
+        setUserRole("player");
+        showLoginFor(loginFor);
+        return;
+      }
+
       const role = user.role.toLowerCase() as "player" | "admin";
 
       setCurrentUser(user);
-      console.log("Current User:", user);
 
       setIsLoggedIn(true);
       setUserRole(role);
@@ -99,29 +148,20 @@ export default function App() {
 
   const handleLogin = async (role: "player" | "admin") => {
     const response = await AuthService.getCurrentUser();
-
-    console.log(response);
-
     if (response.ok) {
       setCurrentUser(response.data.data);
-
-      console.log("Current User:", response.data.data);
     }
 
     const page = role === "admin" ? "admin-dashboard" : "dashboard";
-
     localStorage.setItem("current_page", page);
-
+    setLoginNotice("");
+    setLoginEmail("");
     setCurrentPage(page);
-
-    console.log("Navigating to:", page);
-
     setIsLoggedIn(true);
     setUserRole(role);
   };
 
   const handleRegister = () => {
-    console.log("handleRegister called");
     setIsLoggedIn(false);
     setUserRole("player");
     setCurrentPage("login");
@@ -140,11 +180,10 @@ export default function App() {
   };
 
   const handleNavigate = (page: string) => {
+    if (page !== "reset") setResetToken("");
     localStorage.setItem("current_page", page);
     setCurrentPage(page);
   };
-
-  // Public pages
 
   if (isLoading) {
     return (
@@ -158,138 +197,65 @@ export default function App() {
     if (currentPage === "landing")
       return <LandingPage onNavigate={handleNavigate} />;
     if (currentPage === "login")
-      return <LoginPage onLogin={handleLogin} onNavigate={handleNavigate} />;
-
-
-   
-
-
+      return <LoginPage onLogin={handleLogin} onNavigate={handleNavigate} notice={loginNotice} initialEmail={loginEmail} />;
     if (currentPage === "register")
       return (
         <RegisterPage onNavigate={handleNavigate} onRegister={handleRegister} />
       );
     if (currentPage === "reset")
-      return <ResetPasswordPage onNavigate={handleNavigate} />;
+      return <ResetPasswordPage onNavigate={handleNavigate} token={resetToken || undefined} />;
     return <LandingPage onNavigate={handleNavigate} />;
   }
 
-  // Admin pages
   if (userRole === "admin") {
+    const backToDashboard = () => handleNavigate("admin-dashboard");
+
     return (
-      <div className="flex h-screen overflow-hidden">
-        <AdminSidebar
-          currentPage={currentPage}
-          onNavigate={handleNavigate}
-          onLogout={handleLogout}
-        />
-        <div
-          className="flex-1 overflow-auto"
-          style={{
-            backgroundColor: "#0a0e14",
-            backgroundImage:
-              "linear-gradient(rgba(10,14,20,0.93), rgba(10,14,20,0.96)), url('/assets/IMG_5602.jpg')",
-            backgroundSize: "cover",
-            backgroundPosition: "center",
-            backgroundAttachment: "fixed",
-          }}
-        >
-          {currentPage === "admin-dashboard" && (
-            <AdminDashboard onNavigate={handleNavigate} />
-          )}
-
-          {currentPage === "baseline-management" && (
-            <BaselineManagementPage
-              onBack={() => handleNavigate("admin-dashboard")}
-            />
-          )}
-
-          {currentPage === "datasets" && (
-            <DatasetManagementPage
-              onBack={() => handleNavigate("admin-dashboard")}
-            />
-          )}
-          {currentPage === "scenarios" && (
-            <ScenarioManagementPage
-              onBack={() => handleNavigate("admin-dashboard")}
-            />
-          )}
-          {currentPage === "users" && (
-            <UserMonitoringPage
-              onBack={() => handleNavigate("admin-dashboard")}
-            />
-          )}
-          {currentPage === "analytics" && (
-            <AdminAnalytics onBack={() => handleNavigate("admin-dashboard")} />
-          )}
-          {currentPage === "email-dispatcher" && (
-            <EmailDispatcherPage
-              onBack={() => handleNavigate("admin-dashboard")}
-            />
-          )}
-
-          {currentPage === "admin-profile" && (
-            <AdminProfilePage
-              user={currentUser}
-              setCurrentUser={setCurrentUser}
-              onBack={() => handleNavigate("admin-dashboard")}
-            />
-          )}
-        </div>
-      </div>
+      <AppLayout
+        currentPage={currentPage}
+        backgroundImage="/assets/IMG_5602.jpg"
+        renderSidebar={(layout) => (
+          <AdminSidebar currentPage={currentPage} onNavigate={handleNavigate} onLogout={handleLogout} {...layout} />
+        )}
+      >
+        <SessionWatcher onSignInAgain={handleSessionEnd} onLogout={handleLogout} />
+        {currentPage === "admin-dashboard" && <AdminDashboard onNavigate={handleNavigate} />}
+        {currentPage === "baseline-management" && <BaselineManagementPage />}
+        {currentPage === "datasets" && <DatasetManagementPage onBack={backToDashboard} />}
+        {currentPage === "scenarios" && <ScenarioManagementPage onBack={backToDashboard} />}
+        {currentPage === "users" && <UserMonitoringPage onBack={backToDashboard} />}
+        {currentPage === "analytics" && <AdminAnalytics onNavigate={handleNavigate} />}
+        {currentPage === "email-dispatcher" && <EmailDispatcherPage onBack={backToDashboard} />}
+        {currentPage === "admin-profile" && (
+          <AdminProfilePage user={currentUser} onBack={backToDashboard} />
+        )}
+      </AppLayout>
     );
   }
 
-  // Player pages
+  /** Go back to the player home page. */
+  const backToHome = () => handleNavigate("dashboard");
+  const backToTraining = () => handleNavigate("simulations");
+
   return (
-    <div className="flex h-screen overflow-hidden">
-      <Sidebar
-        currentPage={currentPage}
-        onNavigate={handleNavigate}
-        onLogout={handleLogout}
-      />
-      <div
-        className="flex-1 overflow-auto"
-        style={{
-          backgroundColor: "#0a0e14",
-          backgroundImage:
-            "linear-gradient(rgba(10,14,20,0.93), rgba(10,14,20,0.96)), url('/assets/IMG_5601.jpg')",
-          backgroundSize: "cover",
-          backgroundPosition: "center",
-          backgroundAttachment: "fixed",
-        }}
-      >
-        {currentPage === "dashboard" && (
-          <Dashboard user={currentUser} onNavigate={handleNavigate} />
-        )}
-        {currentPage === "quiz" && (
-          <BaselineQuiz onBack={() => handleNavigate("dashboard")} />
-        )}
-        {currentPage === "simulations" && (
-          <SimulationsPage onNavigate={handleNavigate} />
-        )}
-        {currentPage === "email" && (
-          <EmailSimulation
-            onBack={() => handleNavigate("simulations")}
-            onNavigate={handleNavigate}
-          />
-        )}
-        {currentPage === "sms" && (
-          <SMSSimulation
-            onBack={() => handleNavigate("simulations")}
-            onNavigate={handleNavigate}
-          />
-        )}
-        {currentPage === "performance" && (
-          <Analytics onBack={() => handleNavigate("dashboard")} />
-        )}
-        {currentPage === "profile" && (
-          <ProfilePage
-            user={currentUser}
-            setCurrentUser={setCurrentUser}
-            onBack={() => handleNavigate("dashboard")}
-          />
-        )}
-      </div>
-    </div>
+    <AppLayout
+      currentPage={currentPage}
+      backgroundImage="/assets/IMG_5601.jpg"
+      renderSidebar={(layout) => (
+        <Sidebar currentPage={currentPage} onNavigate={handleNavigate} onLogout={handleLogout} {...layout} />
+      )}
+    >
+      <SessionWatcher onSignInAgain={handleSessionEnd} onLogout={handleLogout} />
+      {currentPage === "dashboard" && <Dashboard user={currentUser} onNavigate={handleNavigate} />}
+      {currentPage === "quiz" && <BaselineQuiz onBack={backToHome} />}
+      {currentPage === "simulations" && <SimulationsPage onNavigate={handleNavigate} />}
+      {currentPage === "email" && <EmailSimulation onBack={backToTraining} onNavigate={handleNavigate} />}
+      {currentPage === "sms" && <SMSSimulation onBack={backToTraining} onNavigate={handleNavigate} />}
+      {currentPage === "triage" && <InboxTriage onBack={backToTraining} onNavigate={handleNavigate} />}
+      {currentPage === "performance" && <Analytics />}
+      {currentPage === "profile" && (
+        <ProfilePage user={currentUser} setCurrentUser={setCurrentUser} onBack={backToHome} />
+      )}
+    </AppLayout>
   );
 }

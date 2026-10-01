@@ -1,3 +1,5 @@
+# Database table: uploaded datasets
+
 from datetime import datetime
 
 from app.extensions import db
@@ -24,13 +26,11 @@ class Dataset(db.Model):
         db.String(20),
         nullable=False
     )
-    # EMAIL or SMS
 
     file_format = db.Column(
         db.String(10),
         nullable=False
     )
-    # CSV or JSON
 
     filename = db.Column(
         db.String(255),
@@ -52,6 +52,10 @@ class Dataset(db.Model):
         default="UPLOADED"
     )
 
+    quality_report = db.Column(
+        db.Text
+    )
+
     records = db.relationship(
         "DatasetRecord",
         back_populates="dataset",
@@ -59,4 +63,5 @@ class Dataset(db.Model):
     )
 
     def __repr__(self):
+        """Short text shown when debugging."""
         return f"<Dataset {self.name}>"

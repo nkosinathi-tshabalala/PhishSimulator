@@ -1,26 +1,17 @@
-"use client";
+import { Toaster as Sonner, type ToasterProps } from "sonner";
 
-import { useTheme } from "next-themes";
-import { Toaster as Sonner } from "sonner";
-import type { ToasterProps } from "sonner";
-
-const Toaster = ({ ...props }: ToasterProps) => {
-  const { theme = "system" } = useTheme();
-
+// shadcn/ui toast container, styled for the app's dark theme.
+function Toaster(props: ToasterProps) {
   return (
     <Sonner
-      theme={theme as ToasterProps["theme"]}
-      className="toaster group"
-      style={
-        {
-          "--normal-bg": "var(--popover)",
-          "--normal-text": "var(--popover-foreground)",
-          "--normal-border": "var(--border)",
-        } as React.CSSProperties
-      }
+      theme="dark"
+      richColors
+      closeButton
+      position="top-right"
+      toastOptions={{ className: "border border-border" }}
       {...props}
     />
   );
-};
+}
 
 export { Toaster };

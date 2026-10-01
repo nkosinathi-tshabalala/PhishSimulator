@@ -1,0 +1,36 @@
+# Serves the built React app and forwards /api to the backend container.
+# The nginx image fills in ${MAX_UPLOAD_MB} from the environment when the container starts.
+server {
+    listen 80;
+    server_name _;
+    root /usr/share/nginx/html;
+    index index.html;
+
+    # Do not advertise the nginx version
+    server_tokens off;
+    # Dataset uploads pass through here, so allow the same size as the API
+    client_max_body_size ${MAX_UPLOAD_MB}m;
+
+    # Send API calls to the backend container.
+    location /api/ {
+        proxy_pass http://backend:5000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # Single-page app: unknown paths (like /caught or /reset-password) return index.html.
+    # The API adds its own security headers, so these are only for the page.
+    location / {
+        try_files $uri $uri/ /index.html;
+
+        # Browser protections. The CSP lets the page load code only from this site (fonts from Google),
+        # which limits the damage any injected script could do.
+        add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header X-Frame-Options "DENY" always;
+        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+        add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
+    }
+}

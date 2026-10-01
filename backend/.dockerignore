@@ -1,0 +1,13 @@
+# Never copied into the backend image: secrets, local data and development files
+.env
+.env.*
+*.pem
+*.key
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+uploads/
+tests/
+pyrightconfig.json
+*.log

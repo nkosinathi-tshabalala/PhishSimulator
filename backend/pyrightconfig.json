@@ -1,0 +1,7 @@
+{
+  "reportCallIssue": "none",
+  "reportArgumentType": "none",
+  "pythonVersion": "3.12",
+  "venvPath": ".",
+  "venv": ".venv"
+}

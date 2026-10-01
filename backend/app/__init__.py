@@ -1,66 +1,68 @@
+# Creates the Flask app and connects the database, logins and every group of endpoints
+
+import os
+
 from flask import Flask
 from flask_cors import CORS
 
 from app.config import Config
-from app.extensions import bcrypt
-from app.extensions import db
-from app.extensions import jwt
-from app.extensions import migrate
+from app.extensions import bcrypt, db, jwt, migrate
+from app.security import register_security
 
-# Import models so Flask-Migrate can detect them
-from app.models import *
+from app.models import *  # noqa: F401,F403
 
-# Import Blueprints
+from app.routes.analytics_routes import analytics_bp
 from app.routes.auth_routes import auth_bp
 from app.routes.baseline_routes import baseline_bp
-from app.routes.scenario_routes import scenario_bp
+from app.routes.campaign_routes import campaign_bp
 from app.routes.dataset_routes import dataset_bp
+from app.routes.scenario_routes import scenario_bp
 from app.routes.simulation_routes import simulation_bp
-from app.routes.analytics_routes import analytics_bp
-from app.routes.email_routes import email_bp
 
 
 def create_app():
-    """Create and configure the Flask application."""
-
+    """Create the Flask app, connect the extensions and register every route."""
     app = Flask(__name__)
-
-    # Load application configuration
     app.config.from_object(Config)
 
-    # Allow requests from the React frontend
+    # Only the React app may call the API from a browser. In development any local
+    # port is allowed, because Vite moves to 5174 when 5173 is already in use.
+    allowed_origins = [app.config["FRONTEND_URL"]]
+    if app.config["FLASK_ENV"] == "development":
+        allowed_origins.append(r"http://(localhost|127\.0\.0\.1):\d+")
+
     CORS(
         app,
-        resources={r"/api/*": {"origins": "http://localhost:5173"}}
+        resources={r"/api/*": {"origins": allowed_origins}},
+        expose_headers=["X-New-Token"],
     )
 
-    # Initialise Flask extensions
     db.init_app(app)
     migrate.init_app(app, db)
     bcrypt.init_app(app)
     jwt.init_app(app)
+    register_security(app)
 
-    if app.config["SQLALCHEMY_DATABASE_URI"].startswith("sqlite"):
-        with app.app_context():
-            db.create_all()
+    for blueprint in (
+        auth_bp,
+        baseline_bp,
+        dataset_bp,
+        scenario_bp,
+        simulation_bp,
+        analytics_bp,
+        campaign_bp,
+    ):
+        app.register_blueprint(blueprint)
 
-    # Register API Blueprints
-    app.register_blueprint(auth_bp)
-    app.register_blueprint(baseline_bp)
-    app.register_blueprint(dataset_bp)
-    app.register_blueprint(scenario_bp)
-    app.register_blueprint(simulation_bp)
-    app.register_blueprint(analytics_bp)
-    app.register_blueprint(email_bp)
-    
-
-    # Health check route
     @app.route("/")
     def home():
-        return {
-            "application": "PhishSimulator API",
-            "version": "1.0.0",
-            "status": "Running"
-        }
+        """Health check for the API."""
+        return {"application": "PhishSimulator API", "status": "Running"}
+
+    # Background heartbeat that closes campaign emails past their window and sends result emails.
+    # Skipped in testing, where the suite drives settling directly (CAMPAIGN_SWEEPER=off).
+    if not app.config.get("TESTING") and os.getenv("CAMPAIGN_SWEEPER", "on").lower() != "off":
+        from app.services.campaign_service import start_sweeper
+        start_sweeper(app)
 
     return app

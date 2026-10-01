@@ -1,9 +1,11 @@
+// API calls for the baseline quiz
+
 import { apiRequest } from "./api";
 
+/** API calls for the baseline quiz. */
 class BaselineService {
-
+    /** Admin: all quiz questions. */
     async getQuestions() {
-
         const token = localStorage.getItem("access_token");
 
         return await apiRequest(
@@ -15,8 +17,8 @@ class BaselineService {
 
     }
 
+    /** Admin: add a question. */
     async createQuestion(data: any) {
-
         const token = localStorage.getItem("access_token");
 
         return await apiRequest(
@@ -28,8 +30,8 @@ class BaselineService {
 
     }
 
+    /** Admin: edit a question. */
     async updateQuestion(id: number, data: any) {
-
         const token = localStorage.getItem("access_token");
 
         return await apiRequest(
@@ -41,8 +43,8 @@ class BaselineService {
 
     }
 
+    /** Admin: delete a question. */
     async deleteQuestion(id: number) {
-
         const token = localStorage.getItem("access_token");
 
         return await apiRequest(
@@ -54,8 +56,8 @@ class BaselineService {
 
     }
 
+    /** Admin: one question. */
     async getQuestion(id: number) {
-
         const token = localStorage.getItem("access_token");
 
         return await apiRequest(
@@ -67,6 +69,7 @@ class BaselineService {
 
     }
 
+    /** The player's last completed quiz. */
     async getLatestResult() {
         const token = localStorage.getItem("access_token");
 
@@ -78,8 +81,8 @@ class BaselineService {
         );
     }
 
+    /** Start a new quiz. */
     async startAssessment(data: any) {
-
         const token = localStorage.getItem("access_token");
 
         return await apiRequest(
@@ -91,8 +94,8 @@ class BaselineService {
 
     }
 
+    /** Save one answer. */
     async submitResponse(data: any) {
-
         const token = localStorage.getItem("access_token");
 
         return await apiRequest(
@@ -104,8 +107,8 @@ class BaselineService {
 
     }
 
+    /** Finish the quiz and get the result. */
     async completeAssessment(data: any) {
-
         const token = localStorage.getItem("access_token");
 
         return await apiRequest(

@@ -1,3 +1,5 @@
+# Scenario model
+
 from .scenario import Scenario
 
 __all__ = [

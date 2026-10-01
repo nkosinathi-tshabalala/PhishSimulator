@@ -1,49 +1,38 @@
-"""Permanently remove every PhishSimulator database record.
-
-The command preserves the database itself but drops and recreates all tables.
-Use it only when you want to begin with no users, datasets, scenarios,
-simulation attempts, campaigns, or analytics history.
-"""
+# Wipes the database and recreates empty tables
+# Usage: .venv\Scripts\python.exe reset_database.py --confirm-reset
 
 import argparse
 import sys
 
+from flask_migrate import stamp
 from sqlalchemy.engine import make_url
 
 from app import create_app
 from app.extensions import db
 
 
-def display_database_url(database_uri):
-    """Return the configured target without exposing a database password."""
+def safe_url(database_uri):
+    """Show the target database without printing its password."""
     url = make_url(database_uri)
     return str(url.set(password="***")) if url.password else str(url)
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Permanently remove all PhishSimulator application data."
-    )
-    parser.add_argument(
-        "--confirm-reset",
-        action="store_true",
-        help="Required acknowledgement before data is permanently deleted.",
-    )
-    arguments = parser.parse_args()
-
-    if not arguments.confirm_reset:
-        parser.error(
-            "Refusing to reset the database. Re-run with --confirm-reset."
-        )
+    """Drop and recreate every table after confirmation."""
+    parser = argparse.ArgumentParser(description="Delete all data and recreate empty tables.")
+    parser.add_argument("--confirm-reset", action="store_true", help="Required before anything is deleted.")
+    args = parser.parse_args()
+    if not args.confirm_reset:
+        parser.error("Refusing to reset. Re-run with --confirm-reset.")
 
     app = create_app()
     with app.app_context():
-        database_uri = app.config["SQLALCHEMY_DATABASE_URI"]
-        print(f"Resetting database: {display_database_url(database_uri)}")
+        print(f"Resetting database: {safe_url(app.config['SQLALCHEMY_DATABASE_URI'])}")
         db.session.remove()
         db.drop_all()
         db.create_all()
-        print("Database reset complete. All application data has been removed.")
+        stamp(revision="head")
+        print("Done. All data removed and empty tables recreated.")
 
 
 if __name__ == "__main__":

@@ -1,0 +1,24 @@
+#!/bin/sh
+# Blocks a commit that would add secrets or local data, even if someone forces it past .gitignore.
+# Turn it on once per clone with:  git config core.hooksPath .githooks
+
+# 1. Files that must never be committed: .env files (not the .example ones), keys and uploads
+blocked=$(git diff --cached --name-only --diff-filter=ACM \
+  | grep -E '(^|/)\.env(\.[^/]*)?$|\.(pem|key|p12|pfx)$|^backend/uploads/' \
+  | grep -v '\.example$')
+if [ -n "$blocked" ]; then
+  echo "Commit blocked. These files hold secrets or local data:"
+  echo "$blocked" | sed 's/^/  /'
+  echo "Unstage them with: git restore --staged <file>"
+  exit 1
+fi
+
+# 2. Secrets pasted into other files, written like an .env line (NAME=value)
+leaks=$(git diff --cached -U0 --diff-filter=ACM -- . ':(exclude)*.example' \
+  | grep -E '^\+[[:space:]]*(SECRET_KEY|JWT_SECRET_KEY|SMTP_PASSWORD|DB_PASSWORD)=[^[:space:]]{6,}')
+if [ -n "$leaks" ]; then
+  echo "Commit blocked. A secret value appears in the staged changes:"
+  echo "$leaks" | sed -E 's/=.*/=***/; s/^/  /'
+  echo "Keep secrets in .env files only."
+  exit 1
+fi

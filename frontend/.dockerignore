@@ -1,0 +1,6 @@
+# Never copied into the frontend image: secrets, installed packages and old builds
+.env
+.env.*
+node_modules/
+dist/
+*.log

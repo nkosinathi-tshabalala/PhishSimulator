@@ -1,3 +1,5 @@
+# Database table: one attempt at the baseline quiz
+
 from datetime import datetime
 
 from app.extensions import db
@@ -8,20 +10,17 @@ class BaselineAssessment(db.Model):
 
     __tablename__ = "baseline_assessment"
 
-    # Primary Key
     assessment_id = db.Column(
         db.Integer,
         primary_key=True
     )
 
-    # Foreign Key
     player_id = db.Column(
         db.Integer,
         db.ForeignKey("player.player_id"),
         nullable=False
     )
 
-    # Assessment Details
     started_at = db.Column(
         db.DateTime,
         default=datetime.utcnow,
@@ -39,7 +38,6 @@ class BaselineAssessment(db.Model):
         nullable=False
     )
 
-    # Relationships
     player = db.relationship(
         "Player",
         back_populates="baseline_assessments"
@@ -52,6 +50,7 @@ class BaselineAssessment(db.Model):
     )
 
     def __repr__(self):
+        """Short text shown when debugging."""
         return (
             f"<BaselineAssessment "
             f"{self.assessment_id} "

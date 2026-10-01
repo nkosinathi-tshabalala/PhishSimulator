@@ -1,8 +1,10 @@
+// Registration page for new players
+
 import { useState } from "react";
 
 import AuthService from "../../services/authService";
 
-import { ArrowLeft, Shield, CheckCircle2, AlertCircle } from "lucide-react";
+import { ArrowLeft, Fish, CheckCircle2, AlertCircle } from "lucide-react";
 
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -33,6 +35,7 @@ interface RegisterPageProps {
   onRegister: () => void;
 }
 
+/** Registration form for new players. */
 export function RegisterPage({ onNavigate, onRegister }: RegisterPageProps) {
   const [formData, setFormData] = useState({
     fullName: "",
@@ -77,7 +80,6 @@ export function RegisterPage({ onNavigate, onRegister }: RegisterPageProps) {
 
       setTimeout(() => {
         onRegister();
-        console.log("Redirecting to login...");
       }, 2000);
     } catch (error) {
       setErrorMessage("Unable to create your account. Please try again.");
@@ -98,8 +100,8 @@ export function RegisterPage({ onNavigate, onRegister }: RegisterPageProps) {
         }}
       >
         <div className="flex items-center gap-3">
-          <span className="flex h-10 w-10 items-center justify-center border border-sky-400/30 bg-sky-400/10">
-            <Shield className="h-5 w-5 text-sky-400" />
+          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-linear-to-br from-sky-400 to-indigo-500 shadow-lg shadow-sky-500/20">
+            <Fish className="h-5 w-5 text-white" />
           </span>
           <span className="text-sm font-semibold tracking-[0.12em] text-white">PHISHSIMULATOR</span>
         </div>
@@ -128,8 +130,8 @@ export function RegisterPage({ onNavigate, onRegister }: RegisterPageProps) {
 
           <div className="text-center">
             <div className="flex justify-center mb-4">
-              <div className="w-16 h-16 rounded-full bg-primary flex items-center justify-center">
-                <Shield className="w-8 h-8 text-primary-foreground" />
+              <div className="w-16 h-16 rounded-2xl bg-linear-to-br from-sky-400 to-indigo-500 shadow-lg shadow-sky-500/20 flex items-center justify-center">
+                <Fish className="w-8 h-8 text-white" />
               </div>
             </div>
 
@@ -193,8 +195,10 @@ export function RegisterPage({ onNavigate, onRegister }: RegisterPageProps) {
                     password: e.target.value,
                   })
                 }
+                autoComplete="new-password"
                 required
               />
+              <p className="text-xs text-muted-foreground">At least 8 characters with a letter and a number.</p>
             </div>
 
             <div className="space-y-2">

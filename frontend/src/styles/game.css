@@ -1,0 +1,80 @@
+/* Small reward animations for the CATCH "Help" stage. */
+
+@keyframes confetti-fall {
+  0% {
+    transform: translate3d(0, -10vh, 0) rotate(0deg);
+    opacity: 1;
+  }
+  100% {
+    transform: translate3d(var(--drift, 0px), 105vh, 0) rotate(720deg);
+    opacity: 0.2;
+  }
+}
+
+.confetti-piece {
+  position: fixed;
+  top: 0;
+  width: 8px;
+  height: 14px;
+  border-radius: 2px;
+  pointer-events: none;
+  z-index: 60;
+  animation: confetti-fall var(--duration, 2.4s) cubic-bezier(0.25, 0.6, 0.4, 1) forwards;
+}
+
+@keyframes xp-float {
+  0% {
+    transform: translateY(8px) scale(0.9);
+    opacity: 0;
+  }
+  30% {
+    transform: translateY(0) scale(1.08);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+  }
+}
+
+.xp-pop {
+  animation: xp-float 0.6s ease-out both;
+}
+
+@keyframes flame-flicker {
+  0%, 100% {
+    transform: scale(1) rotate(-3deg);
+  }
+  50% {
+    transform: scale(1.12) rotate(3deg);
+  }
+}
+
+.flame {
+  animation: flame-flicker 1.4s ease-in-out infinite;
+  transform-origin: bottom center;
+}
+
+@keyframes shine {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.shine {
+  background-image: linear-gradient(110deg, transparent 35%, rgba(255, 255, 255, 0.18) 50%, transparent 65%);
+  background-size: 200% 100%;
+  animation: shine 3s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .confetti-piece,
+  .flame,
+  .shine,
+  .xp-pop {
+    animation: none;
+  }
+}

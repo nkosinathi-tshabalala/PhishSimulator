@@ -1,62 +1,71 @@
+# Application settings, read from backend/.env (PostgreSQL only)
+
 import os
+from datetime import timedelta
 
 from dotenv import load_dotenv
-from sqlalchemy import create_engine
 
-# Load environment variables from the .env file
 load_dotenv()
 
 
+def _database_url():
+    """Build the PostgreSQL connection URL from the environment."""
+    if os.getenv("DATABASE_URL"):
+        return os.getenv("DATABASE_URL")
+
+    settings = {name: os.getenv(name) for name in ("DB_USER", "DB_PASSWORD", "DB_HOST", "DB_PORT", "DB_NAME")}
+    missing = [name for name, value in settings.items() if not value]
+    if missing:
+        raise RuntimeError(
+            f"PostgreSQL is not configured. Add {', '.join(missing)} to backend/.env "
+            "(see backend/.env.example)."
+        )
+
+    return (
+        f"postgresql://{settings['DB_USER']}:{settings['DB_PASSWORD']}"
+        f"@{settings['DB_HOST']}:{settings['DB_PORT']}/{settings['DB_NAME']}"
+    )
+
+
+def _secret(name):
+    """A signing key from the environment. The app refuses to start with a missing or short one."""
+    value = os.getenv(name) or ""
+    if len(value) < 32:
+        raise RuntimeError(
+            f"{name} must be a random string of at least 32 characters in backend/.env. "
+            'Create one with: python -c "import secrets; print(secrets.token_hex(32))"'
+        )
+    return value
+
+
+def _list(name):
+    """Read a comma-separated setting as a clean list."""
+    return [item.strip().lower() for item in os.getenv(name, "").split(",") if item.strip()]
+
+
 class Config:
-    """Application configuration."""
+    """Settings for Flask, the database, logins and email campaigns."""
+    SECRET_KEY = _secret("SECRET_KEY")
+    JWT_SECRET_KEY = _secret("JWT_SECRET_KEY")
+    JWT_ACCESS_TOKEN_EXPIRES = timedelta(minutes=15)
 
-    SECRET_KEY = os.getenv("SECRET_KEY")
+    # Largest file the API accepts (dataset uploads). nginx uses the same limit in Docker.
+    MAX_CONTENT_LENGTH = int(os.getenv("MAX_UPLOAD_MB", "50")) * 1024 * 1024
 
-    JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY")
+    SQLALCHEMY_DATABASE_URI = _database_url()
 
+    # "development" locally (from .env); anything else is treated as production
+    FLASK_ENV = os.getenv("FLASK_ENV", "production")
     FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
     BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:5000")
-    SMTP_HOST = os.getenv("SMTP_HOST")
-    SMTP_PORT = os.getenv("SMTP_PORT", "587")
-    SMTP_USERNAME = os.getenv("SMTP_USERNAME")
-    SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
-    SMTP_FROM_EMAIL = os.getenv("SMTP_FROM_EMAIL")
+    PUBLIC_BACKEND_URL = os.getenv("PUBLIC_BACKEND_URL") or BACKEND_URL
 
-    _database_url = os.getenv("DATABASE_URL")
-    _postgres_settings = (
-        os.getenv("DB_USER"),
-        os.getenv("DB_PASSWORD"),
-        os.getenv("DB_HOST"),
-        os.getenv("DB_PORT"),
-        os.getenv("DB_NAME"),
-    )
+    SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
+    SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+    SMTP_USERNAME = (os.getenv("SMTP_USERNAME") or "").strip() or None
+    # Gmail shows app passwords as "abcd efgh ijkl mnop"; SMTP only accepts them without the spaces
+    SMTP_PASSWORD = "".join((os.getenv("SMTP_PASSWORD") or "").split()) or None
 
-    _postgres_uri = (
-        f"postgresql://{_postgres_settings[0]}:"
-        f"{_postgres_settings[1]}@"
-        f"{_postgres_settings[2]}:"
-        f"{_postgres_settings[3]}/"
-        f"{_postgres_settings[4]}"
-        if all(_postgres_settings)
-        else None
-    )
-
-    @staticmethod
-    def _postgres_is_available(database_uri):
-        try:
-            with create_engine(
-                database_uri,
-                connect_args={"connect_timeout": 2},
-            ).connect():
-                return True
-        except Exception:
-            return False
-
-    if _database_url:
-        SQLALCHEMY_DATABASE_URI = _database_url
-    elif _postgres_uri and _postgres_is_available(_postgres_uri):
-        SQLALCHEMY_DATABASE_URI = _postgres_uri
-    else:
-        SQLALCHEMY_DATABASE_URI = "sqlite:///phishsimulator.db"
-
-    SQLALCHEMY_TRACK_MODIFICATIONS = False
+    CAMPAIGN_ALLOWED_RECIPIENTS = _list("CAMPAIGN_ALLOWED_RECIPIENTS")
+    # A delivered email with no click or report after this long counts as ignored
+    CAMPAIGN_IGNORE_MINUTES = int(os.getenv("CAMPAIGN_IGNORE_MINUTES", "10"))

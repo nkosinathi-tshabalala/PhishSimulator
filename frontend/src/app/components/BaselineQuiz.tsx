@@ -1,15 +1,19 @@
+// Player page: the baseline quiz and its results (CATCH "Check")
+
 import { useEffect, useState } from "react";
 import {
   ArrowLeft,
   CheckCircle2,
-  XCircle,
-  Info,
   ChevronRight,
+  ClipboardList,
+  Info,
+  LoaderCircle,
+  RotateCcw,
+  XCircle,
 } from "lucide-react";
 import { Button } from "./ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Progress } from "./ui/progress";
-import { Badge } from "./ui/badge";
 import { Textarea } from "./ui/textarea";
 import BaselineService from "../../services/baselineService";
 
@@ -17,18 +21,18 @@ interface BaselineQuizProps {
   onBack: () => void;
 }
 
+/** Players only get the question text. The marking guide arrives with the result. */
 interface Question {
   id: number;
   question: string;
-  instruction: string;
-  expectedKeywords: string[];
-  exampleAnswer: string;
-  feedback: string;
-  confidenceThreshold: number;
 }
 
 interface QuestionResult {
   questionId: number;
+  question: string;
+  expectedKeywords: string[];
+  exampleAnswer: string;
+  feedback: string;
   userAnswer: string;
   matchedKeywords: string[];
   score: number;
@@ -36,540 +40,154 @@ interface QuestionResult {
   passed: boolean;
 }
 
+interface QuizSummary {
+  overallScore: number;
+  questionsPassed: number;
+  confidenceLevel: string;
+  startingDifficulty: string;
+  results: QuestionResult[];
+}
+
+const MIN_ANSWER_LENGTH = 10;
+
+/** CATCH "Check": a short open-text quiz that sets the starting difficulty. */
 export function BaselineQuiz({ onBack }: BaselineQuizProps) {
   const [assessmentId, setAssessmentId] = useState<number | null>(null);
-
   const [questions, setQuestions] = useState<Question[]>([]);
-
   const [currentIndex, setCurrentIndex] = useState(0);
-
-  const [userAnswer, setUserAnswer] = useState("");
-
-  const [results, setResults] = useState<QuestionResult[]>([]);
-
-  const [summary, setSummary] = useState<any>(null);
-
-  const [showResults, setShowResults] = useState(false);
-
-  const [loading, setLoading] = useState(true);
-
-  const currentQuestion = questions[currentIndex];
-  const progress = (currentIndex / questions.length) * 100;
+  const [answer, setAnswer] = useState("");
+  const [summary, setSummary] = useState<QuizSummary | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState("");
 
   useEffect(() => {
-    const loadBaseline = async () => {
-      try {
-        /*
-         * STEP 1:
-         * Check whether this player already has
-         * a completed baseline assessment.
-         */
-        const latestResponse = await BaselineService.getLatestResult();
-
-        if (
-          latestResponse.ok &&
-          latestResponse.data.success &&
-          latestResponse.data.data
-        ) {
-          const latestResult = latestResponse.data.data;
-
-          /*
-           * A completed assessment exists.
-           * Restore the result instead of creating
-           * another assessment.
-           */
-          setAssessmentId(latestResult.assessmentId);
-
-          setSummary(latestResult);
-
-          setResults(latestResult.results || []);
-
-          /*
-           * We still need the question information
-           * for question text, expected keywords
-           * and feedback on the results screen.
-           */
-          const questionsResponse = await BaselineService.getQuestions();
-
-          if (questionsResponse.ok && questionsResponse.data.success) {
-            setQuestions(questionsResponse.data.data || []);
-          }
-
-          setShowResults(true);
-
-          return;
-        }
-
-        /*
-         * STEP 2:
-         * No completed assessment exists.
-         * Start the player's first assessment.
-         */
-        const startResponse = await BaselineService.startAssessment({});
-
-        if (startResponse.ok && startResponse.data.success) {
-          setAssessmentId(startResponse.data.data.assessment_id);
-
-          setQuestions(startResponse.data.data.questions || []);
-
-          setShowResults(false);
-
-          return;
-        }
-
-        alert(startResponse.data.message || "Failed to start assessment.");
-      } catch (error) {
-        console.error("Failed to load baseline assessment:", error);
-
-        alert("Unable to load baseline assessment.");
-      } finally {
-        setLoading(false);
+    const load = async () => {
+      const latest = await BaselineService.getLatestResult();
+      if (latest.ok && latest.data.success && latest.data.data) {
+        setSummary(latest.data.data);
+        setIsLoading(false);
+        return;
       }
+      await startQuiz();
     };
-
-    loadBaseline();
+    load();
   }, []);
 
-  if (loading) {
-    return (
-      <div className="h-full flex items-center justify-center">
-        Loading assessment...
-      </div>
-    );
-  }
-
-  if (questions.length === 0) {
-    return (
-      <div className="h-full flex items-center justify-center">
-        No baseline questions found.
-      </div>
-    );
-  }
-
-  const handleSubmit = async () => {
-    if (!assessmentId) return;
-
-    try {
-      // Submit the current answer to the backend
-      const response = await BaselineService.submitResponse({
-        assessment_id: assessmentId,
-
-        question_id: currentQuestion.id,
-
-        answer_text: userAnswer,
-      });
-
-      if (!response.ok || !response.data.success) {
-        alert(response.data.message);
-
-        return;
-      }
-
-      const newResults = [...results, response.data.data];
-
-      setResults(newResults);
-
-      // More questions remaining
-      if (currentIndex < questions.length - 1) {
-        setCurrentIndex(currentIndex + 1);
-
-        setUserAnswer("");
-
-        return;
-      }
-
-      // Last question → Complete assessment
-      const completeResponse = await BaselineService.completeAssessment({
-        assessment_id: assessmentId,
-      });
-
-      if (!completeResponse.ok || !completeResponse.data.success) {
-        alert(completeResponse.data.message);
-
-        return;
-      }
-
-      setSummary(completeResponse.data.data);
-
-      setResults(completeResponse.data.data.results);
-
-      setShowResults(true);
-    } catch (error) {
-      console.error(error);
-
-      alert("Unable to submit assessment.");
-    }
-  };
-
-  const handleRetake = async () => {
-    try {
-      setLoading(true);
-
-      /*
-       * Create a completely new assessment attempt.
-       * The previous completed assessment remains
-       * stored in the database.
-       */
-      const response = await BaselineService.startAssessment({});
-
-      if (!response.ok || !response.data.success) {
-        alert(response.data.message || "Unable to start a new assessment.");
-
-        return;
-      }
-
-      // Use the NEW assessment
+  const startQuiz = async () => {
+    setIsLoading(true);
+    setError("");
+    const response = await BaselineService.startAssessment({});
+    if (response.ok && response.data.success) {
       setAssessmentId(response.data.data.assessment_id);
-
       setQuestions(response.data.data.questions || []);
-
-      // Reset quiz state
       setCurrentIndex(0);
-
-      setUserAnswer("");
-
-      setResults([]);
-
+      setAnswer("");
       setSummary(null);
-
-      setShowResults(false);
-    } catch (error) {
-      console.error("Failed to retake baseline assessment:", error);
-
-      alert("Unable to start a new assessment.");
-    } finally {
-      setLoading(false);
+    } else {
+      setError(response.data.message || "Unable to start the quiz.");
     }
+    setIsLoading(false);
   };
 
-  const overallPercent = summary?.overallScore ?? 0;
+  const submitAnswer = async () => {
+    if (!assessmentId) return;
+    setIsSubmitting(true);
+    setError("");
 
-  const passed = summary?.questionsPassed ?? 0;
+    const response = await BaselineService.submitResponse({
+      assessment_id: assessmentId,
+      question_id: questions[currentIndex].id,
+      answer_text: answer,
+    });
+    if (!response.ok || !response.data.success) {
+      setError(response.data.message || "Your answer could not be saved.");
+      setIsSubmitting(false);
+      return;
+    }
 
-  const totalScore = summary?.totalKeywordsMatched ?? 0;
+    if (currentIndex < questions.length - 1) {
+      setCurrentIndex(currentIndex + 1);
+      setAnswer("");
+      setIsSubmitting(false);
+      return;
+    }
 
-  const confidenceLevel = summary?.confidenceLevel ?? "Novice";
+    const complete = await BaselineService.completeAssessment({ assessment_id: assessmentId });
+    if (complete.ok && complete.data.success) {
+      setSummary(complete.data.data);
+    } else {
+      setError(complete.data.message || "The quiz could not be completed.");
+    }
+    setIsSubmitting(false);
+  };
 
-  const startingDifficulty = summary?.startingDifficulty ?? "Easy";
-
-  if (showResults) {
+  if (isLoading) {
     return (
-      <div className="h-full overflow-y-auto">
-        <div className="border-b p-4 flex items-center gap-4 bg-card">
-          <Button variant="ghost" size="icon" onClick={onBack}>
-            <ArrowLeft className="w-5 h-5" />
-          </Button>
-          <div>
-            <h2 className="text-xl font-semibold text-foreground">
-              Baseline Assessment Results
-            </h2>
-            <p className="text-sm text-muted-foreground">
-              Open-text evaluation complete
-            </p>
-          </div>
-        </div>
-
-        <div className="p-6 max-w-3xl mx-auto space-y-6">
-          {/* Score Summary */}
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center gap-6">
-                <div className="text-center">
-                  <div
-                    className="text-5xl font-bold"
-                    style={{ color: "#2f81f7" }}
-                  >
-                    {overallPercent}%
-                  </div>
-                  <div className="text-sm mt-1 text-muted-foreground">
-                    Overall Score
-                  </div>
-                </div>
-                <div className="h-16 w-px bg-border" />
-                <div className="grid grid-cols-2 gap-4 flex-1">
-                  <div>
-                    <div
-                      className="text-2xl font-bold"
-                      style={{ color: "#3fb950" }}
-                    >
-                      {passed}/{questions.length}
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      Questions Passed
-                    </div>
-                  </div>
-                  <div>
-                    <div
-                      className="text-2xl font-bold"
-                      style={{ color: "#38bdf8" }}
-                    >
-                      {totalScore}
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      Keywords Matched
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-2xl font-bold text-foreground">
-                      {confidenceLevel}
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      Confidence Level
-                    </div>
-                  </div>
-                  <div>
-                    <div
-                      className="text-2xl font-bold"
-                      style={{ color: "#2f81f7" }}
-                    >
-                      {startingDifficulty}
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      Starting Difficulty
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <div className="mt-4">
-                <Progress value={overallPercent} className="h-3" />
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Per-question results */}
-          <div className="space-y-4">
-            {results.map((result, i) => {
-              const q = questions[i];
-              return (
-                <Card key={i}>
-                  <CardHeader className="pb-2">
-                    <div className="flex items-start gap-3">
-                      {result.passed ? (
-                        <CheckCircle2
-                          className="w-5 h-5 mt-0.5 shrink-0"
-                          style={{ color: "#3fb950" }}
-                        />
-                      ) : (
-                        <XCircle
-                          className="w-5 h-5 mt-0.5 shrink-0"
-                          style={{ color: "#f85149" }}
-                        />
-                      )}
-                      <div className="flex-1">
-                        <div className="font-medium text-sm text-foreground">
-                          {q.question}
-                        </div>
-                        <div className="flex items-center gap-3 mt-1">
-                          <span className="text-xs text-muted-foreground">
-                            {result.score} / {result.maxScore} keywords matched
-                          </span>
-                          <Badge
-                            className="text-xs border-0"
-                            style={{
-                              backgroundColor: result.passed
-                                ? "rgba(63,185,80,0.12)"
-                                : "rgba(248,81,73,0.12)",
-                              color: result.passed ? "#3fb950" : "#f85149",
-                            }}
-                          >
-                            {result.passed ? "Passed" : "Needs Review"}
-                          </Badge>
-                        </div>
-                      </div>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="pt-0 space-y-3">
-                    <div className="p-3 rounded-lg bg-muted">
-                      <div className="text-xs font-medium mb-1 text-muted-foreground">
-                        Your answer:
-                      </div>
-                      <div className="text-sm text-foreground">
-                        {result.userAnswer || "(no answer provided)"}
-                      </div>
-                    </div>
-                    {result.matchedKeywords.length > 0 && (
-                      <div>
-                        <div className="text-xs font-medium mb-1.5 text-muted-foreground">
-                          Matched keywords:
-                        </div>
-                        <div className="flex flex-wrap gap-1.5">
-                          {result.matchedKeywords.map((kw) => (
-                            <span
-                              key={kw}
-                              className="px-2 py-0.5 rounded text-xs font-medium"
-                              style={{
-                                backgroundColor: "rgba(63,185,80,0.12)",
-                                color: "#3fb950",
-                              }}
-                            >
-                              {kw}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                    <div>
-                      <div className="text-xs font-medium mb-1.5 text-muted-foreground">
-                        Expected keywords:
-                      </div>
-                      <div className="flex flex-wrap gap-1.5">
-                        {q.expectedKeywords.map((kw) => (
-                          <span
-                            key={kw}
-                            className="px-2 py-0.5 rounded text-xs"
-                            style={{
-                              backgroundColor: result.matchedKeywords.includes(
-                                kw,
-                              )
-                                ? "rgba(63,185,80,0.12)"
-                                : "rgba(248,81,73,0.12)",
-                              color: result.matchedKeywords.includes(kw)
-                                ? "#3fb950"
-                                : "#f85149",
-                            }}
-                          >
-                            {kw}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                    <div
-                      className="flex items-start gap-2 p-3 rounded-lg"
-                      style={{
-                        backgroundColor: "rgba(56,189,248,0.08)",
-                        border: "1px solid rgba(56,189,248,0.2)",
-                      }}
-                    >
-                      <Info
-                        className="w-4 h-4 shrink-0 mt-0.5"
-                        style={{ color: "#38bdf8" }}
-                      />
-                      <p className="text-xs text-foreground">
-                        {q.feedback}
-                      </p>
-                    </div>
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </div>
-
-          <div className="flex gap-3 pb-6">
-            <Button onClick={onBack} className="flex-1">
-              Return to Dashboard
-            </Button>
-
-            <Button onClick={handleRetake} variant="outline" className="flex-1">
-              Retake Assessment
-            </Button>
-          </div>
-        </div>
+      <div className="h-full flex items-center justify-center gap-2 text-muted-foreground">
+        <LoaderCircle className="w-4 h-4 animate-spin" />
+        Loading quiz...
       </div>
     );
   }
+
+  if (summary) {
+    return <QuizResults summary={summary} onBack={onBack} onRetake={startQuiz} />;
+  }
+
+  if (!questions.length) {
+    return (
+      <div className="h-full flex flex-col items-center justify-center gap-3 text-muted-foreground">
+        {error || "No baseline questions found."}
+        <Button variant="outline" onClick={onBack}>Back to home</Button>
+      </div>
+    );
+  }
+
+  const isLast = currentIndex === questions.length - 1;
+  const percent = (currentIndex / questions.length) * 100;
 
   return (
     <div className="h-full flex flex-col">
-      {/* Header */}
-      <div className="border-b p-4 flex items-center gap-4 bg-card">
-        <Button variant="ghost" size="icon" onClick={onBack}>
-          <ArrowLeft className="w-5 h-5" />
-        </Button>
-        <div className="flex-1">
-          <h2 className="text-xl font-semibold text-foreground">
-            Baseline Assessment
-          </h2>
-          <p className="text-sm text-muted-foreground">
-            Open-text knowledge evaluation
-          </p>
-        </div>
-        <Badge
-          variant="outline"
-          className="font-medium"
-          style={{ color: "#2f81f7", borderColor: "#2f81f7" }}
-        >
-          Question {currentIndex + 1} of {questions.length}
-        </Badge>
+      <QuizHeader
+        title="Baseline Quiz"
+        subtitle={`Question ${currentIndex + 1} of ${questions.length}`}
+        onBack={onBack}
+      />
+      <div className="px-6 py-3 border-b">
+        <Progress value={percent} className="h-1.5" />
       </div>
 
-      {/* Progress */}
-      <div className="bg-card px-6 pb-4">
-        <div className="flex justify-between text-xs mb-2 text-muted-foreground">
-          <span>Progress</span>
-          <span>{Math.round(progress)}% complete</span>
-        </div>
-        <Progress value={progress} className="h-1.5" />
-      </div>
-
-      {/* Content */}
       <div className="flex-1 overflow-y-auto p-6">
         <div className="max-w-2xl mx-auto space-y-4">
-          {/* Instruction Panel */}
-          <div
-            className="flex items-start gap-3 p-4 rounded-xl"
-            style={{
-              backgroundColor: "rgba(47,129,247,0.08)",
-              border: "1px solid rgba(47,129,247,0.2)",
-            }}
-          >
-            <Info
-              className="w-4 h-4 shrink-0 mt-0.5"
-              style={{ color: "#2f81f7" }}
-            />
-            <div>
-              <div
-                className="text-sm font-medium mb-1"
-                style={{ color: "#2f81f7" }}
-              >
-                Instructions
-              </div>
-              <p className="text-sm text-muted-foreground">
-                This assessment uses open-text responses. Write your answers in
-                your own words. Your response will be evaluated based on key
-                concepts and terminology.
-              </p>
-            </div>
+          <div className="flex items-start gap-3 rounded-xl border border-sky-500/25 bg-sky-500/10 p-4 text-sm text-sky-100/90">
+            <Info className="w-4 h-4 mt-0.5 shrink-0 text-sky-300" />
+            Answer in your own words. There are no trick questions and no time limit.
           </div>
 
-          {/* Question Card */}
           <Card>
             <CardHeader>
               <div className="flex items-start gap-3">
-                <div
-                  className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold text-white shrink-0"
-                  style={{ backgroundColor: "#2f81f7" }}
-                >
+                <span className="w-8 h-8 rounded-full bg-linear-to-br from-sky-400 to-indigo-500 flex items-center justify-center text-sm font-bold text-white shrink-0">
                   {currentIndex + 1}
-                </div>
-                <div>
-                  <CardTitle className="text-base leading-normal text-foreground">
-                    {currentQuestion.question}
-                  </CardTitle>
-                  <p className="text-sm mt-2 text-muted-foreground">
-                    {currentQuestion.instruction}
-                  </p>
-                </div>
+                </span>
+                <CardTitle className="text-base leading-normal">{questions[currentIndex].question}</CardTitle>
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
               <Textarea
                 placeholder="Type your answer here..."
-                value={userAnswer}
-                onChange={(e) => setUserAnswer(e.target.value)}
+                value={answer}
+                onChange={(event) => setAnswer(event.target.value)}
                 className="min-h-40 resize-none text-sm"
               />
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-muted-foreground">
-                  {userAnswer.length} characters — try to be thorough
-                </span>
-                <Button
-                  onClick={handleSubmit}
-                  disabled={userAnswer.trim().length < 10}
-                >
-                  {currentIndex < questions.length - 1
-                    ? "Next Question"
-                    : "Submit Assessment"}
-                  <ChevronRight className="w-4 h-4 ml-1" />
+              {error && <p className="text-sm text-destructive" role="alert">{error}</p>}
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-xs text-muted-foreground">{answer.length} characters</span>
+                <Button onClick={submitAnswer} disabled={answer.trim().length < MIN_ANSWER_LENGTH || isSubmitting}>
+                  {isSubmitting && <LoaderCircle className="w-4 h-4 animate-spin" />}
+                  {isLast ? "Finish quiz" : "Next question"}
+                  {!isSubmitting && <ChevronRight className="w-4 h-4" />}
                 </Button>
               </div>
             </CardContent>
@@ -577,5 +195,126 @@ export function BaselineQuiz({ onBack }: BaselineQuizProps) {
         </div>
       </div>
     </div>
+  );
+}
+
+/** Page header with a back button. */
+function QuizHeader({ title, subtitle, onBack }: { title: string; subtitle: string; onBack: () => void }) {
+  return (
+    <div className="border-b p-4 flex items-center gap-4">
+      <Button variant="ghost" size="icon" onClick={onBack} title="Back to home">
+        <ArrowLeft className="w-5 h-5" />
+      </Button>
+      <div className="w-10 h-10 rounded-lg bg-amber-400/15 flex items-center justify-center">
+        <ClipboardList className="w-5 h-5 text-amber-300" />
+      </div>
+      <div>
+        <h2 className="text-xl font-semibold">{title}</h2>
+        <p className="text-sm text-muted-foreground">{subtitle}</p>
+      </div>
+    </div>
+  );
+}
+
+/** Overall quiz score and every marked answer. */
+function QuizResults({ summary, onBack, onRetake }: {
+  summary: QuizSummary;
+  onBack: () => void;
+  onRetake: () => void;
+}) {
+  const stats = [
+    { label: "Questions passed", value: `${summary.questionsPassed}/${summary.results.length}`, tone: "text-green-400" },
+    { label: "Confidence level", value: summary.confidenceLevel, tone: "text-foreground" },
+    { label: "Starting difficulty", value: summary.startingDifficulty, tone: "text-sky-400" },
+  ];
+
+  return (
+    <div className="h-full overflow-y-auto">
+      <QuizHeader title="Baseline Quiz Results" subtitle="Your training starts from here" onBack={onBack} />
+
+      <div className="p-6 max-w-3xl mx-auto space-y-6">
+        <Card className="border-sky-500/25 bg-linear-to-br from-sky-600/20 via-indigo-600/10 to-card">
+          <CardContent className="p-6 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-6">
+              <div className="text-center">
+                <div className="text-5xl font-bold text-sky-400">{summary.overallScore}%</div>
+                <div className="text-sm mt-1 text-muted-foreground">Overall score</div>
+              </div>
+              <div className="grid grid-cols-3 gap-4 flex-1">
+                {stats.map((stat) => (
+                  <div key={stat.label}>
+                    <div className={`text-xl font-bold ${stat.tone}`}>{stat.value}</div>
+                    <div className="text-xs text-muted-foreground">{stat.label}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <Progress value={summary.overallScore} className="h-2" />
+          </CardContent>
+        </Card>
+
+        <div className="space-y-4">
+          {summary.results.map((result) => <ResultCard key={result.questionId} result={result} />)}
+        </div>
+
+        <div className="flex flex-col sm:flex-row gap-3 pb-6">
+          <Button onClick={onBack} className="flex-1">Back to home</Button>
+          <Button onClick={onRetake} variant="outline" className="flex-1">
+            <RotateCcw className="w-4 h-4" />
+            Retake quiz
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** One marked answer with the key ideas found and missed. */
+function ResultCard({ result }: { result: QuestionResult }) {
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <div className="flex items-start gap-3">
+          {result.passed
+            ? <CheckCircle2 className="w-5 h-5 mt-0.5 shrink-0 text-green-400" />
+            : <XCircle className="w-5 h-5 mt-0.5 shrink-0 text-red-400" />}
+          <div className="flex-1">
+            <div className="font-medium text-sm">{result.question}</div>
+            <div className="flex items-center gap-3 mt-1 text-xs">
+              <span className="text-muted-foreground">{result.score} / {result.maxScore} key ideas</span>
+              <span className={`rounded px-2 py-0.5 ${result.passed ? "bg-green-500/15 text-green-400" : "bg-red-500/15 text-red-400"}`}>
+                {result.passed ? "Passed" : "Needs review"}
+              </span>
+            </div>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="pt-0 space-y-3">
+        <div className="p-3 rounded-lg bg-muted">
+          <div className="text-xs font-medium mb-1 text-muted-foreground">Your answer</div>
+          <div className="text-sm">{result.userAnswer || "(no answer provided)"}</div>
+        </div>
+        <div>
+          <div className="text-xs font-medium mb-1.5 text-muted-foreground">Key ideas</div>
+          <div className="flex flex-wrap gap-1.5">
+            {result.expectedKeywords.map((keyword) => {
+              const isMatched = result.matchedKeywords.includes(keyword);
+              return (
+                <span
+                  key={keyword}
+                  className={`px-2 py-0.5 rounded text-xs ${isMatched ? "bg-green-500/15 text-green-400" : "bg-red-500/15 text-red-400"}`}
+                >
+                  {keyword}
+                </span>
+              );
+            })}
+          </div>
+        </div>
+        <div className="flex items-start gap-2 p-3 rounded-lg border border-sky-500/20 bg-sky-500/10">
+          <Info className="w-4 h-4 shrink-0 mt-0.5 text-sky-300" />
+          <p className="text-xs">{result.feedback}</p>
+        </div>
+      </CardContent>
+    </Card>
   );
 }

@@ -1,3 +1,5 @@
+# Database table: a player's answer to one quiz question
+
 from app.extensions import db
 
 
@@ -6,13 +8,11 @@ class BaselineResponse(db.Model):
 
     __tablename__ = "baseline_response"
 
-    # Primary Key
     response_id = db.Column(
         db.Integer,
         primary_key=True
     )
 
-    # Foreign Keys
     assessment_id = db.Column(
         db.Integer,
         db.ForeignKey("baseline_assessment.assessment_id"),
@@ -25,13 +25,11 @@ class BaselineResponse(db.Model):
         nullable=False
     )
 
-    # Player Response
     answer_text = db.Column(
         db.Text,
         nullable=False
     )
 
-    # Evaluation Results
     matched_keywords = db.Column(
         db.Text,
         nullable=True
@@ -49,7 +47,6 @@ class BaselineResponse(db.Model):
         nullable=False
     )
 
-    # Relationships
     assessment = db.relationship(
         "BaselineAssessment",
         back_populates="responses"
@@ -61,16 +58,7 @@ class BaselineResponse(db.Model):
     )
 
     def get_matched_keywords(self):
-        """
-        Returns the matched keywords as a list.
-
-        Example:
-        'sender,urgent,grammar'
-
-        becomes
-
-        ['sender', 'urgent', 'grammar']
-        """
+        """Return the matched keywords as a list."""
 
         if not self.matched_keywords:
             return []
@@ -82,6 +70,7 @@ class BaselineResponse(db.Model):
         ]
 
     def __repr__(self):
+        """Short text shown when debugging."""
         return (
             f"<BaselineResponse "
             f"{self.response_id}>"

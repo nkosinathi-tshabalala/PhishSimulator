@@ -1,9 +1,11 @@
+// Sign-in page
+
 import { useState } from "react";
 
 import AuthService from "../../services/authService";
 
 import {
-  Shield,
+  Fish,
   CheckCircle2,
   AlertCircle,
   ArrowLeft,
@@ -30,14 +32,19 @@ import {
 interface LoginPageProps {
   onLogin: (role: "player" | "admin") => void;
   onNavigate: (page: string) => void;
+  notice?: string;
+  /** Pre-fills the email, e.g. for the recipient of a training email. */
+  initialEmail?: string;
 }
 
+/** Sign-in form. */
 export function LoginPage({
   onLogin,
   onNavigate,
+  notice,
+  initialEmail = "",
 }: LoginPageProps) {
-
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(initialEmail);
   const [password, setPassword] = useState("");
 
   const [isLoading, setIsLoading] = useState(false);
@@ -49,7 +56,6 @@ export function LoginPage({
   const handleSubmit = async (
     e: React.FormEvent
   ) => {
-
     e.preventDefault();
 
     setErrorMessage("");
@@ -58,21 +64,18 @@ export function LoginPage({
     setIsLoading(true);
 
     try {
-
       const response = await AuthService.login({
         email,
         password,
       });
 
       if (!response.ok) {
-
         setErrorMessage(response.data.message);
 
         return;
 
       }
 
-      // Store JWT locally
       localStorage.setItem(
         "access_token",
         response.data.data.access_token
@@ -83,7 +86,6 @@ export function LoginPage({
       );
 
       setTimeout(() => {
-
         const role =
           response.data.data.role.toLowerCase();
 
@@ -92,15 +94,13 @@ export function LoginPage({
       }, 1500);
 
     } catch (error) {
-
       console.error(error);
 
       setErrorMessage(
-        "Unable to sign in. Please try again."
+        "We couldn't connect right now. Please try again in a moment."
       );
 
     } finally {
-
       setIsLoading(false);
 
     }
@@ -119,8 +119,8 @@ export function LoginPage({
         }}
       >
         <div className="flex items-center gap-3">
-          <span className="flex h-10 w-10 items-center justify-center border border-sky-400/30 bg-sky-400/10">
-            <Shield className="h-5 w-5 text-sky-400" />
+          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-linear-to-br from-sky-400 to-indigo-500 shadow-lg shadow-sky-500/20">
+            <Fish className="h-5 w-5 text-white" />
           </span>
           <span className="text-sm font-semibold tracking-[0.12em] text-white">PHISHSIMULATOR</span>
         </div>
@@ -151,9 +151,9 @@ export function LoginPage({
 
           <div className="flex justify-center">
 
-            <div className="bg-primary flex h-16 w-16 items-center justify-center rounded-full">
+            <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-linear-to-br from-sky-400 to-indigo-500 shadow-lg shadow-sky-500/20">
 
-              <Shield className="text-primary-foreground h-8 w-8" />
+              <Fish className="h-8 w-8 text-white" />
 
             </div>
 
@@ -217,6 +217,13 @@ export function LoginPage({
               />
 
             </div>
+
+            {notice && !errorMessage && !successMessage && (
+              <Alert className="border-amber-500/30 bg-amber-500/10">
+                <AlertCircle className="h-4 w-4 text-amber-300" />
+                <AlertDescription className="text-amber-200">{notice}</AlertDescription>
+              </Alert>
+            )}
 
             {successMessage && (
 

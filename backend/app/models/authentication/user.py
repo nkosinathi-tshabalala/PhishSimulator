@@ -1,3 +1,5 @@
+# Database table: user accounts (email, password hash, role)
+
 from datetime import datetime
 
 from app.extensions import db
@@ -8,13 +10,11 @@ class User(db.Model):
 
     __tablename__ = "user"
 
-    # Primary Key
     user_id = db.Column(
         db.Integer,
         primary_key=True
     )
 
-    # Authentication
     email = db.Column(
         db.String(255),
         unique=True,
@@ -32,14 +32,25 @@ class User(db.Model):
         default="PLAYER"
     )
 
-    # Audit
     created_at = db.Column(
         db.DateTime,
         default=datetime.utcnow,
         nullable=False
     )
 
-    # Relationships
+    # Wrong passwords in a row; too many locks the account until locked_until
+    failed_logins = db.Column(
+        db.Integer,
+        default=0,
+        server_default="0",
+        nullable=False
+    )
+
+    locked_until = db.Column(
+        db.DateTime,
+        nullable=True
+    )
+
     player = db.relationship(
         "Player",
         back_populates="user",
@@ -60,4 +71,5 @@ class User(db.Model):
     )
 
     def __repr__(self):
+        """Short text shown when debugging."""
         return f"<User {self.email}>"

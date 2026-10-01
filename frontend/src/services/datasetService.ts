@@ -1,9 +1,11 @@
+// API calls for datasets (admin only)
+
 import { apiRequest } from "./api";
 
+/** API calls for datasets. */
 class DatasetService {
-
+  /** Every uploaded dataset. */
   async getDatasets() {
-
     const token = localStorage.getItem("access_token");
 
     return await apiRequest(
@@ -14,8 +16,8 @@ class DatasetService {
     );
   }
 
+  /** Upload a CSV or JSON dataset. */
   async uploadDataset(formData: FormData) {
-
     const token = localStorage.getItem("access_token");
 
     return await apiRequest(
@@ -26,8 +28,8 @@ class DatasetService {
     );
   }
 
+  /** Delete a dataset. */
   async deleteDataset(datasetId: number) {
-
     const token = localStorage.getItem("access_token");
 
     return await apiRequest(
@@ -38,8 +40,20 @@ class DatasetService {
     );
   }
 
-  async getDataset(datasetId: number) {
+  /** Re-apply the realism rules to a dataset's drafts. */
+  async reprocessDataset(datasetId: number) {
+    const token = localStorage.getItem("access_token");
 
+    return await apiRequest(
+      `/datasets/${datasetId}/reprocess`,
+      "POST",
+      null,
+      token
+    );
+  }
+
+  /** One dataset's details. */
+  async getDataset(datasetId: number) {
     const token = localStorage.getItem("access_token");
 
     return await apiRequest(
