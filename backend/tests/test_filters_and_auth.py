@@ -74,6 +74,11 @@ class StandingTests(unittest.TestCase):
     def test_equal_scores_share_a_place(self):
         self.assertEqual(ProgressService.place_in([(80, 50), (80, 50)], (80, 50)), 1)
 
+    def test_top_percent_is_small_for_the_best_players(self):
+        self.assertEqual(ProgressService.top_percent(1, 24), 5)
+        self.assertEqual(ProgressService.top_percent(12, 24), 50)
+        self.assertEqual(ProgressService.top_percent(21, 24), 88)
+
 
 if __name__ == "__main__":
     unittest.main()

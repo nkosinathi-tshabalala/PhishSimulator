@@ -249,7 +249,7 @@ Each mechanic has a learning purpose, and progress stays private: there is no pu
 | --- | --- | --- |
 | XP and levels | XP for correct decisions, more for harder scenarios and spotted clues; a level multiplier | Rewards effort and shows steady progress |
 | Skill rank | Recruit to Guardian, from weighted accuracy on the last 20 decisions; it can fall | Measures skill separately from effort |
-| Private position | "#11 of 27 players · Top 41%" | Relative feedback without names, scores or a leaderboard |
+| Private position | "Top 5%" in the top half; below it, "#21 of 24" and how many players to pass to reach the top half | Relative feedback without names, scores or a leaderboard, and never "Top 88%" for a weak result |
 | Streaks | Current and best run of practice days | Encourages short, regular practice instead of cramming |
 | Daily goal and goals | 5 decisions a day; one current goal and the next four | A clear next step on every visit |
 | Badges | 15 in three groups (below) | Most of them need skill, not just activity |

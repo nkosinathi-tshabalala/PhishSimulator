@@ -33,6 +33,18 @@ const BADGE_GROUPS: Array<{ key: BadgeProgress["group"]; title: string; text: st
   { key: "skill", title: "Skills", text: "Show you can spot phishing, not just that you took part." },
 ];
 
+/** What the Rank tile says. "Top 5%" only reads as praise in the top half, so below that the tile shows the
+ * plain position and how many players to pass. (Top half: top_percent of 50 or less, so position <= players / 2.) */
+function rankText(standing: SkillRank["standing"], attemptsUntilRated: number) {
+  if (!standing || standing.position === null || standing.top_percent === null) {
+    return { value: "Unrated", hint: `${attemptsUntilRated} more decisions to get rated` };
+  }
+  const { position, out_of: outOf, top_percent: top } = standing;
+  if (top <= 50) return { value: `Top ${top}%`, hint: `#${position} of ${outOf} players · private` };
+  if (position === 1) return { value: `#1 of ${outOf}`, hint: "No one is ahead of you · private" };
+  return { value: `#${position} of ${outOf}`, hint: `Pass ${position - Math.floor(outOf / 2)} to reach the top half` };
+}
+
 /** The four headline numbers: private rank, badges collected, streak and simulations completed.
  * `onOpen` makes each one a shortcut to the matching tab on My Progress. */
 export function ProfileStats({ progress, completed, onOpen }: {
@@ -40,18 +52,13 @@ export function ProfileStats({ progress, completed, onOpen }: {
   completed: number;
   onOpen?: (tab: string) => void;
 }) {
-  const standing = progress.skill.standing;
+  const rank = rankText(progress.skill.standing, progress.skill.attempts_until_rated);
   const earned = progress.badges.filter((badge) => badge.earned).length;
-  const isRated = standing?.position != null;
   const open = (tab: string) => (onOpen ? () => onOpen(tab) : undefined);
 
   return (
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-      <StatCard label="Rank" icon={Trophy} tone="amber" onClick={open("overview")}
-        value={isRated ? `Top ${standing?.top_percent}%` : "Unrated"}
-        hint={isRated
-          ? `#${standing?.position} of ${standing?.out_of} players · private`
-          : `${progress.skill.attempts_until_rated} more decisions to get rated`} />
+      <StatCard label="Rank" icon={Trophy} tone="amber" onClick={open("overview")} value={rank.value} hint={rank.hint} />
       <StatCard label="Badges" icon={Award} tone="violet" onClick={open("badges")}
         value={earned} hint={`of ${progress.badges.length} collected`} />
       <StatCard label="Streak" icon={Flame} tone="orange" onClick={open("overview")}

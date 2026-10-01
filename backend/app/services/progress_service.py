@@ -1,6 +1,7 @@
 # XP, levels, badges and the private skill rank (CATCH "Help")
 
 from datetime import datetime, timedelta, timezone
+from math import ceil
 
 from app.datasets.scenario_parser import ScenarioParser
 from app.extensions import db
@@ -353,6 +354,12 @@ class ProgressService:
         return 1 + sum(score > own for score in scores)
 
     @staticmethod
+    def top_percent(position, out_of):
+        """The share of players at or above this position: #1 of 24 is the top 5%, #21 of 24 the top 88%.
+        Small means good. Rounded up, because "top 5%" means within the best 5%."""
+        return ceil(position / out_of * 100)
+
+    @staticmethod
     def standing(player_id):
         """This player's position among all rated players, by skill rating and then XP.
         Only the position and the number of players leave this method: never anyone else's name or score."""
@@ -371,7 +378,7 @@ class ProgressService:
         if player_id not in scores:
             return {"position": None, "out_of": out_of, "top_percent": None}
         position = ProgressService.place_in(scores.values(), scores[player_id])
-        return {"position": position, "out_of": out_of, "top_percent": max(round(position / out_of * 100), 1)}
+        return {"position": position, "out_of": out_of, "top_percent": ProgressService.top_percent(position, out_of)}
 
     @staticmethod
     def summary(attempts):
