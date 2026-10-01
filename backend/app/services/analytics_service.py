@@ -341,6 +341,8 @@ class AnalyticsService:
             "phishing_links_clicked": trap_counts.get("CLICKED_LINK", 0),
             "malicious_files_opened": trap_counts.get("OPENED_ATTACHMENT", 0),
             "total_attempts": total_attempts,
+            # Every simulation ever completed, whatever the filters (for the stats strip)
+            "completed_simulations": len(all_attempts),
             "correct_attempts": correct_attempts,
             "baseline_score": round(baseline.score) if baseline else None,
             "baseline_completed_at": AnalyticsService._to_utc_isoformat(baseline.completed_at) if baseline else None,
@@ -355,6 +357,44 @@ class AnalyticsService:
             "by_category": trends.by_category(attempts, AnalyticsService._scenario_categories()),
             "category_options": category_options(),
         }
+
+    @staticmethod
+    def get_player_activity(user_id, year=None):
+        """Activity per day for one year, for the calendar on My Progress: decisions in training
+        and campaign emails, plus finished baseline quizzes."""
+        player = Player.query.filter_by(user_id=user_id).first()
+        if not player:
+            return None
+
+        this_year = datetime.utcnow().year
+        first_year = min(player.user.created_at.year, this_year) if player.user else this_year
+        year = min(max(year or this_year, first_year), this_year)
+        start, end = datetime(year, 1, 1), datetime(year + 1, 1, 1)
+
+        days = {}
+        AnalyticsService._count_by_day(days, db.session.query(SimulationAttempt.attempted_at).filter(
+            SimulationAttempt.player_id == player.player_id,
+            SimulationAttempt.attempted_at >= start, SimulationAttempt.attempted_at < end,
+        ))
+        AnalyticsService._count_by_day(days, db.session.query(BaselineAssessment.completed_at).filter(
+            BaselineAssessment.player_id == player.player_id,
+            BaselineAssessment.completed_at >= start, BaselineAssessment.completed_at < end,
+        ))
+        return {
+            "year": year,
+            "first_year": first_year,
+            "last_year": this_year,
+            "days": days,
+            "total": sum(days.values()),
+            "active_days": len(days),
+        }
+
+    @staticmethod
+    def _count_by_day(days, timestamps):
+        """Add one to the day (YYYY-MM-DD) of each timestamp."""
+        for (moment,) in timestamps:
+            key = moment.date().isoformat()
+            days[key] = days.get(key, 0) + 1
 
     @staticmethod
     def get_monitored_user(user_id):

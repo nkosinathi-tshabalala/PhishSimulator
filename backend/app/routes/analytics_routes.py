@@ -88,3 +88,13 @@ def get_my_performance():
     performance = AnalyticsService.get_player_performance(int(get_jwt_identity()), filters)
     return respond(bool(performance), "Performance retrieved." if performance else "Player profile not found.",
                    performance, error_status=404)
+
+
+# GET /api/analytics/my-activity?year=2026 - the signed-in player's activity per day for one year
+@analytics_bp.route("/my-activity", methods=["GET"])
+@jwt_required()
+def get_my_activity():
+    """The signed-in player's activity calendar for one year (this year by default)."""
+    activity = AnalyticsService.get_player_activity(int(get_jwt_identity()), request.args.get("year", type=int))
+    return respond(bool(activity), "Activity retrieved." if activity else "Player profile not found.",
+                   activity, error_status=404)

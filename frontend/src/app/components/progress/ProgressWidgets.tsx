@@ -1,25 +1,67 @@
-// XP bar, rank card, badges, daily goal ring and streak flame (CATCH "Help")
+// Profile stats, XP bar, rank card, badges, daily goal ring and streak flame (CATCH "Help")
 
-import { Award, Check, Flame, Lock, Medal, Search, ShieldCheck, Target, TrendingUp, Zap } from "lucide-react";
+import {
+  Award, CalendarRange, Check, Compass, Crown, Eye, Flame, Footprints, Lock, MailCheck, Medal, Rocket,
+  Search, ShieldCheck, Sunrise, Target, TrendingUp, Trophy, Zap,
+} from "lucide-react";
 import { Progress as ProgressBar } from "../ui/progress";
+import { StatCard } from "../StatCard";
 import type { BadgeProgress, Progress, SkillRank } from "../../../types/catch";
 
 export const BADGE_ICONS: Record<string, typeof Award> = {
+  day_one: Sunrise,
+  streak_5: Flame,
+  streak_14: CalendarRange,
+  streak_30: Crown,
+  decisions_10: Footprints,
+  decisions_50: Rocket,
+  decisions_100: Trophy,
   first_catch: Target,
   clue_hunter: Search,
-  category_master: Medal,
+  sharp_eye: Eye,
   zero_misses: ShieldCheck,
+  category_master: Medal,
+  all_rounder: Compass,
   comeback: TrendingUp,
+  real_world_catch: MailCheck,
 };
 
-// How to earn each badge, matching the rules in backend ProgressService.badge_progress
-const BADGE_HINTS: Record<string, string> = {
-  first_catch: "Report a phishing message correctly. Every mode counts, including Inbox Rush.",
-  clue_hunter: "Answer correctly and tick every warning sign in the message, with no wrong picks. Do it 5 times.",
-  category_master: "Answer 10 scenarios in one category, like Banking, and get at least 90% of them right. Retakes count.",
-  zero_misses: "Make 10 decisions in a row without marking a phishing message as safe. False alarms don't break the run.",
-  comeback: "Your skill rank has to drop and then climb back up. Keep training after a bad run.",
-};
+// The badge collection is shown in these groups, in this order
+const BADGE_GROUPS: Array<{ key: BadgeProgress["group"]; title: string; text: string }> = [
+  { key: "streak", title: "Streaks", text: "Practise on days in a row. A day counts when you make a decision." },
+  { key: "milestone", title: "Milestones", text: "Simulations completed in any mode." },
+  { key: "skill", title: "Skills", text: "Show you can spot phishing, not just that you took part." },
+];
+
+/** The four headline numbers: private rank, badges collected, streak and simulations completed.
+ * `onOpen` makes each one a shortcut to the matching tab on My Progress. */
+export function ProfileStats({ progress, completed, onOpen }: {
+  progress: Progress;
+  completed: number;
+  onOpen?: (tab: string) => void;
+}) {
+  const standing = progress.skill.standing;
+  const earned = progress.badges.filter((badge) => badge.earned).length;
+  const isRated = standing?.position != null;
+  const open = (tab: string) => (onOpen ? () => onOpen(tab) : undefined);
+
+  return (
+    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <StatCard label="Rank" icon={Trophy} tone="amber" onClick={open("overview")}
+        value={isRated ? `Top ${standing?.top_percent}%` : "Unrated"}
+        hint={isRated
+          ? `#${standing?.position} of ${standing?.out_of} players · private`
+          : `${progress.skill.attempts_until_rated} more decisions to get rated`} />
+      <StatCard label="Badges" icon={Award} tone="violet" onClick={open("badges")}
+        value={earned} hint={`of ${progress.badges.length} collected`} />
+      <StatCard label="Streak" icon={Flame} tone="orange" onClick={open("overview")}
+        value={`${progress.daily_streak} ${progress.daily_streak === 1 ? "day" : "days"}`}
+        hint={`Best: ${progress.longest_streak} ${progress.longest_streak === 1 ? "day" : "days"}`} />
+      <StatCard label="Simulations" icon={Target} tone="sky" onClick={open("performance")}
+        value={completed.toLocaleString()} hint="Completed in all modes" />
+    </div>
+  );
+}
 
 export const TIER_STYLES: Record<string, { text: string; bg: string; ring: string; bar: string }> = {
   Recruit: { text: "text-slate-200", bg: "bg-slate-500/20", ring: "ring-slate-400/40", bar: "bg-slate-400" },
@@ -104,8 +146,6 @@ export function SkillRankCard({ skill, showNextTier = true }: { skill: SkillRank
         </div>
       </div>
 
-      {skill.standing && <StandingLine standing={skill.standing} />}
-
       <TierLadder skill={skill} />
 
       {showNextTier && isRated && skill.next_tier && (
@@ -115,28 +155,6 @@ export function SkillRankCard({ skill, showNextTier = true }: { skill: SkillRank
           Harder scenarios count more: Easy ×1, Medium ×1.5, Hard ×2.
         </p>
       )}
-    </div>
-  );
-}
-
-/** "#12 of 40 players": your private position. Other players stay anonymous. */
-function StandingLine({ standing }: { standing: NonNullable<SkillRank["standing"]> }) {
-  if (standing.position === null) {
-    return (
-      <p className="text-xs text-muted-foreground">
-        Get rated to see where you stand among {standing.out_of} players.
-      </p>
-    );
-  }
-  return (
-    <div className="flex items-center justify-between rounded-lg border border-sky-500/25 bg-sky-500/10 px-3 py-2">
-      <div className="flex items-center gap-2">
-        <Medal className="w-4 h-4 text-sky-300" />
-        <span className="text-sm font-semibold text-foreground">
-          #{standing.position} <span className="font-normal text-muted-foreground">of {standing.out_of} players</span>
-        </span>
-      </div>
-      <span className="text-xs text-sky-300">Top {standing.top_percent}%</span>
     </div>
   );
 }
@@ -167,13 +185,51 @@ function TierLadder({ skill }: { skill: SkillRank }) {
   );
 }
 
-/** Every badge. */
-export function BadgeGrid({ badges }: { badges: BadgeProgress[] }) {
+/** Every badge, grouped into streaks, milestones and skills, with how many of each are collected. */
+export function BadgeCollection({ badges }: { badges: BadgeProgress[] }) {
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-      {badges.map((badge) => (
-        <BadgeTile key={badge.key} badge={badge} />
-      ))}
+    <div className="space-y-6">
+      {BADGE_GROUPS.map((group) => {
+        const inGroup = badges.filter((badge) => badge.group === group.key);
+        return (
+          <section key={group.key} className="space-y-3">
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <div>
+                <h3 className="text-sm font-semibold text-foreground">{group.title}</h3>
+                <p className="text-xs text-muted-foreground">{group.text}</p>
+              </div>
+              <span className="text-xs text-muted-foreground">
+                {inGroup.filter((badge) => badge.earned).length} of {inGroup.length}
+              </span>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+              {inGroup.map((badge) => <BadgeTile key={badge.key} badge={badge} />)}
+            </div>
+          </section>
+        );
+      })}
+    </div>
+  );
+}
+
+/** The badges collected so far as small chips, for Home. */
+export function BadgeShowcase({ badges }: { badges: BadgeProgress[] }) {
+  const earned = badges.filter((badge) => badge.earned);
+  if (!earned.length) {
+    return <p className="text-sm text-muted-foreground">No badges yet. Your first one is a single decision away.</p>;
+  }
+  return (
+    <div className="flex flex-wrap gap-2">
+      {earned.map((badge) => {
+        const Icon = BADGE_ICONS[badge.key] ?? Award;
+        return (
+          <span key={badge.key} title={badge.description}
+            className="inline-flex items-center gap-1.5 rounded-full border border-amber-400/40 bg-amber-400/10 px-3 py-1 text-xs font-medium text-amber-200">
+            <Icon className="w-3.5 h-3.5" />
+            {badge.name}
+          </span>
+        );
+      })}
     </div>
   );
 }
@@ -182,7 +238,7 @@ export function BadgeGrid({ badges }: { badges: BadgeProgress[] }) {
 export function BadgeTile({ badge, highlight = false }: { badge: BadgeProgress; highlight?: boolean }) {
   const Icon = BADGE_ICONS[badge.key] ?? Award;
   const percent = Math.round((badge.progress / Math.max(badge.target, 1)) * 100);
-  const hint = BADGE_HINTS[badge.key] ?? badge.description;
+  const hint = badge.how || badge.description;
   const remaining = badge.target - badge.progress;
 
   return (
@@ -190,7 +246,7 @@ export function BadgeTile({ badge, highlight = false }: { badge: BadgeProgress; 
       // Focusable so keyboard and touch users can reveal the hint too
       tabIndex={0}
       aria-label={`${badge.name}. ${badge.earned ? "Earned" : `${badge.progress} of ${badge.target}`}. ${hint}`}
-      className={`group relative min-h-44 overflow-hidden rounded-xl border p-3 text-center transition-all outline-none focus-visible:ring-2 focus-visible:ring-sky-400 ${
+      className={`group relative min-h-36 overflow-hidden rounded-xl border p-3 text-center transition-all outline-none focus-visible:ring-2 focus-visible:ring-sky-400 ${
         badge.earned
           ? "border-amber-400/50 bg-linear-to-b from-amber-400/20 to-amber-400/5 shadow-[0_0_20px_-8px_rgba(251,191,36,0.6)]"
           : "border-border bg-muted/30 hover:border-sky-400/40"

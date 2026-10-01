@@ -3,16 +3,17 @@
 #   .venv\Scripts\python.exe reset_database.py --confirm-reset
 #   .venv\Scripts\python.exe seed_demo.py
 #
-# It creates an admin, an owner player (your own email, so campaigns can reach you), a cohort of
-# test players, the active scenarios and baseline questions, baseline assessments, ~30 days of
-# simulation attempts (for trends), and a couple of finished email campaigns.
+# It creates an admin, a cohort of test players, the active scenarios and baseline questions,
+# baseline assessments, and about four months of practice. Each player has a habit (from never to
+# daily), so trends, streaks, badges and the activity calendar look real. Only when OWNER_EMAIL is
+# set does it also create a player for your own address, with a couple of finished email campaigns.
 #
 # It only ever uses your own email plus clearly fake @phishsimulator.test test accounts.
 
 import json
 import os
 import random
-from datetime import datetime, timedelta
+from datetime import datetime, time, timedelta
 from pathlib import Path
 
 from app import create_app
@@ -28,7 +29,20 @@ from app.services.progress_service import ProgressService
 
 SEED_DIR = Path(__file__).parent / "app" / "seed"
 RANDOM_SEED = 2026
-DAYS = 30
+# About four months of history, so streaks, badges and the yearly activity calendar have data
+DAYS = 120
+
+# How often a kind of player practises: (name, chance of practising on any day, decisions on an active day).
+# The weights make most players occasional or weekly, with a few daily learners who build long streaks.
+HABITS = [
+    ("never", 0.0, (0, 0)),
+    ("occasional", 0.12, (1, 3)),
+    ("weekly", 0.3, (1, 4)),
+    ("regular", 0.6, (2, 5)),
+    ("daily", 0.9, (2, 6)),
+    ("dedicated", 0.97, (3, 6)),
+]
+HABIT_WEIGHTS = [2, 3, 3, 2, 1, 1]
 
 ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "admin@phishsimulator.com")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "Admin#2026")
@@ -154,46 +168,50 @@ def seed_baseline(player, questions, rng, joined_at):
     return assessment.score
 
 
-def seed_attempts(player, scenarios, rng, joined_at, ability, attempts_total=None):
-    """A run of decisions over the last 30 days, improving a little as the player learns."""
-    email_scenarios = [s for s in scenarios if s.simulation_type == "EMAIL"]
-    sms_scenarios = [s for s in scenarios if s.simulation_type == "SMS"]
-    if attempts_total is None:
-        attempts_total = rng.choice([0, 0, 6, 12, 18, 25, 32, 45])  # some players are new, some are regulars
-
-    for index in range(attempts_total):
-        # Spread across the window, weighted towards recent days
-        days_ago = int(DAYS * (1 - rng.random() ** 1.5))
-        when = datetime.utcnow() - timedelta(days=days_ago, hours=rng.randint(7, 21), minutes=rng.randint(0, 59))
-        if when < joined_at:
-            when = joined_at + timedelta(hours=rng.randint(1, 48))
-        pool = email_scenarios if rng.random() < 0.55 else sms_scenarios
-        if not pool:
-            continue
-        scenario = rng.choice(pool)
-        # Ability climbs slightly over the run; harder scenarios are answered correctly less often
-        difficulty_penalty = {"Easy": 0.08, "Medium": 0.0, "Hard": -0.12}.get(scenario.difficulty, 0.0)
-        skill = min(0.98, ability + index * 0.004 + difficulty_penalty)
-        correct = rng.random() < skill
-        answer = scenario.correct_answer if correct else ("SAFE" if scenario.correct_answer == "REPORT" else "REPORT")
-        clues = rng.randint(2, 3) if correct else rng.randint(0, 1)
-        clue_score = rng.choice([80, 100]) if correct else rng.choice([0, 33, 50])
-        xp = ProgressService.calculate_xp(correct, scenario.difficulty, clues, 1.0)
-        trap = None
-        if not correct and scenario.correct_answer == "REPORT":
-            trap = rng.choice([None, "CLICKED_LINK", "OPENED_ATTACHMENT"])
-        attempt = SimulationAttempt(
-            player_id=player.player_id, scenario_id=scenario.scenario_id, simulation_type=scenario.simulation_type,
-            player_answer=answer, correct=correct, score=xp, difficulty=scenario.difficulty,
-            selected_clues="", justification="", clue_score=clue_score, attempted_at=when,
-        )
-        db.session.add(attempt)
-        db.session.flush()
-        db.session.add(UserAction(attempt_id=attempt.attempt_id, action=trap or answer))
+def seed_attempts(player, scenarios, rng, joined_at, ability, habit):
+    """Decisions day by day since joining: the habit decides how often and how much the player practises.
+    Accuracy climbs a little as they learn, and harder scenarios are answered correctly less often."""
+    _, chance, (fewest, most) = habit
+    pools = {
+        "EMAIL": [s for s in scenarios if s.simulation_type == "EMAIL"],
+        "SMS": [s for s in scenarios if s.simulation_type == "SMS"],
+    }
+    now = datetime.utcnow()
+    day, index = joined_at.date(), 0
+    while day <= now.date():
+        if rng.random() < chance:
+            for _ in range(rng.randint(fewest, most)):
+                when = datetime.combine(day, time(rng.randint(7, 21), rng.randint(0, 59)))
+                when = min(max(when, joined_at + timedelta(minutes=10)), now - timedelta(minutes=rng.randint(5, 90)))
+                pool = pools["EMAIL"] if rng.random() < 0.55 else pools["SMS"]
+                if pool:
+                    _add_attempt(player, rng.choice(pool), rng, when, ability + min(index / 100, 1) * 0.15)
+                    index += 1
+        day += timedelta(days=1)
 
     db.session.flush()
     _seed_sessions(player, rng)
     _refresh_tracker(player.player_id)
+
+
+def _add_attempt(player, scenario, rng, when, skill):
+    """One decision on a scenario, right or wrong depending on the player's skill."""
+    difficulty_penalty = {"Easy": 0.08, "Medium": 0.0, "Hard": -0.12}.get(scenario.difficulty, 0.0)
+    correct = rng.random() < min(0.98, skill + difficulty_penalty)
+    answer = scenario.correct_answer if correct else ("SAFE" if scenario.correct_answer == "REPORT" else "REPORT")
+    clues = rng.randint(2, 3) if correct else rng.randint(0, 1)
+    clue_score = rng.choice([80, 100]) if correct else rng.choice([0, 33, 50])
+    trap = None
+    if not correct and scenario.correct_answer == "REPORT":
+        trap = rng.choice([None, "CLICKED_LINK", "OPENED_ATTACHMENT"])
+    attempt = SimulationAttempt(
+        player_id=player.player_id, scenario_id=scenario.scenario_id, simulation_type=scenario.simulation_type,
+        player_answer=answer, correct=correct, score=ProgressService.calculate_xp(correct, scenario.difficulty, clues, 1.0),
+        difficulty=scenario.difficulty, selected_clues="", justification="", clue_score=clue_score, attempted_at=when,
+    )
+    db.session.add(attempt)
+    db.session.flush()
+    db.session.add(UserAction(attempt_id=attempt.attempt_id, action=trap or answer))
 
 
 def _seed_sessions(player, rng):
@@ -303,18 +321,19 @@ def main():
         print(f"Creating {len(PLAYERS)} test players with history...")
         for name, age, occupation, it_background in PLAYERS:
             local = name.lower().replace(" ", ".").replace("-", "")
-            joined = datetime.utcnow() - timedelta(days=rng.randint(3, DAYS))
+            joined = datetime.utcnow() - timedelta(days=rng.randint(7, DAYS))
             _, player = make_user(f"{local}@phishsimulator.test", DEMO_PASSWORD, "PLAYER",
                                   full_name=name, profile=(age, occupation, it_background), joined_at=joined)
             ability = seed_baseline(player, questions, rng, joined) / 100
-            seed_attempts(player, scenarios, rng, joined, max(0.3, ability - 0.1))
+            habit = rng.choices(HABITS, weights=HABIT_WEIGHTS)[0]
+            seed_attempts(player, scenarios, rng, joined, max(0.3, ability - 0.1), habit)
         db.session.commit()
 
         if owner:
             joined = owner.joined_at
             ability = seed_baseline(owner, questions, rng, joined) / 100
             # The account you demo with, so give it a solid history to look at
-            seed_attempts(owner, scenarios, rng, joined, max(0.55, ability), attempts_total=22)
+            seed_attempts(owner, scenarios, rng, joined, max(0.55, ability), HABITS[3])
             db.session.commit()
 
         campaigns = seed_campaigns(admin, owner, scenarios)

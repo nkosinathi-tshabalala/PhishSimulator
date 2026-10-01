@@ -1,6 +1,7 @@
 # Unit tests for the CATCH rules
 
 import unittest
+from datetime import date, timedelta
 from types import SimpleNamespace
 
 from app.adaptive.adaptive_engine import AdaptiveEngine
@@ -175,7 +176,30 @@ class HelpStageRankTests(unittest.TestCase):
     def test_badges(self):
         facts = [make_fact(True, clue_score=100)] * 10
         earned = {b["key"] for b in ProgressService.summary_from_facts(facts)["badges"] if b["earned"]}
-        self.assertEqual(earned, {"first_catch", "clue_hunter", "category_master", "zero_misses"})
+        self.assertEqual(earned, {"day_one", "decisions_10", "first_catch", "clue_hunter", "category_master", "zero_misses"})
+
+    def test_every_badge_has_a_group_and_a_way_to_earn_it(self):
+        badges = ProgressService.summary_from_facts([])["badges"]
+        self.assertEqual(len(badges), 15)
+        self.assertTrue(all(b["group"] in ("streak", "milestone", "skill") and b["how"] for b in badges))
+
+    def test_streak_badges_use_the_best_run(self):
+        today = date(2026, 10, 1)
+        # A 6-day run in September, then a 2-day run ending today
+        days = [today - timedelta(days=offset) for offset in (0, 1, *range(10, 16))]
+        facts = [{**make_fact(True), "date": day} for day in sorted(days)]
+        streaks = ProgressService.daily_activity(facts, today=today)
+        self.assertEqual((streaks["daily_streak"], streaks["longest_streak"]), (2, 6))
+        progress = ProgressService.badge_progress(facts, [], streaks)
+        self.assertEqual((progress["streak_5"], progress["streak_14"]), (5, 2))
+
+    def test_skill_badges_for_hard_catches_categories_and_campaigns(self):
+        facts = [make_fact(True, "Hard", category=name) for name in
+                 ("Banking", "Delivery", "Government", "Employment", "University", "Password Reset",
+                  "Microsoft 365", "Social Media")]
+        facts.append({**make_fact(True), "campaign": True})
+        progress = ProgressService.badge_progress(facts, [], {"daily_streak": 0, "longest_streak": 0})
+        self.assertEqual((progress["sharp_eye"], progress["all_rounder"], progress["real_world_catch"]), (8, 8, 1))
 
 
 class ParserTests(unittest.TestCase):

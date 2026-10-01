@@ -67,8 +67,12 @@ export interface Feedback {
 
 export interface BadgeProgress {
   key: string;
+  /** "streak", "milestone" or "skill": how the badge collection is grouped. */
+  group: "streak" | "milestone" | "skill";
   name: string;
   description: string;
+  /** How to earn it, shown when the badge is hovered or tapped. */
+  how: string;
   earned: boolean;
   progress: number;
   target: number;
@@ -100,6 +104,8 @@ export interface Progress {
   skill: SkillRank;
   badges: BadgeProgress[];
   daily_streak: number;
+  /** Most practice days in a row, ever. */
+  longest_streak: number;
   practised_today: boolean;
   today_attempts: number;
   daily_goal: number;
@@ -127,4 +133,15 @@ export interface TriageBatch {
   difficulty: Difficulty;
   difficulty_reason: string;
   messages: MessageView[];
+}
+
+/** Activity per day for one year (decisions plus finished baseline quizzes). */
+export interface YearActivity {
+  year: number;
+  first_year: number;
+  last_year: number;
+  /** "YYYY-MM-DD" -> number of events that day. */
+  days: Record<string, number>;
+  total: number;
+  active_days: number;
 }

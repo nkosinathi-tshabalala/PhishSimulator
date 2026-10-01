@@ -68,6 +68,16 @@ class AnalyticsService {
     );
   }
 
+  /** The signed-in player's activity per day for one year (this year when none is given). */
+  async getMyActivity(year?: number) {
+    return apiRequest(
+      `/analytics/my-activity${year ? `?year=${year}` : ""}`,
+      "GET",
+      null,
+      localStorage.getItem("access_token")
+    );
+  }
+
   /** The signed-in player's progress, optionally narrowed by filters such as "range=7d". */
   async getMyPerformance(query = "") {
     return apiRequest(

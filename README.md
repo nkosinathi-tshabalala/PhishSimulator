@@ -10,7 +10,7 @@ PhishSimulator is a scenario-based, gamified phishing-awareness trainer built on
 | **A · Approve** | Dataset upload → quality report (reject if poor) → **Draft** scenarios → admin preview + 6-item QA checklist → **Approved** → **Active**. Only Active scenarios reach players. | `services/dataset_service.py`, `services/scenario_service.py`, `ScenarioManagementPage.tsx` |
 | **T · Test** | Inspect a realistic message: sender display names hide the real address until opened, link text hides the real address until hovered, and emails may carry an attachment. Clicking a link or opening a file counts as trusting the message. Then Report / Mark Safe, then "Why?": 6 clue buttons (always 3 warning signs + 3 trust signals, real clues mixed with decoys) plus an optional written reason matched with regex keywords. Each decoy picked cancels one correct clue, so guessing doesn't pay. | `utils/clues.py`, `services/simulation_service.py`, `simulation/DecisionPanel.tsx` |
 | **C · Correct** | Instant feedback: clues spotted vs missed, a threat explanation, and a safe-behaviour tip. | `analytics/feedback_generator.py`, `simulation/FeedbackPanel.tsx` |
-| **H · Help** | XP = (Easy 10 / Medium 20 / Hard 30 + 5 per real clue, max 15) × 1.29^(level−1). Each level needs ×1.5 more XP (max level 10). Private skill rank from weighted accuracy on the last 20 attempts (Easy ×1, Medium ×1.5, Hard ×2): Recruit, Spotter (50), Analyst (65), Defender (80), Guardian (90+ and ≤5% missed phishing). Badges (with progress bars): First Catch, Clue Hunter, Category Master, Zero Misses, Comeback. A daily goal, a practice-day streak, and **Review mistakes** to retry scenarios answered wrong. | `services/progress_service.py`, `progress/ProgressWidgets.tsx` |
+| **H · Help** | XP = (Easy 10 / Medium 20 / Hard 30 + 5 per real clue, max 15) × 1.29^(level−1). Each level needs ×1.5 more XP (max level 10). Private skill rank from weighted accuracy on the last 20 attempts (Easy ×1, Medium ×1.5, Hard ×2): Recruit, Spotter (50), Analyst (65), Defender (80), Guardian (90+ and ≤5% missed phishing). 15 badges in three groups (streaks, milestones, skills; see "Gamification" below), a daily goal, current and best practice-day streaks, a yearly activity calendar, a private position among all players, and **Review mistakes** to retry scenarios answered wrong. | `services/progress_service.py`, `progress/ProgressWidgets.tsx` |
 
 **Adaptive loop:** under 5 attempts the baseline sets the level. After that, the last 5 answers step the difficulty one level up (80%+), one level down (under 60%), or keep it. Scenario choice skips the last 2 categories, prefers the player's job group, prefers unseen scenarios, and never repeats within 5.
 
@@ -28,7 +28,8 @@ PhishSimulator is a scenario-based, gamified phishing-awareness trainer built on
 - Every table and list has a search, filters and click-to-sort columns (click once for ascending, again for descending), and every row opens its details.
 - The metrics pages (admin **System Analytics** and the player's **My Progress**) filter by date range (7, 30 or 90 days, all time, or custom dates), channel, difficulty, category, training vs campaign emails and, for admins, group (students, employees, other). XP, level and badges always count the full history.
 - Skeleton loaders and toast notifications (shadcn/ui + Sonner) throughout.
-- Private progress: XP, levels, level multiplier, badges and skill rank, plus your position among all rated players (e.g. **#11 of 27, top 41%**). Players only ever see their own position, never another player's name or score.
+- Private progress, inspired by platforms like TryHackMe: a stats strip (rank, badges, streak, simulations completed), 15 badges, current and best streaks, a yearly activity calendar, XP, levels and the skill rank, plus your position among all rated players (e.g. **#11 of 27, top 41%**). Players only ever see their own position, never another player's name or score.
+- **Home** is about what to do next (daily goal, training, goals, campaign inbox, recent decisions); **My Progress** is about how you are doing, in three tabs: *Overview* (activity calendar, skill rank, level), *Performance* (filtered metrics and charts) and *Badges* (the full collection).
 - Administrator dashboard, user monitoring, baseline-question management and analytics, with tinted stat cards throughout.
 - Email phishing campaigns: send a real training email through Gmail to your own inboxes — from an approved scenario or a custom email you write, phishing or genuine, with a link and/or a look-alike attachment — then track opens, clicks, attachment opens, reports and "ignored" (no action inside the response window). Once a recipient acts, the result is locked; once every recipient's result is final, the campaign shows as **Completed**. Every result emails the recipient branded feedback (good or bad) and awards or deducts XP, and each result counts as a real decision in the player's stats, streak, rank and Home **Inbox**.
 - Local reset and realistic demo-data generation utilities.
@@ -182,7 +183,7 @@ cd backend
 - **41 active scenarios**: South African email and SMS messages, 23 phishing and 18 legitimate, across all 8 categories and 3 difficulties, with catalogue clue names. Four carry a look-alike attachment. (Uploaded datasets are **not** part of the seed; you add your own from the Datasets page.)
 - **5 baseline questions** and an admin from `ADMIN_EMAIL` / `ADMIN_PASSWORD` in `backend/.env` (default **admin@phishsimulator.com** / **Admin#2026**).
 - An **owner player** for your own address only if `OWNER_EMAIL` is set. Leave it blank to register yourself in the app instead.
-- **40 test players** with realistic South African names and `@phishsimulator.test` emails, each with a profile, a keyword-marked baseline, login and training sessions, and a practice history spread over the last 30 days so the trends and metrics look real. Accuracy falls with difficulty (Easy > Medium > Hard) and improves slightly over time.
+- **40 test players** with realistic South African names and `@phishsimulator.test` emails, each with a profile, a keyword-marked baseline, login and training sessions, and about four months of practice. Each player has a habit, from never trained through occasional and weekly to daily, so streaks, badges, the activity calendar and the trends look real (a few dedicated players hold month-long streaks). Accuracy falls with difficulty (Easy > Medium > Hard) and improves slightly over time.
 - **Two finished campaigns** to the owner's address (one reported phishing, one clicked genuine), when an owner player is created, so the campaign metrics and the player Inbox show data.
 
 Every player uses the password `Player#2026`. Override defaults with the `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `DEMO_PASSWORD` and `OWNER_EMAIL` environment variables.
@@ -240,6 +241,30 @@ Category selection avoids the two most recent categories when possible, prefers 
 
 Players can select a category manually for focused practice. Otherwise, the system prefers unseen scenarios, applies a short repeat cooldown, and then falls back to random eligible content. This prevents large dataset uploads from becoming a long fixed queue.
 
+## Gamification and progress
+
+Each mechanic has a learning purpose, and progress stays private: there is no public leaderboard.
+
+| Mechanic | What the player sees | Why it is there |
+| --- | --- | --- |
+| XP and levels | XP for correct decisions, more for harder scenarios and spotted clues; a level multiplier | Rewards effort and shows steady progress |
+| Skill rank | Recruit to Guardian, from weighted accuracy on the last 20 decisions; it can fall | Measures skill separately from effort |
+| Private position | "#11 of 27 players · Top 41%" | Relative feedback without names, scores or a leaderboard |
+| Streaks | Current and best run of practice days | Encourages short, regular practice instead of cramming |
+| Daily goal and goals | 5 decisions a day; one current goal and the next four | A clear next step on every visit |
+| Badges | 15 in three groups (below) | Most of them need skill, not just activity |
+| Yearly activity | A calendar of practice days with a count per day | Makes the habit visible |
+
+A practice day counts when the player makes at least one decision (training or a campaign email), not when they merely log in, so streaks reward learning rather than visits.
+
+| Group | Badges |
+| --- | --- |
+| Streaks | Day One (first practice), 5-Day Streak, 2-Week Streak, Month Streak (30 days) |
+| Milestones | Getting Started (10 simulations), Committed (50), Centurion (100) |
+| Skills | First Catch, Clue Hunter, Sharp Eye (5 Hard phishing caught), Zero Misses, Category Master, All-Rounder (a correct decision in every category), Comeback, Real-World Catch (report a phishing campaign email) |
+
+Badge rules, targets and "how to earn it" text live in one place: `ProgressService.BADGES` in `backend/app/services/progress_service.py`. A new badge is celebrated after the decision that earns it.
+
 ## Email campaigns
 
 An admin can send a real phishing-awareness email, built from an approved email scenario, to their own inboxes and see who opens it, clicks the link, or reports it.
@@ -286,7 +311,7 @@ One known trade-off: the login token is kept in the browser's `localStorage`, wh
 ## Important development rules
 
 - Keep correctness and score validation in the backend; do not trust frontend-supplied correctness.
-- Keep progress private. Players see only their own XP, badges and skill rank, never other players.
+- Keep progress private. Players see only their own XP, badges, streaks, skill rank and position, never another player's name or score.
 - Never send `correct_answer`, clues or feedback to the player before they submit a decision.
 - Preserve adaptive variety and occupation-based recommendations.
 - Do not commit `.env` files or `backend/uploads/`; enable the pre-commit hook (`git config core.hooksPath .githooks`) to be stopped if you try.

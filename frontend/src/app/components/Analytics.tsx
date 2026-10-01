@@ -1,16 +1,17 @@
-// Player page: My Progress, narrowed by the filter bar
+// Player page: My Progress. Overview and Badges show lifetime progress; Performance shows filtered metrics.
 
 import { useEffect, useState } from 'react';
-import { Target, Award, BarChart3, Activity, LineChart } from 'lucide-react';
+import { Activity, AlertTriangle, Award, Flame, LayoutDashboard, LineChart, Target } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Progress } from './ui/progress';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import AnalyticsService from '../../services/analyticsService';
-import { BadgeGrid, SkillRankCard, XpProgress } from './progress/ProgressWidgets';
+import { BadgeCollection, ProfileStats, SkillRankCard, XpProgress } from './progress/ProgressWidgets';
+import { ActivityCalendar } from './progress/ActivityCalendar';
 import type { Progress as PlayerProgress } from '../../types/catch';
 import { FilterBar } from './FilterBar';
-import { ChannelBadge } from './visuals';
+import { ChannelBadge, DifficultyBadge } from './visuals';
 import { CampaignTag, formatXp } from './CampaignInbox';
 import { Skeleton } from './ui/skeleton';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from './ui/dialog';
@@ -32,6 +33,36 @@ import {
 // Recent decisions shown at first; "Show more" adds this many each time
 const PAGE_SIZE = 8;
 
+const TABS = [
+  { id: 'overview', label: 'Overview', icon: LayoutDashboard },
+  { id: 'performance', label: 'Performance', icon: LineChart },
+  { id: 'badges', label: 'Badges', icon: Award },
+] as const;
+type TabId = (typeof TABS)[number]['id'];
+
+// Remembers the open tab, and lets Home open a specific one
+const TAB_KEY = 'progress_tab';
+
+/** Open My Progress on a tab (used by the shortcuts on Home). */
+export function openProgressTab(tab: string, onNavigate: (page: string) => void) {
+  try {
+    localStorage.setItem(TAB_KEY, tab);
+  } catch {
+    // Storage can be blocked; the page then opens on Overview
+  }
+  onNavigate('performance');
+}
+
+/** The tab to show first: the one asked for, or the last one viewed. */
+function savedTab(): TabId {
+  try {
+    const saved = localStorage.getItem(TAB_KEY);
+    return TABS.find((tab) => tab.id === saved)?.id ?? 'overview';
+  } catch {
+    return 'overview';
+  }
+}
+
 interface RecentAttempt {
   scenario: string;
   type: string;
@@ -52,6 +83,7 @@ interface PlayerPerformance extends PlayerProgress {
   baseline_score: number | null;
   correct_attempts: number;
   total_attempts: number;
+  completed_simulations: number;
   difficulty: string;
   adaptive_reason: string;
   by_type: Array<{ type: string; attempts: number; correct: number; accuracy: number }>;
@@ -63,15 +95,12 @@ interface PlayerPerformance extends PlayerProgress {
   recent_attempts: RecentAttempt[];
 }
 
-/** My Progress page: the player's stats, rank, badges and history. */
+/** My Progress page: stats strip, then Overview, Performance and Badges tabs. */
 export function Analytics() {
   const [performance, setPerformance] = useState<PlayerPerformance | null>(null);
   const [filters, setFilters] = useState(DEFAULT_METRICS_FILTERS);
   const [loading, setLoading] = useState(true);
-  const [feedbackSearch, setFeedbackSearch] = useState('');
-  const [resultFilter, setResultFilter] = useState('');
-  const [shown, setShown] = useState(PAGE_SIZE);
-  const [opened, setOpened] = useState<RecentAttempt | null>(null);
+  const [tab, setTab] = useState<TabId>(savedTab);
 
   // Reload whenever a filter changes. `current` ignores replies to older requests that arrive late.
   useEffect(() => {
@@ -86,10 +115,258 @@ export function Analytics() {
     };
   }, [filters]);
 
+  const changeTab = (next: string) => {
+    const id = TABS.find((item) => item.id === next)?.id ?? 'overview';
+    setTab(id);
+    try {
+      localStorage.setItem(TAB_KEY, id);
+    } catch {
+      // Not saved; the tab still changes
+    }
+  };
+
+  return (
+    <div className="h-full flex flex-col">
+      <PageHeader
+        title="My Progress"
+        description="Your rank, streak, badges and how your phishing detection is improving"
+        icon={LineChart}
+        tone="bg-green-500/15 text-green-300"
+      />
+
+      <div className="flex-1 overflow-y-auto p-6 space-y-6">
+        {/* XP, rank, badges and streaks always count everything; only the Performance tab is filtered */}
+        {performance ? (
+          <ProfileStats progress={performance} completed={performance.completed_simulations} onOpen={changeTab} />
+        ) : (
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            {[1, 2, 3, 4].map((item) => <Skeleton key={item} className="h-24 rounded-xl" />)}
+          </div>
+        )}
+
+        <TabBar value={tab} onChange={changeTab} />
+
+        {tab === 'overview' && <OverviewTab performance={performance} />}
+        {tab === 'performance' && (
+          <PerformanceTab performance={performance} filters={filters} onFiltersChange={setFilters} loading={loading} />
+        )}
+        {tab === 'badges' && <BadgesTab performance={performance} />}
+      </div>
+    </div>
+  );
+}
+
+/** The three section buttons under the stats strip. */
+function TabBar({ value, onChange }: { value: TabId; onChange: (tab: string) => void }) {
+  return (
+    <div role="tablist" aria-label="My Progress sections" className="flex w-fit gap-1 rounded-xl border border-border bg-card/70 p-1">
+      {TABS.map((item) => (
+        <button
+          key={item.id}
+          type="button"
+          role="tab"
+          aria-selected={value === item.id}
+          onClick={() => onChange(item.id)}
+          className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
+            value === item.id ? 'bg-sky-500/20 text-sky-200 shadow-sm' : 'text-muted-foreground hover:text-foreground'
+          }`}
+        >
+          <item.icon className="w-4 h-4" />
+          {item.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** Lifetime view: yearly activity, private skill rank, level and the adaptive difficulty. */
+function OverviewTab({ performance }: { performance: PlayerPerformance | null }) {
+  return (
+    <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base text-foreground">Yearly activity</CardTitle>
+          <CardDescription>Every day you practised this year. Hover a square to see that day.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <ActivityCalendar />
+        </CardContent>
+      </Card>
+
+      {performance ? (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base text-foreground">Private skill rank</CardTitle>
+              <CardDescription>Measures skill, so it can rise or fall. No leaderboards.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <SkillRankCard skill={performance.skill} />
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base text-foreground">Level and training</CardTitle>
+              <CardDescription>XP measures effort; the difficulty follows your last 5 answers</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <XpProgress progress={performance} />
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="rounded-md bg-muted p-3">
+                  <div className="text-xs text-muted-foreground">Next scenarios</div>
+                  <div className="mt-1 flex items-center gap-2">
+                    <DifficultyBadge difficulty={performance.difficulty} />
+                  </div>
+                  <div className="mt-1 text-xs text-muted-foreground">{performance.adaptive_reason}</div>
+                </div>
+                <div className="rounded-md bg-muted p-3">
+                  <div className="text-xs text-muted-foreground">Baseline score</div>
+                  <div className="mt-1 text-lg font-bold text-foreground">
+                    {performance.baseline_score !== null ? `${performance.baseline_score}%` : '—'}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    {performance.baseline_score !== null ? 'Your starting level' : 'Take the baseline quiz from the menu'}
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      ) : (
+        <Skeleton className="h-72" />
+      )}
+    </div>
+  );
+}
+
+/** Filtered metrics: accuracy, mistakes, trends, channels, categories and the decisions themselves. */
+function PerformanceTab({ performance, filters, onFiltersChange, loading }: {
+  performance: PlayerPerformance | null;
+  filters: typeof DEFAULT_METRICS_FILTERS;
+  onFiltersChange: (filters: typeof DEFAULT_METRICS_FILTERS) => void;
+  loading: boolean;
+}) {
   const period = rangeLabel(filters);
+  const risky = (performance?.phishing_links_clicked ?? 0) + (performance?.malicious_files_opened ?? 0);
+
+  return (
+    <div className="space-y-6">
+      <MetricsFilters
+        value={filters}
+        onChange={onFiltersChange}
+        categories={performance?.category_options ?? []}
+        loading={loading && performance !== null}
+      />
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <StatCard label="Accuracy" value={performance ? `${performance.overall_accuracy}%` : undefined}
+          hint={`${performance?.correct_attempts ?? 0} of ${performance?.total_attempts ?? 0} correct, ${period}`} icon={Target} tone="sky" />
+        <StatCard label="Missed phishing" value={performance ? `${performance.false_negative_rate}%` : undefined}
+          hint="Phishing you marked safe" icon={AlertTriangle} tone="red" />
+        <StatCard label="False alarms" value={performance ? `${performance.false_positive_rate}%` : undefined}
+          hint="Safe messages you reported" icon={Activity} tone="amber" />
+        <StatCard label="Risky clicks" value={performance ? risky : undefined}
+          hint={`${performance?.phishing_links_clicked ?? 0} links, ${performance?.malicious_files_opened ?? 0} files. Aim for zero`}
+          icon={Flame} tone="orange" />
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base text-foreground">Activity and accuracy</CardTitle>
+            <CardDescription>Decisions per day (bars) and accuracy (line), {period}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ActivityChart data={performance?.daily_trend ?? []} />
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base text-foreground">Learning curve</CardTitle>
+            <CardDescription>Accuracy over your last 5 decisions, compared with your baseline</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <LearningCurveChart data={performance?.learning_curve ?? []} baseline={performance?.baseline_score ?? null} />
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base text-foreground">Mistakes over time</CardTitle>
+            <CardDescription>Weekly missed phishing and false alarms, {period}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ErrorTrendChart data={performance?.weekly_errors ?? []} />
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base text-foreground">Email vs SMS</CardTitle>
+            <CardDescription>Your accuracy on each channel</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-5">
+            {(performance?.by_type ?? []).map((stat) => (
+              <div key={stat.type}>
+                <div className="flex items-center justify-between mb-2">
+                  <div>
+                    <span className="text-sm font-medium text-foreground">{stat.type === 'EMAIL' ? 'Email phishing' : 'SMS / smishing'}</span>
+                    <span className="text-xs ml-2 text-muted-foreground">{stat.correct}/{stat.attempts} correct</span>
+                  </div>
+                  <span className="text-xl font-bold text-foreground">{stat.accuracy}%</span>
+                </div>
+                <Progress value={stat.accuracy} className="h-2.5" />
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base text-foreground">Accuracy by category</CardTitle>
+          <CardDescription>Where you practise most (bars) and how well you do (line)</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <CategoryChart data={performance?.by_category ?? []} />
+        </CardContent>
+      </Card>
+
+      <RecentDecisions performance={performance} period={period} />
+    </div>
+  );
+}
+
+/** Every badge, grouped, with how many are collected. */
+function BadgesTab({ performance }: { performance: PlayerPerformance | null }) {
+  if (!performance) return <Skeleton className="h-96" />;
+  const earned = performance.badges.filter((badge) => badge.earned).length;
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base text-foreground">Badge collection</CardTitle>
+        <CardDescription>
+          {earned} of {performance.badges.length} collected. Hover or tap a badge to see how to earn it.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <BadgeCollection badges={performance.badges} />
+      </CardContent>
+    </Card>
+  );
+}
+
+/** The decisions in the chosen period: search, filter, sort, and open one for its full feedback. */
+function RecentDecisions({ performance, period }: { performance: PlayerPerformance | null; period: string }) {
+  const [search, setSearch] = useState('');
+  const [result, setResult] = useState('');
+  const [shown, setShown] = useState(PAGE_SIZE);
+  const [opened, setOpened] = useState<RecentAttempt | null>(null);
+
   const matching = (performance?.recent_attempts ?? []).filter((attempt) =>
-    attempt.scenario.toLowerCase().includes(feedbackSearch.toLowerCase())
-    && (!resultFilter || (resultFilter === 'correct') === attempt.correct),
+    attempt.scenario.toLowerCase().includes(search.toLowerCase())
+    && (!result || (result === 'correct') === attempt.correct),
   );
   const decisions = useSort(matching, {
     date: (attempt) => attempt.attempted_at,
@@ -98,211 +375,53 @@ export function Analytics() {
   }, { key: 'date', direction: 'desc' });
 
   return (
-    <div className="h-full flex flex-col">
-      <PageHeader
-        title="My Progress"
-        description="Your training statistics, rank and history"
-        icon={LineChart}
-        tone="bg-green-500/15 text-green-300"
-      />
-
-      <div className="flex-1 overflow-y-auto p-6 space-y-6">
-        <MetricsFilters
-          value={filters}
-          onChange={(next) => {
-            setFilters(next);
-            setShown(PAGE_SIZE);
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base text-foreground">Recent decisions</CardTitle>
+        <CardDescription>Feedback on your decisions, {period}. Click one to read it in full.</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <FilterBar
+          search={search}
+          onSearchChange={setSearch}
+          searchPlaceholder="Search scenarios"
+          filters={[{
+            key: 'result',
+            label: 'Results',
+            value: result,
+            options: [{ value: 'correct', label: 'Correct' }, { value: 'incorrect', label: 'Incorrect' }],
+            onChange: setResult,
+          }]}
+          onClear={() => {
+            setSearch('');
+            setResult('');
           }}
-          categories={performance?.category_options ?? []}
-          loading={loading && performance !== null}
-        />
-
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <StatCard label="Accuracy" value={performance ? `${performance.overall_accuracy}%` : undefined}
-            hint={`${performance?.total_attempts ?? 0} decisions, ${period}`} icon={Target} tone="sky" />
-          <StatCard label="Correct decisions" value={performance?.correct_attempts}
-            hint={`of ${performance?.total_attempts ?? 0}`} icon={Activity} tone="blue" />
-          <StatCard label="Baseline score" value={performance ? (performance.baseline_score !== null ? `${performance.baseline_score}%` : '—') : undefined}
-            hint={performance?.baseline_score !== null ? 'Latest assessment' : 'Take the baseline quiz'} icon={Award} tone="green" />
-          <StatCard label="Current difficulty" value={performance?.difficulty}
-            hint="Chosen by the adaptive engine" icon={BarChart3} tone="amber" />
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base text-foreground">Activity and accuracy</CardTitle>
-              <CardDescription>Decisions per day (bars) and accuracy (line), {period}</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <ActivityChart data={performance?.daily_trend ?? []} />
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base text-foreground">Learning curve</CardTitle>
-              <CardDescription>Accuracy over your last 5 decisions, compared with your baseline</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <LearningCurveChart data={performance?.learning_curve ?? []} baseline={performance?.baseline_score ?? null} />
-            </CardContent>
-          </Card>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base text-foreground">Mistakes over time</CardTitle>
-              <CardDescription>
-                Missed phishing {performance?.false_negative_rate ?? 0}% · false alarms {performance?.false_positive_rate ?? 0}%
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <ErrorTrendChart data={performance?.weekly_errors ?? []} />
-              <RiskyCount label="Phishing links clicked" hint="Clicking a malicious link is the costliest mistake"
-                value={performance?.phishing_links_clicked ?? 0} />
-              <RiskyCount label="Malicious files opened" hint="Unexpected .htm, .zip, .docm or .iso files you opened"
-                value={performance?.malicious_files_opened ?? 0} />
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base text-foreground">Level & Adaptive Status</CardTitle>
-              <CardDescription>XP measures effort over all your training; difficulty adapts to your last 5 answers</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {performance && <XpProgress progress={performance} />}
-              <div className="flex items-center justify-between p-3 rounded-md bg-muted">
-                <div>
-                  <div className="text-sm font-medium text-foreground">Adaptive Engine</div>
-                  <div className="text-xs text-muted-foreground">{performance?.adaptive_reason ?? 'Calculating recommendation'}</div>
-                </div>
-                <Badge className="text-xs border-0 bg-green-500/15 text-green-400">
-                  {performance ? performance.difficulty : 'Loading'}
-                </Badge>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {performance && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base text-foreground">Private Skill Rank</CardTitle>
-                <CardDescription>Measures skill, so it can rise or fall. No leaderboards.</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <SkillRankCard skill={performance.skill} />
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base text-foreground">Badges</CardTitle>
-                <CardDescription>Hover or tap a badge to see how to earn it</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <BadgeGrid badges={performance.badges} />
-              </CardContent>
-            </Card>
+          resultText={`${matching.length} decision(s)`}
+        >
+          <div className="flex items-center gap-3 text-xs text-muted-foreground">
+            <span>Sort:</span>
+            <SortButton label="Date" column="date" sort={decisions.sort} onSort={decisions.toggle} />
+            <SortButton label="XP" column="xp" sort={decisions.sort} onSort={decisions.toggle} />
+            <SortButton label="Scenario" column="scenario" sort={decisions.sort} onSort={decisions.toggle} />
           </div>
+        </FilterBar>
+
+        {!performance && [1, 2, 3].map((row) => <Skeleton key={row} className="h-16" />)}
+        {decisions.sorted.slice(0, shown).map((attempt) => (
+          <DecisionRow key={`${attempt.scenario}-${attempt.attempted_at}`} attempt={attempt} onOpen={() => setOpened(attempt)} />
+        ))}
+        {performance && !matching.length && (
+          <p className="py-4 text-center text-sm text-muted-foreground">No decisions match these filters yet.</p>
         )}
-
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base text-foreground">Email vs SMS</CardTitle>
-              <CardDescription>Your accuracy on each channel</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-5">
-              {(performance?.by_type ?? []).map((stat) => (
-                <div key={stat.type}>
-                  <div className="flex items-center justify-between mb-2">
-                    <div>
-                      <span className="text-sm font-medium text-foreground">{stat.type === 'EMAIL' ? 'Email phishing' : 'SMS / smishing'}</span>
-                      <span className="text-xs ml-2 text-muted-foreground">{stat.correct}/{stat.attempts} correct</span>
-                    </div>
-                    <span className="text-xl font-bold text-foreground">{stat.accuracy}%</span>
-                  </div>
-                  <Progress value={stat.accuracy} className="h-2.5" />
-                </div>
-              ))}
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base text-foreground">Accuracy by category</CardTitle>
-              <CardDescription>Where you practise most (bars) and how well you do (line)</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <CategoryChart data={performance?.by_category ?? []} />
-            </CardContent>
-          </Card>
-        </div>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base text-foreground">Recent decisions</CardTitle>
-            <CardDescription>Feedback on your decisions, {period}</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <FilterBar
-              search={feedbackSearch}
-              onSearchChange={setFeedbackSearch}
-              searchPlaceholder="Search scenarios"
-              filters={[{
-                key: 'result',
-                label: 'Results',
-                value: resultFilter,
-                options: [{ value: 'correct', label: 'Correct' }, { value: 'incorrect', label: 'Incorrect' }],
-                onChange: setResultFilter,
-              }]}
-              onClear={() => {
-                setFeedbackSearch('');
-                setResultFilter('');
-              }}
-              resultText={`${matching.length} decision(s)`}
-            >
-              <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                <span>Sort:</span>
-                <SortButton label="Date" column="date" sort={decisions.sort} onSort={decisions.toggle} />
-                <SortButton label="XP" column="xp" sort={decisions.sort} onSort={decisions.toggle} />
-                <SortButton label="Scenario" column="scenario" sort={decisions.sort} onSort={decisions.toggle} />
-              </div>
-            </FilterBar>
-
-            {!performance && [1, 2, 3].map((row) => <Skeleton key={row} className="h-16" />)}
-            {decisions.sorted.slice(0, shown).map((attempt) => (
-              <DecisionRow key={`${attempt.scenario}-${attempt.attempted_at}`} attempt={attempt} onOpen={() => setOpened(attempt)} />
-            ))}
-            {performance && !matching.length && (
-              <p className="py-4 text-center text-sm text-muted-foreground">No decisions match these filters yet.</p>
-            )}
-            {matching.length > shown && (
-              <Button variant="outline" className="w-full" onClick={() => setShown(shown + PAGE_SIZE)}>
-                Show more ({matching.length - shown} left)
-              </Button>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+        {matching.length > shown && (
+          <Button variant="outline" className="w-full" onClick={() => setShown(shown + PAGE_SIZE)}>
+            Show more ({matching.length - shown} left)
+          </Button>
+        )}
+      </CardContent>
 
       <DecisionDetails attempt={opened} onClose={() => setOpened(null)} />
-    </div>
-  );
-}
-
-/** A count of risky actions with a short explanation. */
-function RiskyCount({ label, hint, value }: { label: string; hint: string; value: number }) {
-  return (
-    <div className="flex items-center justify-between rounded-md border border-orange-500/30 bg-orange-500/10 p-3">
-      <div>
-        <div className="text-sm font-medium text-foreground">{label}</div>
-        <p className="text-xs text-muted-foreground">{hint}</p>
-      </div>
-      <span className="text-2xl font-bold text-orange-300">{value}</span>
-    </div>
+    </Card>
   );
 }
 
