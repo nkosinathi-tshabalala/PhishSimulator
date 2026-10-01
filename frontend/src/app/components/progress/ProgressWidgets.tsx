@@ -98,11 +98,13 @@ export function SkillRankCard({ skill, showNextTier = true }: { skill: SkillRank
           <p className="text-xs text-muted-foreground flex items-center gap-1">
             <Lock className="w-3 h-3" />
             {isRated
-              ? "Phish Detection Rating: accuracy on your last 20 attempts. Only you can see it."
+              ? "Phish Detection Rating: accuracy on your last 20 attempts. Only you see your rating and position; no one sees anyone else's."
               : `Complete ${skill.attempts_until_rated} more simulation(s) to get your first rating.`}
           </p>
         </div>
       </div>
+
+      {skill.standing && <StandingLine standing={skill.standing} />}
 
       <TierLadder skill={skill} />
 
@@ -113,6 +115,28 @@ export function SkillRankCard({ skill, showNextTier = true }: { skill: SkillRank
           Harder scenarios count more: Easy ×1, Medium ×1.5, Hard ×2.
         </p>
       )}
+    </div>
+  );
+}
+
+/** "#12 of 40 players": your private position. Other players stay anonymous. */
+function StandingLine({ standing }: { standing: NonNullable<SkillRank["standing"]> }) {
+  if (standing.position === null) {
+    return (
+      <p className="text-xs text-muted-foreground">
+        Get rated to see where you stand among {standing.out_of} players.
+      </p>
+    );
+  }
+  return (
+    <div className="flex items-center justify-between rounded-lg border border-sky-500/25 bg-sky-500/10 px-3 py-2">
+      <div className="flex items-center gap-2">
+        <Medal className="w-4 h-4 text-sky-300" />
+        <span className="text-sm font-semibold text-foreground">
+          #{standing.position} <span className="font-normal text-muted-foreground">of {standing.out_of} players</span>
+        </span>
+      </div>
+      <span className="text-xs text-sky-300">Top {standing.top_percent}%</span>
     </div>
   );
 }

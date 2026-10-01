@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from app.analytics.filters import MAX_CHART_DAYS, MetricFilters
 from app.schemas.auth_schema import AuthSchema
 from app.services.auth_service import hash_token
+from app.services.progress_service import ProgressService
 
 TODAY = date(2026, 10, 1)
 
@@ -59,6 +60,19 @@ class PasswordTests(unittest.TestCase):
         self.assertEqual(hash_token("abc"), hash_token("abc"))
         self.assertNotIn("abc", hash_token("abc"))
         self.assertEqual(len(hash_token("abc")), 64)
+
+
+class StandingTests(unittest.TestCase):
+    """The private "#N of M" position."""
+
+    def test_best_rating_is_first_and_xp_breaks_ties(self):
+        scores = [(90, 100), (75, 400), (75, 200), (40, 900)]
+        self.assertEqual(ProgressService.place_in(scores, (90, 100)), 1)
+        self.assertEqual(ProgressService.place_in(scores, (75, 200)), 3)
+        self.assertEqual(ProgressService.place_in(scores, (40, 900)), 4)
+
+    def test_equal_scores_share_a_place(self):
+        self.assertEqual(ProgressService.place_in([(80, 50), (80, 50)], (80, 50)), 1)
 
 
 if __name__ == "__main__":

@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 
 from app.extensions import db
 from app.models.scenario import Scenario
+from app.models.simulation import SimulationAttempt
 
 
 class ProgressService:
@@ -278,6 +279,31 @@ class ProgressService:
             ],
             **ProgressService.daily_activity(facts),
         }
+
+    @staticmethod
+    def place_in(scores, own):
+        """1-based position of `own` among (rating, xp) scores, best first. Equal scores share a place."""
+        return 1 + sum(score > own for score in scores)
+
+    @staticmethod
+    def standing(player_id):
+        """This player's position among all rated players, by skill rating and then XP.
+        Only the position and the number of players leave this method: never anyone else's name or score."""
+        attempts_by_player = {}
+        for attempt in SimulationAttempt.query.all():
+            attempts_by_player.setdefault(attempt.player_id, []).append(attempt)
+
+        scores = {}
+        for other_id, attempts in attempts_by_player.items():
+            facts = ProgressService.attempt_facts(attempts)
+            if len(facts) >= ProgressService.MIN_RATED_ATTEMPTS:
+                scores[other_id] = (ProgressService.skill_rating(facts)["rating"], ProgressService.running_xp(facts))
+
+        out_of = len(scores)
+        if player_id not in scores:
+            return {"position": None, "out_of": out_of, "top_percent": None}
+        position = ProgressService.place_in(scores.values(), scores[player_id])
+        return {"position": position, "out_of": out_of, "top_percent": max(round(position / out_of * 100), 1)}
 
     @staticmethod
     def summary(attempts):

@@ -313,6 +313,8 @@ class AnalyticsService:
             baseline.score if baseline else None,
         )
         progress = ProgressService.summary(all_attempts)
+        # Private position among all players (only "#N of M", no one else's details)
+        progress["skill"]["standing"] = ProgressService.standing(player.player_id)
         days, last_day = filters.chart_window(attempts)
         recent_attempts = []
         for attempt in attempts[:RECENT_LIMIT]:
