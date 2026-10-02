@@ -5,6 +5,7 @@ from datetime import date, timedelta
 from types import SimpleNamespace
 
 from app.adaptive.adaptive_engine import AdaptiveEngine
+from app.analytics.feedback_generator import FeedbackGenerator
 from app.datasets.scenario_parser import ScenarioParser
 from app.services.progress_service import ProgressService
 from app.utils.clues import (
@@ -125,6 +126,36 @@ class TestStageTests(unittest.TestCase):
                 options = clue_options(scenario)
                 self.assertEqual(sum(option in WARNING_SIGNS for option in options), 3)
                 self.assertEqual(sum(option in TRUST_SIGNALS for option in options), 3)
+
+
+class CorrectStageTests(unittest.TestCase):
+    """Feedback straight after each decision: verdict, clues found and missed, and advice."""
+
+    @staticmethod
+    def feedback(answer="REPORT", cues="Suspicious link,Urgency", correct=True, selected=(), trap=None):
+        scenario = make_scenario(answer, cues)
+        scenario.simulation_type, scenario.category, scenario.feedback = "EMAIL", "Banking", None
+        result = evaluate_justification(scenario, list(selected), "")
+        return FeedbackGenerator.build(scenario, correct, result, trap)
+
+    def test_phishing_feedback_lists_found_and_missed_clues_with_tips(self):
+        feedback = self.feedback(selected=["Suspicious link"])
+        self.assertEqual(feedback["headline"], "Correct: this was phishing")
+        self.assertEqual([clue["name"] for clue in feedback["clues_spotted"]], ["Suspicious link"])
+        self.assertEqual([clue["name"] for clue in feedback["clues_missed"]], ["Urgency"])
+        self.assertTrue(all(clue["tip"] for clue in feedback["clues_spotted"] + feedback["clues_missed"]))
+        self.assertEqual(feedback["threat_explanation"], FeedbackGenerator.CATEGORY_GUIDANCE["Banking"][0])
+
+    def test_genuine_messages_are_explained_with_trust_signals(self):
+        feedback = self.feedback(answer="SAFE", cues="", correct=False)
+        self.assertEqual(feedback["headline"], "Not quite: this message was legitimate (the right choice was Mark Safe)")
+        self.assertEqual(feedback["threat_explanation"], FeedbackGenerator.LEGITIMATE_EXPLANATION)
+        self.assertIn("Trust signals", feedback["summary"])
+
+    def test_clicking_a_phishing_link_says_you_were_phished(self):
+        feedback = self.feedback(correct=False, trap="LINK")
+        self.assertTrue(feedback["headline"].startswith("You've been phished"))
+        self.assertEqual(feedback["trap_warning"], FeedbackGenerator.TRAP_WARNINGS["LINK"])
 
 
 class HelpStageXpTests(unittest.TestCase):

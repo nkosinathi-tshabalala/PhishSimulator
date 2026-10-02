@@ -328,6 +328,12 @@ Backend syntax check and CATCH rule tests:
 cd backend; .\.venv\Scripts\python.exe -m unittest discover tests
 ```
 
+End-to-end check of the whole API (about 140 checks across every CATCH stage). It builds a fresh throwaway database on your PostgreSQL server from every migration plus the demo data, prints a trace of one test learner, then drops the database; your own database is never touched:
+
+```powershell
+cd backend; .\.venv\Scripts\python.exe tests\e2e_check.py
+```
+
 After pulling model changes, apply migrations with `flask --app run.py db upgrade`.
 
 Frontend build:
