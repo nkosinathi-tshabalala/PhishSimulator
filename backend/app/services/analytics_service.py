@@ -2,7 +2,7 @@
 
 import csv
 import io
-from datetime import datetime, time, timedelta, timezone
+from datetime import date, timedelta, timezone
 from math import ceil
 
 from sqlalchemy import func
@@ -22,6 +22,7 @@ from app.analytics.filters import MetricFilters, category_options
 from app.services.campaign_service import CampaignService
 from app.services.progress_service import ProgressService
 from app.services.scenario_service import ScenarioService
+from app.utils.clock import local_date, local_today, utc_start_of
 
 
 # How many of the player's latest decisions My Progress lists
@@ -50,7 +51,7 @@ class AnalyticsService:
     @staticmethod
     def get_admin_dashboard_stats():
         """Headline numbers for the admin dashboard."""
-        today_start = datetime.combine(datetime.today().date(), time.min)
+        today_start = utc_start_of(local_today())
         total_attempts = db.session.query(func.count(SimulationAttempt.attempt_id)).scalar() or 0
         correct_attempts = (
             db.session.query(func.count(SimulationAttempt.attempt_id))
@@ -366,10 +367,10 @@ class AnalyticsService:
         if not player:
             return None
 
-        this_year = datetime.utcnow().year
-        first_year = min(player.user.created_at.year, this_year) if player.user else this_year
+        this_year = local_today().year
+        first_year = min(local_date(player.user.created_at).year, this_year) if player.user else this_year
         year = min(max(year or this_year, first_year), this_year)
-        start, end = datetime(year, 1, 1), datetime(year + 1, 1, 1)
+        start, end = utc_start_of(date(year, 1, 1)), utc_start_of(date(year + 1, 1, 1))
 
         days = {}
         AnalyticsService._count_by_day(days, db.session.query(SimulationAttempt.attempted_at).filter(
@@ -393,7 +394,7 @@ class AnalyticsService:
     def _count_by_day(days, timestamps):
         """Add one to the day (YYYY-MM-DD) of each timestamp."""
         for (moment,) in timestamps:
-            key = moment.date().isoformat()
+            key = local_date(moment).isoformat()
             days[key] = days.get(key, 0) + 1
 
     @staticmethod
@@ -541,14 +542,14 @@ class AnalyticsService:
         """New accounts per day inside the chart window, for the activity chart."""
         first_day = last_day - timedelta(days=days - 1)
         query = db.session.query(User.created_at).filter(
-            User.created_at >= datetime.combine(first_day, time.min),
-            User.created_at < datetime.combine(last_day + timedelta(days=1), time.min),
+            User.created_at >= utc_start_of(first_day),
+            User.created_at < utc_start_of(last_day + timedelta(days=1)),
         )
         if filters.group:
             query = query.filter(User.user_id.in_(filters.group_users()))
         counts = {}
         for (created_at,) in query:
-            counts[created_at.date()] = counts.get(created_at.date(), 0) + 1
+            counts[local_date(created_at)] = counts.get(local_date(created_at), 0) + 1
         return counts
 
     @staticmethod

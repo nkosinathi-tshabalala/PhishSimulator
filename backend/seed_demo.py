@@ -108,7 +108,7 @@ def seed_scenarios():
             title=row["title"], simulation_type=row["simulation_type"], category=row["category"],
             difficulty=row["difficulty"], sender=row["sender"], subject=row["subject"], message=row["message"],
             correct_answer=row["correct_answer"], phishing_cues=row.get("phishing_cues"),
-            attachment=row.get("attachment"), status="ACTIVE",
+            attachment=row.get("attachment"), status="ACTIVE", approved_at=datetime.utcnow(),
             quality_score=quality_score(row["simulation_type"], row["sender"], row["subject"], row["message"], is_phishing, cues),
         )
         db.session.add(scenario)

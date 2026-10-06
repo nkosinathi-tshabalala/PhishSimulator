@@ -67,6 +67,8 @@ interface ScenarioSummary {
   quality_score: number | null;
   has_attachment: boolean;
   uses: number;
+  approved_at: string | null;
+  updated_at: string | null;
 }
 
 interface ScenarioDetail extends Omit<ScenarioSummary, "uses" | "has_attachment"> {
@@ -78,6 +80,7 @@ interface ScenarioDetail extends Omit<ScenarioSummary, "uses" | "has_attachment"
   feedback: string | null;
   phishing_cues: string[];
   quality_checks: Array<{ label: string; passed: boolean; detail: string }>;
+  created_at: string | null;
 }
 
 interface ScenarioForm {
@@ -124,6 +127,22 @@ const QUALITY_OPTIONS = [
   { value: "40", label: "Quality 40+" },
 ];
 
+// "When" filter: approved or changed since local midnight N days ago (worked out by the server)
+const WHEN_OPTIONS = [
+  { value: "approved_today", label: "Approved today" },
+  { value: "approved_7d", label: "Approved in last 7 days" },
+  { value: "approved_30d", label: "Approved in last 30 days" },
+  { value: "updated_today", label: "Changed today" },
+  { value: "updated_7d", label: "Changed in last 7 days" },
+  { value: "updated_30d", label: "Changed in last 30 days" },
+];
+
+/** A date and time in the viewer's own time zone, e.g. "5 Oct, 14:32", or a dash when there is none. */
+function formatWhen(value: string | null) {
+  if (!value) return "—";
+  return new Date(value).toLocaleString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+}
+
 const ACTIONS_FOR: Record<ScenarioStatus, Array<{ action: ReviewAction; label: string }>> = {
   DRAFT: [{ action: "approve", label: "Approve" }, { action: "reject", label: "Reject" }],
   APPROVED: [{ action: "activate", label: "Activate for players" }, { action: "reject", label: "Reject" }],
@@ -140,6 +159,7 @@ const emptyFilters = {
   answer: "",
   dataset_id: "",
   min_quality: "",
+  when: "",
   // Table order, applied by the server so it holds across every page
   sort: "quality",
   order: "desc",
@@ -463,6 +483,24 @@ export function ScenarioManagementPage({ onBack }: ScenarioManagementPageProps) 
                   options: QUALITY_OPTIONS,
                   onChange: (value) => setFilter("min_quality", value),
                 },
+                {
+                  key: "when",
+                  label: "Any time",
+                  value: filters.when,
+                  options: WHEN_OPTIONS,
+                  onChange: (value) => {
+                    // Newest first is what you want after picking a time window
+                    setFilters((current) => ({
+                      ...current,
+                      // Drafts and rejected scenarios have no approval time, so show every stage instead
+                      status: value.startsWith("approved") && ["DRAFT", "REJECTED"].includes(current.status) ? "" : current.status,
+                      when: value,
+                      sort: value ? value.split("_")[0] : current.sort,
+                      order: value ? "desc" : current.order,
+                    }));
+                    setPage(1);
+                  },
+                },
               ]}
               onClear={() => {
                 setFilters({ ...emptyFilters, status: filters.status });
@@ -505,6 +543,8 @@ export function ScenarioManagementPage({ onBack }: ScenarioManagementPageProps) 
                   <TableHead><SortButton label="Status" column="status" sort={sortState} onSort={sortBy} /></TableHead>
                   <TableHead><SortButton label="Quality" column="quality" sort={sortState} onSort={sortBy} /></TableHead>
                   <TableHead><SortButton label="Uses" column="uses" sort={sortState} onSort={sortBy} /></TableHead>
+                  <TableHead><SortButton label="Approved" column="approved" sort={sortState} onSort={sortBy} /></TableHead>
+                  <TableHead><SortButton label="Last change" column="updated" sort={sortState} onSort={sortBy} /></TableHead>
                   <TableHead className="w-12" />
                 </TableRow>
               </TableHeader>
@@ -528,6 +568,8 @@ export function ScenarioManagementPage({ onBack }: ScenarioManagementPageProps) 
                     <TableCell><StatusBadge status={scenario.status} /></TableCell>
                     <TableCell><QualityBadge score={scenario.quality_score} /></TableCell>
                     <TableCell>{scenario.uses}</TableCell>
+                    <TableCell className="whitespace-nowrap text-xs text-muted-foreground">{formatWhen(scenario.approved_at)}</TableCell>
+                    <TableCell className="whitespace-nowrap text-xs text-muted-foreground">{formatWhen(scenario.updated_at)}</TableCell>
                     <TableCell>
                       <Button
                         variant="ghost"
@@ -545,7 +587,7 @@ export function ScenarioManagementPage({ onBack }: ScenarioManagementPageProps) 
                 ))}
                 {!scenarios.length && (
                   <TableRow>
-                    <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">
+                    <TableCell colSpan={9} className="py-8 text-center text-muted-foreground">
                       No scenarios match these filters.
                     </TableCell>
                   </TableRow>
@@ -591,6 +633,9 @@ export function ScenarioManagementPage({ onBack }: ScenarioManagementPageProps) 
                     <DifficultyBadge difficulty={reviewing.difficulty} />
                     <AnswerBadge answer={reviewing.correct_answer} />
                     <QualityBadge score={reviewing.quality_score} />
+                    <span className="text-xs text-muted-foreground">
+                      Created {formatWhen(reviewing.created_at)} · Approved {formatWhen(reviewing.approved_at)} · Last change {formatWhen(reviewing.updated_at)}
+                    </span>
                   </div>
                 </DialogDescription>
               </DialogHeader>

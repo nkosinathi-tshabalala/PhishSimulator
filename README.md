@@ -28,7 +28,7 @@ PhishSimulator is a scenario-based, gamified phishing-awareness trainer built on
 - Every table and list has a search, filters and click-to-sort columns (click once for ascending, again for descending), and every row opens its details.
 - The metrics pages (admin **System Analytics** and the player's **My Progress**) filter by date range (7, 30 or 90 days, all time, or custom dates), channel, difficulty, category, training vs campaign emails and, for admins, group (students, employees, other). XP, level and badges always count the full history.
 - Skeleton loaders and toast notifications (shadcn/ui + Sonner) throughout.
-- Private progress, inspired by platforms like TryHackMe: a stats strip (rank, badges, streak, simulations completed), 15 badges, current and best streaks, a yearly activity calendar, XP, levels and the skill rank, plus your position among all rated players (e.g. **#11 of 27, top 41%**). Players only ever see their own position, never another player's name or score.
+- Private progress, inspired by platforms like TryHackMe: a stats strip (rank, badges, streak, simulations completed), 15 badges, current and best streaks, a yearly activity calendar, XP, levels and the skill rank, plus your position among all players (e.g. **#11 of 41, top 27%**; players with fewer than 10 decisions are not rated yet and sit below everyone who is). Players only ever see their own position, never another player's name or score.
 - **Home** is about what to do next (daily goal, training, goals, campaign inbox, recent decisions); **My Progress** is about how you are doing, in three tabs: *Overview* (activity calendar, skill rank, level), *Performance* (filtered metrics and charts) and *Badges* (the full collection).
 - Administrator dashboard, user monitoring, baseline-question management and analytics, with tinted stat cards throughout.
 - Email phishing campaigns: send a real training email through Gmail to your own inboxes — from an approved scenario or a custom email you write, phishing or genuine, with a link and/or a look-alike attachment — then track opens, clicks, attachment opens, reports and "ignored" (no action inside the response window). Once a recipient acts, the result is locked; once every recipient's result is final, the campaign shows as **Completed**. Every result emails the recipient branded feedback (good or bad) and awards or deducts XP, and each result counts as a real decision in the player's stats, streak, rank and Home **Inbox**.
@@ -255,7 +255,7 @@ Each mechanic has a learning purpose, and progress stays private: there is no pu
 | Badges | 15 in three groups (below) | Most of them need skill, not just activity |
 | Yearly activity | A calendar of practice days with a count per day | Makes the habit visible |
 
-A practice day counts when the player makes at least one decision (training or a campaign email), not when they merely log in, so streaks reward learning rather than visits.
+A practice day counts when the player makes at least one decision (training or a campaign email), not when they merely log in, so streaks reward learning rather than visits. Days follow local time (`APP_UTC_OFFSET_HOURS`, default 2 for South Africa), so practice just after midnight counts for the new day.
 
 | Group | Badges |
 | --- | --- |

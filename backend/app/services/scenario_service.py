@@ -1,5 +1,7 @@
 # Choosing scenarios for players and reviewing them for admins
 
+from datetime import timedelta
+
 from app.extensions import db
 
 from app.models.scenario import Scenario
@@ -11,6 +13,7 @@ from app.adaptive.adaptive_engine import AdaptiveEngine
 from app.datasets.scenario_parser import ScenarioParser
 from app.datasets.scenario_realism import link_targets, quality_score
 from app.schemas.scenario_schema import ScenarioSchema
+from app.utils.clock import iso_utc, local_today, utc_now, utc_start_of
 from app.utils.clues import clue_options
 
 
@@ -34,6 +37,9 @@ class ScenarioService:
         ("no_personal_data", "No real personal data"),
         ("links_safe", "Links made safe"),
     )
+
+    # "When" filter periods, in local days (today counts as one)
+    WHEN_DAYS = {"today": 1, "7d": 7, "30d": 30, "90d": 90}
 
     COOLDOWN_ATTEMPTS = 5
     MISTAKE_REVIEW_GAP = 3
@@ -73,10 +79,23 @@ class ScenarioService:
             ))
         if filters.get("min_quality"):
             query = query.filter(Scenario.quality_score >= int(filters["min_quality"]))
+        when = ScenarioService._when_filter(filters.get("when"))
+        if when is not None:
+            query = query.filter(when)
         status = (filters.get("status") or "").upper()
         if include_status and status in ScenarioService.STATUSES:
             query = query.filter(db.func.upper(Scenario.status) == status)
         return query
+
+    @staticmethod
+    def _when_filter(value):
+        """'approved_7d', 'updated_today' and so on: approved or changed since local midnight N days ago."""
+        field, _, period = (value or "").partition("_")
+        column = {"approved": Scenario.approved_at, "updated": Scenario.updated_at}.get(field)
+        days = ScenarioService.WHEN_DAYS.get(period)
+        if column is None or days is None:
+            return None
+        return column >= utc_start_of(local_today() - timedelta(days=days - 1))
 
     @staticmethod
     def get_scenarios(page=1, per_page=25, filters=None):
@@ -110,6 +129,8 @@ class ScenarioService:
             "quality_score": scenario.quality_score,
             "has_attachment": bool(scenario.attachment),
             "uses": uses.get(scenario.scenario_id, 0),
+            "approved_at": iso_utc(scenario.approved_at),
+            "updated_at": iso_utc(scenario.updated_at),
         } for scenario in scenario_page.items]
 
         return True, "Scenarios retrieved successfully.", {
@@ -123,6 +144,18 @@ class ScenarioService:
                 "total": scenario_page.total,
             },
         }
+
+    @staticmethod
+    def _set_status(scenario, status):
+        """Change a scenario's status and record when. Approving stamps the approval time;
+        going back to draft or being rejected clears it."""
+        now = utc_now()
+        scenario.status = status
+        scenario.updated_at = now
+        if status == "APPROVED":
+            scenario.approved_at = now
+        elif status in {"DRAFT", "REJECTED"}:
+            scenario.approved_at = None
 
     @staticmethod
     def _sort_order(filters):
@@ -142,6 +175,8 @@ class ScenarioService:
             "quality": Scenario.quality_score,
             "uses": uses,
             "created": Scenario.created_at,
+            "approved": Scenario.approved_at,
+            "updated": Scenario.updated_at,
         }
         column = columns.get(filters.get("sort"), Scenario.created_at)
         direction = column.asc() if filters.get("order") == "asc" else column.desc()
@@ -239,6 +274,9 @@ class ScenarioService:
             "status": (scenario.status or "DRAFT").upper(),
             "dataset_id": scenario.dataset_id,
             "quality_score": scenario.quality_score,
+            "created_at": iso_utc(scenario.created_at),
+            "approved_at": iso_utc(scenario.approved_at),
+            "updated_at": iso_utc(scenario.updated_at),
             "quality_checks": ScenarioService.quality_checks(scenario),
             "qa_checklist": [
                 {"key": key, "label": label} for key, label in ScenarioService.QA_CHECKLIST
@@ -297,8 +335,9 @@ class ScenarioService:
         scenario.quality_score = ScenarioService._score(scenario)
 
         message = "Scenario updated successfully."
+        scenario.updated_at = utc_now()
         if (scenario.status or "").upper() in {"APPROVED", "ACTIVE"}:
-            scenario.status = "DRAFT"
+            ScenarioService._set_status(scenario, "DRAFT")
             message = "Scenario updated and moved back to draft for review."
         db.session.commit()
 
@@ -340,7 +379,7 @@ class ScenarioService:
         if action == "approve" and not ScenarioService._checklist_complete(checklist):
             return False, "Tick every QA checklist item before approving.", None
 
-        scenario.status = new_status
+        ScenarioService._set_status(scenario, new_status)
         db.session.commit()
         return True, f"Scenario is now {new_status.lower()}.", {
             "scenario_id": scenario.scenario_id,
@@ -370,8 +409,14 @@ class ScenarioService:
 
         _, new_status = ScenarioService.REVIEW_ACTIONS[action]
         matching_ids = query.with_entities(Scenario.scenario_id)
+        now = utc_now()
+        changes = {Scenario.status: new_status, Scenario.updated_at: now}
+        if new_status == "APPROVED":
+            changes[Scenario.approved_at] = now
+        elif new_status in {"DRAFT", "REJECTED"}:
+            changes[Scenario.approved_at] = None
         updated = Scenario.query.filter(Scenario.scenario_id.in_(matching_ids)).update(
-            {Scenario.status: new_status}, synchronize_session=False,
+            changes, synchronize_session=False,
         )
         db.session.commit()
         return True, f"{updated} scenario(s) are now {new_status.lower()}.", {"updated": updated}

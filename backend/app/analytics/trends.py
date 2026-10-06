@@ -1,6 +1,8 @@
 # Turns attempts into chart data: daily activity, error trends, learning curve and categories
 
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
+
+from app.utils.clock import local_date, local_today
 
 
 def _rate(part, whole):
@@ -19,8 +21,8 @@ def _false_alarm(attempt):
 
 
 def _today():
-    """Today's date in UTC, the same clock the attempts are stored in."""
-    return datetime.now(timezone.utc).date()
+    """Today's local date."""
+    return local_today()
 
 
 def daily(attempts, days, new_users=None, today=None):
@@ -28,7 +30,7 @@ def daily(attempts, days, new_users=None, today=None):
     today = today or _today()
     by_day = {}
     for attempt in attempts:
-        by_day.setdefault(attempt.attempted_at.date(), []).append(attempt)
+        by_day.setdefault(local_date(attempt.attempted_at), []).append(attempt)
 
     rows = []
     for offset in range(days - 1, -1, -1):
@@ -54,7 +56,7 @@ def weekly_errors(attempts, weeks, today=None):
     for offset in range(weeks - 1, -1, -1):
         week_start = this_monday - timedelta(weeks=offset)
         week_end = week_start + timedelta(days=7)
-        week = [a for a in attempts if week_start <= a.attempted_at.date() < week_end]
+        week = [a for a in attempts if week_start <= local_date(a.attempted_at) < week_end]
         rows.append({
             "label": week_start.strftime("%d %b"),
             "decisions": len(week),

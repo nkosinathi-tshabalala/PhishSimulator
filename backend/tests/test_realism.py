@@ -1,7 +1,7 @@
 # Tests for realistic scenario generation and the Help-stage rules
 
 import unittest
-from datetime import date
+from datetime import date, datetime
 from types import SimpleNamespace
 
 from app.datasets.scenario_realism import (
@@ -15,6 +15,7 @@ from app.datasets.scenario_realism import (
 from app.schemas.simulation_schema import SimulationSchema
 from app.services.progress_service import ProgressService
 from app.services.scenario_service import ScenarioService
+from app.utils.clock import local_date, utc_start_of
 
 
 class LinkMaskingTests(unittest.TestCase):
@@ -118,6 +119,19 @@ class DailyHabitTests(unittest.TestCase):
         activity = ProgressService.daily_activity(self.facts_on(today, today, date(2026, 9, 27)), today)
         self.assertEqual(activity["today_attempts"], 2)
         self.assertEqual(activity["daily_streak"], 2)
+
+    def test_a_missed_day_ends_the_streak_but_not_the_best(self):
+        today = date(2026, 9, 28)
+        facts = self.facts_on(date(2026, 9, 26), date(2026, 9, 20), date(2026, 9, 21), date(2026, 9, 22))
+        activity = ProgressService.daily_activity(facts, today)
+        self.assertEqual(activity["daily_streak"], 0)
+        self.assertEqual(activity["longest_streak"], 3)
+
+    def test_days_follow_local_time_not_utc(self):
+        # 22:30 UTC on 30 Sep is 00:30 on 1 Oct in South Africa (UTC+2)
+        self.assertEqual(local_date(datetime(2026, 9, 30, 22, 30)), date(2026, 10, 1))
+        self.assertEqual(local_date(datetime(2026, 9, 30, 21, 59)), date(2026, 9, 30))
+        self.assertEqual(utc_start_of(date(2026, 10, 1)), datetime(2026, 9, 30, 22, 0))
 
 
 if __name__ == "__main__":

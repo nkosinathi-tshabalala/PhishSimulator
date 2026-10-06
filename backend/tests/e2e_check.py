@@ -656,6 +656,13 @@ try:
     r = review("approve", full_checklist)
     check("review: approved, but still not served until it is activated",
           r.status_code == 200 and review_status() == "APPROVED" and not served_to_player()[0], review_status())
+    detail = data_of(api("GET", f"/api/scenarios/{review_id}", atoken))
+    check("review: approving records the approval time",
+          bool(detail.get("approved_at")) and detail.get("approved_at", "").endswith("Z"), detail.get("approved_at"))
+    recent = items(data_of(api("GET", "/api/scenarios?simulation_type=SMS&when=approved_today&sort=approved&order=desc", atoken)),
+                   "scenarios", "items")
+    check("review: 'Approved today', newest first, lists it at the top",
+          recent and recent[0]["scenario_id"] == review_id, [row.get("scenario_id") for row in recent[:3]])
     r = review("activate")
     served, scenario = served_to_player()
     check("review: activated -> served to the player, without the answer",
@@ -668,6 +675,11 @@ try:
     })
     check("review: editing a live scenario sends it back to draft and off the learner's queue",
           r.status_code == 200 and review_status() == "DRAFT" and not served_to_player()[0], review_status())
+    detail = data_of(api("GET", f"/api/scenarios/{review_id}", atoken))
+    changed = items(data_of(api("GET", "/api/scenarios?simulation_type=SMS&status=DRAFT&when=updated_today", atoken)),
+                    "scenarios", "items")
+    check("review: the edit clears the approval time and shows under 'Changed today'",
+          detail.get("approved_at") is None and any(row["scenario_id"] == review_id for row in changed), detail.get("approved_at"))
     check("review: reject a draft, then reopen it as a draft",
           review("reject").status_code == 200 and review_status() == "REJECTED"
           and review("reopen").status_code == 200 and review_status() == "DRAFT", review_status())
@@ -720,8 +732,22 @@ try:
           r.status_code == 200 and data_of(r).get("year") == data_of(r).get("first_year"), data_of(r).get("year"))
     check("activity: admins have no player calendar", api("GET", "/api/analytics/my-activity", atoken).status_code == 404)
     check("standing: player sees only their own position and the player count",
-          set(standing) == {"position", "out_of", "top_percent"} and standing.get("out_of", 0) > 0
+          set(standing) == {"position", "out_of", "top_percent", "rated"} and standing.get("out_of", 0) > 0
           and (standing["position"] is None or 1 <= standing["position"] <= standing["out_of"]), standing)
+    with app.app_context():
+        from app.models.authentication import Player
+        all_players = Player.query.count()
+    check(f"standing: counts every player ({all_players}), not only rated ones",
+          standing.get("out_of") == all_players and standing.get("position") is not None, standing)
+    # The second test account has made no decisions, so it is not rated and must sit below every rated player
+    unrated = data_of(api("GET", "/api/analytics/my-performance", ktoken)).get("skill", {}).get("standing", {})
+    with app.app_context():
+        from app.models.simulation import SimulationAttempt
+        from collections import Counter
+        rated_players = sum(count >= 10 for count in Counter(a.player_id for a in SimulationAttempt.query.all()).values())
+    check("standing: a player not yet rated is counted, below every rated player",
+          unrated.get("rated") is False and unrated.get("out_of") == all_players
+          and unrated.get("position", 0) > rated_players, {**unrated, "rated_players": rated_players})
     narrowed = data_of(api("GET", "/api/analytics/my-performance?range=7d&channel=SMS", ptoken))
     check("filters: player stats narrow to the chosen channel and dates",
           narrowed.get("total_attempts", -1) <= full.get("total_attempts", 0)

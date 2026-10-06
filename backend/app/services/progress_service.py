@@ -1,12 +1,14 @@
 # XP, levels, badges and the private skill rank (CATCH "Help")
 
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
 from math import ceil
 
 from app.datasets.scenario_parser import ScenarioParser
 from app.extensions import db
+from app.models.authentication import Player
 from app.models.scenario import Scenario
 from app.models.simulation import SimulationAttempt
+from app.utils.clock import local_date, local_today
 
 
 class ProgressService:
@@ -231,8 +233,8 @@ class ProgressService:
 
     @staticmethod
     def daily_activity(facts, today=None):
-        """Practice-day streak and today's decisions (days are in UTC)."""
-        today = today or datetime.now(timezone.utc).date()
+        """Practice-day streak and today's decisions (local days, see app/utils/clock.py)."""
+        today = today or local_today()
         days = {fact["date"] for fact in facts if fact.get("date")}
 
         day = today if today in days else today - timedelta(days=1)
@@ -274,7 +276,7 @@ class ProgressService:
                 "category": scenario.category if scenario else "Unknown",
                 "clue_score": attempt.clue_score,
                 "xp": attempt.score or 0,
-                "date": attempt.attempted_at.date() if attempt.attempted_at else None,
+                "date": local_date(attempt.attempted_at) if attempt.attempted_at else None,
                 "campaign": bool(attempt.campaign_recipient_id),
             })
         return facts
@@ -350,7 +352,7 @@ class ProgressService:
 
     @staticmethod
     def place_in(scores, own):
-        """1-based position of `own` among (rating, xp) scores, best first. Equal scores share a place."""
+        """1-based position of `own` among (rated, rating, xp) scores, best first. Equal scores share a place."""
         return 1 + sum(score > own for score in scores)
 
     @staticmethod
@@ -361,9 +363,10 @@ class ProgressService:
 
     @staticmethod
     def standing(player_id):
-        """This player's position among all rated players, by skill rating and then XP.
-        Only the position and the number of players leave this method: never anyone else's name or score."""
-        attempts_by_player = {}
+        """This player's position among ALL players. Rated players (10+ decisions) come first, by skill
+        rating and then XP; players not yet rated follow, by XP. Only the position and the player count
+        leave this method: never anyone else's name or score."""
+        attempts_by_player = {player: [] for (player,) in db.session.query(Player.player_id)}
         for attempt in SimulationAttempt.query.all():
             attempts_by_player.setdefault(attempt.player_id, []).append(attempt)
         scenarios = {scenario.scenario_id: scenario for scenario in Scenario.query.all()}
@@ -371,14 +374,20 @@ class ProgressService:
         scores = {}
         for other_id, attempts in attempts_by_player.items():
             facts = ProgressService.attempt_facts(attempts, scenarios)
-            if len(facts) >= ProgressService.MIN_RATED_ATTEMPTS:
-                scores[other_id] = (ProgressService.skill_rating(facts)["rating"], ProgressService.running_xp(facts))
+            rated = len(facts) >= ProgressService.MIN_RATED_ATTEMPTS
+            rating = ProgressService.skill_rating(facts)["rating"] if rated else 0
+            scores[other_id] = (rated, rating, ProgressService.running_xp(facts))
 
         out_of = len(scores)
         if player_id not in scores:
-            return {"position": None, "out_of": out_of, "top_percent": None}
+            return {"position": None, "out_of": out_of, "top_percent": None, "rated": False}
         position = ProgressService.place_in(scores.values(), scores[player_id])
-        return {"position": position, "out_of": out_of, "top_percent": ProgressService.top_percent(position, out_of)}
+        return {
+            "position": position,
+            "out_of": out_of,
+            "top_percent": ProgressService.top_percent(position, out_of),
+            "rated": scores[player_id][0],
+        }
 
     @staticmethod
     def summary(attempts):

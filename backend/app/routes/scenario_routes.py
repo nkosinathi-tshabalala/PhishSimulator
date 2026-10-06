@@ -64,6 +64,7 @@ def get_scenarios():
         "answer": request.args.get("answer"),
         "search": request.args.get("search"),
         "min_quality": request.args.get("min_quality", type=int),
+        "when": request.args.get("when"),
         "sort": request.args.get("sort"),
         "order": request.args.get("order"),
     }

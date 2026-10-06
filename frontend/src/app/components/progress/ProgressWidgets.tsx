@@ -33,13 +33,17 @@ const BADGE_GROUPS: Array<{ key: BadgeProgress["group"]; title: string; text: st
   { key: "skill", title: "Skills", text: "Show you can spot phishing, not just that you took part." },
 ];
 
-/** What the Rank tile says. "Top 5%" only reads as praise in the top half, so below that the tile shows the
- * plain position and how many players to pass. (Top half: top_percent of 50 or less, so position <= players / 2.) */
+/** What the Rank tile says. The position is among every player; players with fewer than 10 decisions are
+ * not rated yet and sit below all rated players. "Top 5%" only reads as praise in the top half, so below
+ * that the tile shows the plain position and how many players to pass. */
 function rankText(standing: SkillRank["standing"], attemptsUntilRated: number) {
   if (!standing || standing.position === null || standing.top_percent === null) {
     return { value: "Unrated", hint: `${attemptsUntilRated} more decisions to get rated` };
   }
   const { position, out_of: outOf, top_percent: top } = standing;
+  if (standing.rated === false) {
+    return { value: `#${position} of ${outOf}`, hint: `${attemptsUntilRated} more decisions to get rated` };
+  }
   if (top <= 50) return { value: `Top ${top}%`, hint: `#${position} of ${outOf} players · private` };
   if (position === 1) return { value: `#1 of ${outOf}`, hint: "No one is ahead of you · private" };
   return { value: `#${position} of ${outOf}`, hint: `Pass ${position - Math.floor(outOf / 2)} to reach the top half` };

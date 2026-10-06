@@ -89,7 +89,7 @@ export interface SkillRank {
   missed_percent: number;
   tiers: Array<{ name: string; min_rating: number }>;
   /** Private position among all rated players. No other player's details are sent. */
-  standing?: { position: number | null; out_of: number; top_percent: number | null };
+  standing?: { position: number | null; out_of: number; top_percent: number | null; rated?: boolean };
 }
 
 /** CATCH "Help" stage: private progress for one player. */
