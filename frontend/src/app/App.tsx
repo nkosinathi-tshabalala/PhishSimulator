@@ -214,6 +214,7 @@ export default function App() {
     return (
       <AppLayout
         currentPage={currentPage}
+        backdrop="/assets/backdrop-admin.webp"
         renderSidebar={(layout) => (
           <AdminSidebar currentPage={currentPage} onNavigate={handleNavigate} onLogout={handleLogout} {...layout} />
         )}
@@ -240,6 +241,7 @@ export default function App() {
   return (
     <AppLayout
       currentPage={currentPage}
+      backdrop="/assets/backdrop-player.webp"
       renderSidebar={(layout) => (
         <Sidebar currentPage={currentPage} onNavigate={handleNavigate} onLogout={handleLogout} {...layout} />
       )}

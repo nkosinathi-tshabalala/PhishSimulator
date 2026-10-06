@@ -1,7 +1,7 @@
 // Page layout: sidebar on the left, page on the right
 
 import { useEffect, useState } from "react";
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { Fish, Menu } from "lucide-react";
 import type { SidebarLayoutProps } from "./NavSidebar";
 
@@ -9,6 +9,8 @@ interface AppLayoutProps {
   // Draws the sidebar; the layout says whether it is collapsed and how to toggle it
   renderSidebar: (layout: SidebarLayoutProps) => ReactNode;
   currentPage: string;
+  /** Background photo for this area (recoloured into the theme), e.g. "/assets/backdrop-admin.webp". */
+  backdrop: string;
   children: ReactNode;
 }
 
@@ -24,7 +26,7 @@ function readCollapsed() {
 }
 
 /** Sidebar plus page; on phones the sidebar becomes a slide-in menu. */
-export function AppLayout({ renderSidebar, currentPage, children }: AppLayoutProps) {
+export function AppLayout({ renderSidebar, currentPage, backdrop, children }: AppLayoutProps) {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(readCollapsed);
 
@@ -76,7 +78,10 @@ export function AppLayout({ renderSidebar, currentPage, children }: AppLayoutPro
           <span className="font-bold text-sm tracking-[0.08em] text-white">PHISHSIMULATOR</span>
         </div>
 
-        <main className="app-backdrop flex-1 overflow-auto">
+        <main
+          className="app-backdrop flex-1 overflow-auto"
+          style={{ "--backdrop-image": `url('${backdrop}')` } as CSSProperties}
+        >
           {children}
         </main>
       </div>
