@@ -26,6 +26,7 @@ import { BaselineManagementPage } from "./components/BaselineManagementPage";
 import { AdminProfilePage } from "./components/AdminProfilePage";
 import AuthService from "../services/authService";
 import { SessionWatcher } from "./components/SessionWatcher";
+import { getToken, clearToken } from "../services/session";
 
 /** Root component: restores the login and shows the right page for the user's role. */
 export default function App() {
@@ -56,8 +57,8 @@ export default function App() {
 
   /** Go to the login page after the session has ended. */
   const handleSessionEnd = () => {
-    localStorage.removeItem("access_token");
-    localStorage.removeItem("current_page");
+    clearToken();
+    sessionStorage.removeItem("current_page");
     setCurrentUser(null);
     setIsLoggedIn(false);
     setLoginNotice("Your session ended. Please sign in again.");
@@ -86,7 +87,7 @@ export default function App() {
     const loginFor = params.get("login")?.trim().toLowerCase() || "";
     if (loginFor) window.history.replaceState(null, "", window.location.pathname);
 
-    const token = localStorage.getItem("access_token");
+    const token = getToken();
 
     if (!token) {
       if (loginFor) showLoginFor(loginFor);
@@ -114,7 +115,7 @@ export default function App() {
       // Signed in as someone else (e.g. the admin who sent the campaign): sign out first
       if (loginFor && String(user.email).toLowerCase() !== loginFor) {
         await AuthService.logout();
-        localStorage.removeItem("current_page");
+        sessionStorage.removeItem("current_page");
         setIsLoggedIn(false);
         setUserRole("player");
         showLoginFor(loginFor);
@@ -130,7 +131,7 @@ export default function App() {
 
       const defaultPage = role === "admin" ? "admin-dashboard" : "dashboard";
 
-      const savedPage = localStorage.getItem("current_page");
+      const savedPage = sessionStorage.getItem("current_page");
 
       setCurrentPage(savedPage || defaultPage);
     } catch (error) {
@@ -153,7 +154,7 @@ export default function App() {
     }
 
     const page = role === "admin" ? "admin-dashboard" : "dashboard";
-    localStorage.setItem("current_page", page);
+    sessionStorage.setItem("current_page", page);
     setLoginNotice("");
     setLoginEmail("");
     setCurrentPage(page);
@@ -170,7 +171,7 @@ export default function App() {
   const handleLogout = async () => {
     await AuthService.logout();
 
-    localStorage.removeItem("current_page");
+    sessionStorage.removeItem("current_page");
 
     setCurrentUser(null);
 
@@ -181,7 +182,7 @@ export default function App() {
 
   const handleNavigate = (page: string) => {
     if (page !== "reset") setResetToken("");
-    localStorage.setItem("current_page", page);
+    sessionStorage.setItem("current_page", page);
     setCurrentPage(page);
   };
 

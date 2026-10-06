@@ -4,8 +4,10 @@ import { useEffect, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 import {
   CheckCircle2,
+  ChevronDown,
   ChevronRight,
   ClipboardCheck,
+  Database,
   Edit,
   Layers,
   Mail,
@@ -19,7 +21,6 @@ import { toast } from "sonner";
 import { confirmToast } from "./confirmToast";
 import ScenarioService from "../../services/scenarioService";
 import type { QaChecklist, ReviewAction } from "../../services/scenarioService";
-import DatasetService from "../../services/datasetService";
 import type { Channel, ScenarioStatus } from "../../types/catch";
 import { FilterBar, toOptions } from "./FilterBar";
 import { PageHeader } from "./PageHeader";
@@ -81,6 +82,15 @@ interface ScenarioDetail extends Omit<ScenarioSummary, "uses" | "has_attachment"
   phishing_cues: string[];
   quality_checks: Array<{ label: string; passed: boolean; detail: string }>;
   created_at: string | null;
+}
+
+/** One dataset folder in the review list: its scenarios under the current filters. */
+interface DatasetGroup {
+  dataset_id: number | "none";
+  name: string;
+  uploaded_at: string | null;
+  count: number;
+  by_status: Record<ScenarioStatus, number>;
 }
 
 interface ScenarioForm {
@@ -197,7 +207,7 @@ export function ScenarioManagementPage({ onBack }: ScenarioManagementPageProps) 
   const [statusCounts, setStatusCounts] = useState<Record<string, number>>({});
   const [channelCounts, setChannelCounts] = useState({ email: 0, sms: 0 });
   const [categories, setCategories] = useState<string[]>(CATEGORIES);
-  const [datasets, setDatasets] = useState<Array<{ dataset_id: number; name: string }>>([]);
+  const [groups, setGroups] = useState<DatasetGroup[]>([]);
   const [pagination, setPagination] = useState({ page: 1, pages: 0, total: 0 });
 
   const [reviewing, setReviewing] = useState<ScenarioDetail | null>(null);
@@ -208,6 +218,9 @@ export function ScenarioManagementPage({ onBack }: ScenarioManagementPageProps) 
   const [editingId, setEditingId] = useState<number | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+
+  // The open dataset folder: the one picked, or the only one when there is just one
+  const openDataset = filters.dataset_id || (groups.length === 1 ? String(groups[0].dataset_id) : "");
 
   /** Show the server's message as a success or error toast. */
   const notify = (response: { ok: boolean; data: { success: boolean; message: string } }) => {
@@ -227,13 +240,8 @@ export function ScenarioManagementPage({ onBack }: ScenarioManagementPageProps) 
     setChannelCounts({ email: data.stats.email, sms: data.stats.sms });
     if (data.categories.length) setCategories(data.categories);
     setPagination(data.pagination);
+    setGroups(data.groups ?? []);
   };
-
-  useEffect(() => {
-    DatasetService.getDatasets().then((response) => {
-      if (response.ok && response.data.success) setDatasets(response.data.data);
-    });
-  }, []);
 
   useEffect(() => {
     const timer = window.setTimeout(() => loadScenarios(page), 250);
@@ -470,13 +478,6 @@ export function ScenarioManagementPage({ onBack }: ScenarioManagementPageProps) 
                   onChange: (value) => setFilter("answer", value),
                 },
                 {
-                  key: "dataset",
-                  label: "Datasets",
-                  value: filters.dataset_id,
-                  options: datasets.map((dataset) => ({ value: String(dataset.dataset_id), label: dataset.name })),
-                  onChange: (value) => setFilter("dataset_id", value),
-                },
-                {
                   key: "quality",
                   label: "Any quality",
                   value: filters.min_quality,
@@ -532,88 +533,130 @@ export function ScenarioManagementPage({ onBack }: ScenarioManagementPageProps) 
         </Card>
 
         <Card>
-          <CardContent className="pt-6 space-y-4">
-            <p className="text-xs text-muted-foreground">Click any row to open the review screen.</p>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead><SortButton label="Scenario" column="title" sort={sortState} onSort={sortBy} /></TableHead>
-                  <TableHead><SortButton label="Category" column="category" sort={sortState} onSort={sortBy} /></TableHead>
-                  <TableHead><SortButton label="Difficulty" column="difficulty" sort={sortState} onSort={sortBy} /></TableHead>
-                  <TableHead><SortButton label="Status" column="status" sort={sortState} onSort={sortBy} /></TableHead>
-                  <TableHead><SortButton label="Quality" column="quality" sort={sortState} onSort={sortBy} /></TableHead>
-                  <TableHead><SortButton label="Uses" column="uses" sort={sortState} onSort={sortBy} /></TableHead>
-                  <TableHead><SortButton label="Approved" column="approved" sort={sortState} onSort={sortBy} /></TableHead>
-                  <TableHead><SortButton label="Last change" column="updated" sort={sortState} onSort={sortBy} /></TableHead>
-                  <TableHead className="w-12" />
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {scenarios.map((scenario) => (
-                  <TableRow
-                    key={scenario.scenario_id}
-                    onClick={() => openReview(scenario.scenario_id)}
-                    className="cursor-pointer hover:bg-sky-500/5"
+          <CardHeader>
+            <CardTitle>Scenarios by dataset</CardTitle>
+            <CardDescription>
+              Each dataset holds the scenarios made from it. Open one to review them; bulk actions then apply to that
+              dataset only.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {groups.map((group) => {
+              const id = String(group.dataset_id);
+              const isOpen = openDataset === id;
+              return (
+                <div key={id} className={`rounded-xl border ${isOpen ? "border-sky-500/40 bg-sky-500/5" : "border-border"}`}>
+                  <button
+                    type="button"
+                    onClick={() => setFilter("dataset_id", isOpen ? "" : id)}
+                    disabled={groups.length === 1}
+                    aria-expanded={isOpen}
+                    className="flex w-full flex-wrap items-center gap-3 px-4 py-3 text-left disabled:cursor-default"
                   >
-                    <TableCell className="font-medium max-w-md">
-                      <span className="flex items-center gap-1.5">
-                        <span className="truncate">{scenario.title}</span>
-                        {scenario.has_attachment && (
-                          <Paperclip className="w-3.5 h-3.5 text-muted-foreground shrink-0" aria-label="Has attachment" />
-                        )}
-                      </span>
-                    </TableCell>
-                    <TableCell><CategoryBadge category={scenario.category} /></TableCell>
-                    <TableCell><DifficultyBadge difficulty={scenario.difficulty} /></TableCell>
-                    <TableCell><StatusBadge status={scenario.status} /></TableCell>
-                    <TableCell><QualityBadge score={scenario.quality_score} /></TableCell>
-                    <TableCell>{scenario.uses}</TableCell>
-                    <TableCell className="whitespace-nowrap text-xs text-muted-foreground">{formatWhen(scenario.approved_at)}</TableCell>
-                    <TableCell className="whitespace-nowrap text-xs text-muted-foreground">{formatWhen(scenario.updated_at)}</TableCell>
-                    <TableCell>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        title="Delete scenario"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          confirmDeleteScenario(scenario);
-                        }}
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-                {!scenarios.length && (
-                  <TableRow>
-                    <TableCell colSpan={9} className="py-8 text-center text-muted-foreground">
-                      No scenarios match these filters.
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-
-            {pagination.pages > 1 && (
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-muted-foreground">
-                  Page {pagination.page} of {pagination.pages}
+                    {isOpen ? <ChevronDown className="w-4 h-4 shrink-0" /> : <ChevronRight className="w-4 h-4 shrink-0" />}
+                    <Database className="w-4 h-4 shrink-0 text-teal-300" />
+                    <span className="font-semibold">{group.name}</span>
+                    <span className="text-sm text-muted-foreground">
+                      {group.count.toLocaleString()} scenario{group.count === 1 ? "" : "s"}
+                      {group.uploaded_at && ` · uploaded ${formatWhen(group.uploaded_at)}`}
+                    </span>
+                    <span className="ml-auto flex flex-wrap gap-1.5">
+                      {[...PIPELINE, "REJECTED" as const].filter((status) => group.by_status[status]).map((status) => (
+                        <span key={status} className={`rounded-full border px-2 py-0.5 text-xs font-medium ${STATUS_STYLES[status]}`}>
+                          {group.by_status[status]} {status.toLowerCase()}
+                        </span>
+                      ))}
+                    </span>
+                  </button>
+                  {isOpen && <div className="space-y-4 border-t border-border px-4 pb-4 pt-3">
+      <p className="text-xs text-muted-foreground">Click any row to open the review screen.</p>
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead><SortButton label="Scenario" column="title" sort={sortState} onSort={sortBy} /></TableHead>
+            <TableHead><SortButton label="Category" column="category" sort={sortState} onSort={sortBy} /></TableHead>
+            <TableHead><SortButton label="Difficulty" column="difficulty" sort={sortState} onSort={sortBy} /></TableHead>
+            <TableHead><SortButton label="Status" column="status" sort={sortState} onSort={sortBy} /></TableHead>
+            <TableHead><SortButton label="Quality" column="quality" sort={sortState} onSort={sortBy} /></TableHead>
+            <TableHead><SortButton label="Uses" column="uses" sort={sortState} onSort={sortBy} /></TableHead>
+            <TableHead><SortButton label="Approved" column="approved" sort={sortState} onSort={sortBy} /></TableHead>
+            <TableHead><SortButton label="Last change" column="updated" sort={sortState} onSort={sortBy} /></TableHead>
+            <TableHead className="w-12" />
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {scenarios.map((scenario) => (
+            <TableRow
+              key={scenario.scenario_id}
+              onClick={() => openReview(scenario.scenario_id)}
+              className="cursor-pointer hover:bg-sky-500/5"
+            >
+              <TableCell className="font-medium max-w-md">
+                <span className="flex items-center gap-1.5">
+                  <span className="truncate">{scenario.title}</span>
+                  {scenario.has_attachment && (
+                    <Paperclip className="w-3.5 h-3.5 text-muted-foreground shrink-0" aria-label="Has attachment" />
+                  )}
                 </span>
-                <div className="flex gap-2">
-                  <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(page - 1)}>
-                    Previous
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={page >= pagination.pages}
-                    onClick={() => setPage(page + 1)}
-                  >
-                    Next
-                  </Button>
+              </TableCell>
+              <TableCell><CategoryBadge category={scenario.category} /></TableCell>
+              <TableCell><DifficultyBadge difficulty={scenario.difficulty} /></TableCell>
+              <TableCell><StatusBadge status={scenario.status} /></TableCell>
+              <TableCell><QualityBadge score={scenario.quality_score} /></TableCell>
+              <TableCell>{scenario.uses}</TableCell>
+              <TableCell className="whitespace-nowrap text-xs text-muted-foreground">{formatWhen(scenario.approved_at)}</TableCell>
+              <TableCell className="whitespace-nowrap text-xs text-muted-foreground">{formatWhen(scenario.updated_at)}</TableCell>
+              <TableCell>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  title="Delete scenario"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    confirmDeleteScenario(scenario);
+                  }}
+                >
+                  <Trash2 className="w-4 h-4" />
+                </Button>
+              </TableCell>
+            </TableRow>
+          ))}
+          {!scenarios.length && (
+            <TableRow>
+              <TableCell colSpan={9} className="py-8 text-center text-muted-foreground">
+                No scenarios match these filters.
+              </TableCell>
+            </TableRow>
+          )}
+        </TableBody>
+      </Table>
+
+      {pagination.pages > 1 && (
+        <div className="flex items-center justify-between text-sm">
+          <span className="text-muted-foreground">
+            Page {pagination.page} of {pagination.pages}
+          </span>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(page - 1)}>
+              Previous
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={page >= pagination.pages}
+              onClick={() => setPage(page + 1)}
+            >
+              Next
+            </Button>
+          </div>
+        </div>
+      )}
+                  </div>}
                 </div>
-              </div>
+              );
+            })}
+            {!groups.length && (
+              <p className="py-8 text-center text-muted-foreground">No scenarios match these filters.</p>
             )}
           </CardContent>
         </Card>

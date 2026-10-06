@@ -28,6 +28,7 @@ import {
   CardHeader,
   CardTitle,
 } from "./ui/card";
+import { setToken } from "../../services/session";
 
 interface LoginPageProps {
   onLogin: (role: "player" | "admin") => void;
@@ -76,10 +77,7 @@ export function LoginPage({
 
       }
 
-      localStorage.setItem(
-        "access_token",
-        response.data.data.access_token
-      );
+      setToken(response.data.data.access_token);
 
       setSuccessMessage(
         "Login successful. Redirecting to your dashboard..."

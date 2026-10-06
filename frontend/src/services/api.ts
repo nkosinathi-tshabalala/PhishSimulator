@@ -1,5 +1,7 @@
 // Sends requests to the backend and keeps the login token up to date
 
+import { getToken, setToken } from "./session";
+
 // Backend address; set VITE_API_URL to change it (e.g. in Docker)
 const API_BASE_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:5000/api";
 
@@ -32,8 +34,8 @@ export async function apiRequest(
     const result = await response.json().catch(() => ({ success: false, message: "Unexpected server response." }));
 
     const renewedToken = response.headers.get("X-New-Token");
-    if (renewedToken && localStorage.getItem("access_token")) {
-        localStorage.setItem("access_token", renewedToken);
+    if (renewedToken && getToken()) {
+        setToken(renewedToken);
     }
 
     if (response.status === 401 && token) {

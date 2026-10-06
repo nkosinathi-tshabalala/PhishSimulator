@@ -2,6 +2,7 @@
 
 import { apiRequest } from "./api";
 import type { Channel, Decision } from "../types/catch";
+import { getToken } from "./session";
 
 export type ReviewAction = "approve" | "reject" | "activate" | "archive" | "reopen";
 export type QaChecklist = Record<string, boolean>;
@@ -9,7 +10,7 @@ export type ScenarioFilters = Record<string, string | number | null | undefined>
 
 /** The stored login token. */
 function token() {
-  return localStorage.getItem("access_token");
+  return getToken();
 }
 
 /** API calls for scenarios and attempts. */

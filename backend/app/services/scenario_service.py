@@ -1,9 +1,10 @@
 # Choosing scenarios for players and reviewing them for admins
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from app.extensions import db
 
+from app.models.datasets import Dataset
 from app.models.scenario import Scenario
 from app.models.authentication import Player
 from app.models.baseline import BaselineAssessment
@@ -38,6 +39,9 @@ class ScenarioService:
         ("links_safe", "Links made safe"),
     )
 
+    # The dataset filter value for scenarios written by hand or loaded with the demo data
+    NO_DATASET = "none"
+
     # "When" filter periods, in local days (today counts as one)
     WHEN_DAYS = {"today": 1, "7d": 7, "30d": 30, "90d": 90}
 
@@ -64,8 +68,11 @@ class ScenarioService:
         channel = (filters.get("simulation_type") or "").upper()
         if channel in {"EMAIL", "SMS"}:
             query = query.filter(db.func.upper(Scenario.simulation_type) == channel)
-        if filters.get("dataset_id"):
-            query = query.filter(Scenario.dataset_id == filters["dataset_id"])
+        dataset = str(filters.get("dataset_id") or "")
+        if dataset == ScenarioService.NO_DATASET:
+            query = query.filter(Scenario.dataset_id.is_(None))
+        elif dataset.isdigit():
+            query = query.filter(Scenario.dataset_id == int(dataset))
         if filters.get("difficulty"):
             query = query.filter(Scenario.difficulty == filters["difficulty"])
         if filters.get("category"):
@@ -136,6 +143,7 @@ class ScenarioService:
         return True, "Scenarios retrieved successfully.", {
             "scenarios": rows,
             "stats": ScenarioService._stats(ScenarioService._filtered_query(filters, include_status=False)),
+            "groups": ScenarioService._dataset_groups(filters),
             "categories": sorted(name for (name,) in ScenarioService._reviewable().with_entities(Scenario.category).distinct()),
             "pagination": {
                 "page": scenario_page.page,
@@ -181,6 +189,51 @@ class ScenarioService:
         column = columns.get(filters.get("sort"), Scenario.created_at)
         direction = column.asc() if filters.get("order") == "asc" else column.desc()
         return direction.nulls_last(), Scenario.scenario_id
+
+    @staticmethod
+    def _dataset_groups(filters):
+        """The datasets that have scenarios under the current filters (ignoring the dataset filter itself),
+        newest upload first, with scenarios added by hand or with the demo data as the last group.
+        `count` follows the selected stage; `by_status` shows every stage."""
+        without_dataset = {**filters, "dataset_id": ""}
+        query = ScenarioService._filtered_query(without_dataset, include_status=False)
+        rows = query.with_entities(
+            Scenario.dataset_id, db.func.upper(Scenario.status), db.func.count(),
+        ).group_by(Scenario.dataset_id, db.func.upper(Scenario.status)).all()
+
+        status = (filters.get("status") or "").upper()
+        groups = {}
+        for dataset_id, row_status, count in rows:
+            group = groups.setdefault(dataset_id, {
+                "by_status": {name: 0 for name in ScenarioService.STATUSES}, "count": 0,
+            })
+            group["by_status"][row_status] = group["by_status"].get(row_status, 0) + count
+            if not status or row_status == status:
+                group["count"] += count
+
+        datasets = {
+            dataset.dataset_id: dataset
+            for dataset in Dataset.query.filter(Dataset.dataset_id.in_([i for i in groups if i is not None])).all()
+        } if groups else {}
+
+        def describe(dataset_id):
+            dataset = datasets.get(dataset_id)
+            return {
+                "dataset_id": dataset_id if dataset_id is not None else ScenarioService.NO_DATASET,
+                "name": dataset.name if dataset else "Added by hand or demo data",
+                "uploaded_at": iso_utc(dataset.uploaded_at) if dataset else None,
+                **groups[dataset_id],
+            }
+
+        def upload_time(dataset_id):
+            """When the dataset was uploaded (for newest-first order)."""
+            return datasets[dataset_id].uploaded_at or datetime.min
+
+        uploaded = sorted((i for i in groups if i in datasets), key=upload_time, reverse=True)
+        ordered = [describe(i) for i in uploaded]
+        if None in groups:
+            ordered.append(describe(None))
+        return [group for group in ordered if group["count"]]
 
     @staticmethod
     def _stats(query):

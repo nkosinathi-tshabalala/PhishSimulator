@@ -66,7 +66,8 @@ export function FilterBar({
             filter.value ? "border-sky-400/60 text-sky-200" : ""
           }`}
         >
-          <option value="">{`All ${filter.label.toLowerCase()}`}</option>
+          {/* "Any quality" reads as is; a plural label such as "Difficulties" becomes "All difficulties" */}
+          <option value="">{filter.label.startsWith("Any ") ? filter.label : `All ${filter.label.toLowerCase()}`}</option>
           {filter.options.map((option) => (
             <option key={option.value} value={option.value}>{option.label}</option>
           ))}

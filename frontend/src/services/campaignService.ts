@@ -1,6 +1,7 @@
 // API calls for email phishing campaigns (admin only)
 
 import { apiRequest } from "./api";
+import { getToken } from "./session";
 
 /** An email the admin writes themselves instead of using a scenario. */
 export interface CustomEmail {
@@ -15,7 +16,7 @@ export interface CustomEmail {
 
 /** The stored login token. */
 function token() {
-  return localStorage.getItem("access_token");
+  return getToken();
 }
 
 /** Admin-only email phishing campaigns. All sending happens on the backend. */

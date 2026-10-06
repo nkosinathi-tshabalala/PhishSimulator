@@ -607,6 +607,16 @@ try:
         check("datasets: uploaded rows become drafts awaiting review, not live scenarios",
               drafts and all(scenario.get("status") == "DRAFT" for scenario in drafts),
               [scenario.get("status") for scenario in drafts])
+        listing = data_of(api("GET", "/api/scenarios?simulation_type=SMS&status=", atoken))
+        groups = {str(group["dataset_id"]): group for group in listing.get("groups", [])}
+        check("datasets: scenario review groups scenarios under their dataset, plus one group for the rest",
+              str(new_dataset) in groups and groups[str(new_dataset)]["name"] == "e2e.csv"
+              and groups[str(new_dataset)]["by_status"]["DRAFT"] == len(drafts) and "none" in groups,
+              {key: (group["name"], group["count"]) for key, group in groups.items()})
+        only_hand_made = items(data_of(api("GET", "/api/scenarios?simulation_type=SMS&status=&dataset_id=none", atoken)),
+                               "scenarios", "items")
+        check("datasets: the 'none' group lists only scenarios that are not from a dataset",
+              only_hand_made and all(row["dataset_id"] is None for row in only_hand_made))
         r = api("POST", f"/api/datasets/{new_dataset}/reprocess", atoken)
         check("datasets: reprocess", r.status_code == 200, f"{r.status_code} {body(r).get('message')}")
         r = api("DELETE", f"/api/datasets/{new_dataset}", atoken)

@@ -300,7 +300,7 @@ The admin report shows opens, clicks, attachment opens, reports and ignored per 
 | Accidental commits | `.githooks/pre-commit` blocks a commit that adds an `.env` file, a key file, uploaded data, or a line such as `SMTP_PASSWORD=...`. Turn it on once per clone with `git config core.hooksPath .githooks`. |
 | Passwords | Stored as bcrypt hashes. New passwords need at least 8 characters with a letter and a number (sign-up, change and reset). |
 | Guessing passwords | Five wrong passwords in a row lock the account for 15 minutes. The login reply never says whether an email exists. |
-| Sessions | Login tokens last 15 minutes and renew while you are active. Each token belongs to a login session, so logging out (or resetting the password) stops it working immediately. |
+| Sessions | Login tokens last 15 minutes and renew while you are active. Each token belongs to a login session, so logging out (or resetting the password) stops it working immediately. Each browser tab keeps its own login, so you can be the admin in one tab and a player in another; closing a tab signs that tab out. |
 | Password reset | A one-time link that works for 30 minutes. Only a SHA-256 hash of the token is stored, and using it signs out every session. Reset emails, like campaigns, only go to allow-listed addresses. |
 | Errors | Unexpected errors are logged on the server; the browser only sees "Something went wrong". |
 | Headers | The API sends `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy` and `Cache-Control: no-store`. nginx adds a Content-Security-Policy so the page only runs code from the app itself. |

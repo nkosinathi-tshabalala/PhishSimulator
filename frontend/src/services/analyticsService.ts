@@ -1,6 +1,7 @@
 // API calls for stats, progress and user monitoring
 
 import { apiRequest, downloadFile } from "./api";
+import { getToken } from "./session";
 
 /** API calls for stats and user monitoring. */
 class AnalyticsService {
@@ -15,7 +16,7 @@ class AnalyticsService {
       "/analytics/admin-dashboard",
       "GET",
       null,
-      localStorage.getItem("access_token")
+      getToken()
     );
   }
 
@@ -25,7 +26,7 @@ class AnalyticsService {
       `/analytics/admin${query ? `?${query}` : ""}`,
       "GET",
       null,
-      localStorage.getItem("access_token")
+      getToken()
     );
   }
 
@@ -35,7 +36,7 @@ class AnalyticsService {
       "/analytics/users",
       "GET",
       null,
-      localStorage.getItem("access_token")
+      getToken()
     );
   }
 
@@ -45,7 +46,7 @@ class AnalyticsService {
       `/analytics/users/${userId}`,
       "GET",
       null,
-      localStorage.getItem("access_token")
+      getToken()
     );
   }
 
@@ -55,7 +56,7 @@ class AnalyticsService {
       `/analytics/users/${userId}`,
       "DELETE",
       null,
-      localStorage.getItem("access_token")
+      getToken()
     );
   }
 
@@ -64,7 +65,7 @@ class AnalyticsService {
     return downloadFile(
       "/analytics/export/players.csv",
       "player_progress.csv",
-      localStorage.getItem("access_token")
+      getToken()
     );
   }
 
@@ -74,7 +75,7 @@ class AnalyticsService {
       `/analytics/my-activity${year ? `?year=${year}` : ""}`,
       "GET",
       null,
-      localStorage.getItem("access_token")
+      getToken()
     );
   }
 
@@ -84,7 +85,7 @@ class AnalyticsService {
       `/analytics/my-performance${query ? `?${query}` : ""}`,
       "GET",
       null,
-      localStorage.getItem("access_token")
+      getToken()
     );
   }
 }
