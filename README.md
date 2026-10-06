@@ -12,7 +12,7 @@ PhishSimulator is a scenario-based, gamified phishing-awareness trainer built on
 | **C · Correct** | Instant feedback: clues spotted vs missed, a threat explanation, and a safe-behaviour tip. | `analytics/feedback_generator.py`, `simulation/FeedbackPanel.tsx` |
 | **H · Help** | XP = (Easy 10 / Medium 20 / Hard 30 + 5 per real clue, max 15) × 1.29^(level−1). Each level needs ×1.5 more XP (max level 10). Private skill rank from weighted accuracy on the last 20 attempts (Easy ×1, Medium ×1.5, Hard ×2): Recruit, Spotter (50), Analyst (65), Defender (80), Guardian (90+ and ≤5% missed phishing). 15 badges in three groups (streaks, milestones, skills; see "Gamification" below), a daily goal, current and best practice-day streaks, a yearly activity calendar, a private position among all players, and **Review mistakes** to retry scenarios answered wrong. | `services/progress_service.py`, `progress/ProgressWidgets.tsx` |
 
-**Adaptive loop:** under 5 attempts the baseline sets the level. After that, the last 5 answers step the difficulty one level up (80%+), one level down (under 60%), or keep it. Scenario choice skips the last 2 categories, prefers the player's job group, prefers unseen scenarios, and never repeats within 5.
+**Adaptive loop:** under 5 attempts the baseline sets the level. After that, every 5 answers at a level step the difficulty one level up (80%+), one level down (under 60%), or keep it; after a change the new level gets 5 fresh answers before the next check. Campaign emails don't move the difficulty. Scenario choice skips the last 2 categories, prefers the player's job group, prefers unseen scenarios, and never repeats within 5.
 
 ## Main capabilities
 
@@ -181,7 +181,7 @@ cd backend
 `seed_demo.py` loads a fixed, reproducible dataset (random seed 2026). The scenario and baseline-question content lives in `backend/app/seed/*.json`; players, history and campaigns are generated. It creates:
 
 - **41 active scenarios**: South African email and SMS messages, 23 phishing and 18 legitimate, across all 8 categories and 3 difficulties, with catalogue clue names. Four carry a look-alike attachment. (Uploaded datasets are **not** part of the seed; you add your own from the Datasets page.)
-- **5 baseline questions** and an admin from `ADMIN_EMAIL` / `ADMIN_PASSWORD` in `backend/.env` (default **admin@phishsimulator.com** / **Admin#2026**).
+- **3 baseline questions** (kept short for demos; add more on the Baseline page) and an admin from `ADMIN_EMAIL` / `ADMIN_PASSWORD` in `backend/.env` (default **admin@phishsimulator.com** / **Admin#2026**).
 - An **owner player** for your own address only if `OWNER_EMAIL` is set. Leave it blank to register yourself in the app instead.
 - **40 test players** with realistic South African names and `@phishsimulator.test` emails, each with a profile, a keyword-marked baseline, login and training sessions, and about four months of practice. Each player has a habit, from never trained through occasional and weekly to daily, so streaks, badges, the activity calendar and the trends look real (a few dedicated players hold month-long streaks). Accuracy falls with difficulty (Easy > Medium > Hard) and improves slightly over time.
 - **Two finished campaigns** to the owner's address (one reported phishing, one clicked genuine), when an owner player is created, so the campaign metrics and the player Inbox show data.
@@ -232,6 +232,8 @@ Difficulty moves one step at a time:
 - Before five attempts, a baseline score of 70 or higher starts at Medium; otherwise Easy.
 - After that, if 80%+ of the last five answers are correct, step up one level (Easy → Medium → Hard).
 - Below 60%, step down one level. Otherwise stay.
+- After a change, the window starts again: the new level is judged on 5 answers given at that level, so a player can't jump from Easy to Hard in two answers.
+- Real-inbox campaign results don't count, because those emails are not chosen at the player's difficulty.
 
 Category selection avoids the two most recent categories when possible, prefers unpractised relevant categories, and then reinforces the weakest relevant area. Occupation priorities are:
 

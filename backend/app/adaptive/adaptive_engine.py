@@ -40,11 +40,17 @@ class AdaptiveEngine:
 
     @staticmethod
     def recommend_difficulty(attempts, baseline_score=None):
-        """Replay the player's history (newest first) to find their current difficulty."""
+        """Replay the player's training history (newest first) to find their current difficulty.
+
+        The baseline sets the start. After every 5 answers at a level, accuracy on those answers moves
+        difficulty one step. After a change the window starts again, so the next decision is based on
+        5 answers at the new level, never on answers given at the old one. Real-inbox campaign results
+        are left out: those emails are not chosen at the player's difficulty."""
         window = AdaptiveEngine.RECENT_ATTEMPT_COUNT
         difficulty = AdaptiveEngine.starting_difficulty(baseline_score)
+        training = [attempt for attempt in attempts if not getattr(attempt, "campaign_recipient_id", None)]
 
-        if len(attempts) < window:
+        if len(training) < window:
             reason = (
                 "Baseline score is 70 or more"
                 if difficulty == "Medium"
@@ -52,21 +58,26 @@ class AdaptiveEngine:
             )
             return difficulty, reason
 
-        oldest_first = list(reversed(attempts))
         reason = ""
-        for end in range(window, len(oldest_first) + 1):
-            recent = oldest_first[end - window:end]
+        at_this_level = []
+        for attempt in reversed(training):  # oldest first
+            at_this_level.append(attempt)
+            if len(at_this_level) < window:
+                continue
+            recent = at_this_level[-window:]
             accuracy = sum(attempt.correct for attempt in recent) / window * 100
             new_difficulty = AdaptiveEngine.step(difficulty, accuracy)
 
-            if new_difficulty != difficulty and accuracy >= AdaptiveEngine.STEP_UP_ACCURACY:
-                reason = f"Last 5 accuracy {round(accuracy)}%: stepped up to {new_difficulty}"
-            elif new_difficulty != difficulty:
-                reason = f"Last 5 accuracy {round(accuracy)}%: stepped down to {new_difficulty}"
+            if new_difficulty != difficulty:
+                direction = "up" if accuracy >= AdaptiveEngine.STEP_UP_ACCURACY else "down"
+                reason = f"Last 5 accuracy {round(accuracy)}%: stepped {direction} to {new_difficulty}"
+                difficulty = new_difficulty
+                at_this_level = []  # judge the new level on its own answers
             else:
                 reason = f"Last 5 accuracy {round(accuracy)}%: staying on {difficulty}"
-            difficulty = new_difficulty
 
+        if len(at_this_level) < window:
+            reason += f" ({window - len(at_this_level)} more at this level before the next check)"
         return difficulty, reason
 
     @staticmethod

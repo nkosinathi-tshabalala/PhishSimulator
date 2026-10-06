@@ -14,20 +14,6 @@
   "confidenceThreshold": 2
  },
  {
-  "question": "A colleague sends you an email from an address you do not recognise, asking you to open an attached invoice. What should you do?",
-  "instruction": "Explain the safe approach to handling unexpected attachments.",
-  "expectedKeywords": [
-   "attachment",
-   "verify",
-   "sender",
-   "contact",
-   "suspicious"
-  ],
-  "exampleAnswer": "I would not open the attachment. Instead, I would verify with the colleague through a separate communication channel (e.g., phone or Teams) whether they actually sent it.",
-  "feedback": "Never open unexpected attachments without verifying the sender's identity through a separate channel. Attackers often impersonate colleagues.",
-  "confidenceThreshold": 2
- },
- {
   "question": "You receive an SMS from an unknown number claiming you have won a R10,000 voucher. You must click a link to claim it. How would you evaluate this?",
   "instruction": "Analyse the SMS for smishing indicators.",
   "expectedKeywords": [
@@ -40,21 +26,6 @@
   ],
   "exampleAnswer": "This is likely smishing. The unsolicited prize from an unknown number, the 'too good to be true' offer, and the link to claim it are all red flags.",
   "feedback": "Unsolicited prize notifications, especially from unknown numbers with links, are almost always scams. Legitimate competitions require prior entry.",
-  "confidenceThreshold": 2
- },
- {
-  "question": "Your employer's IT department sends an email asking everyone to reset their password via a link. The email looks professional but the link goes to your-company.password-reset.com. What do you notice?",
-  "instruction": "Evaluate the legitimacy of this internal IT communication.",
-  "expectedKeywords": [
-   "domain",
-   "link",
-   "password",
-   "reset",
-   "suspicious",
-   "official"
-  ],
-  "exampleAnswer": "The link domain is suspicious — it's password-reset.com, not the company's official domain. The company domain appears as a subdomain of an external site. I would verify with IT directly.",
-  "feedback": "Always check that links go to your organisation's actual domain. Attackers create look-alike domains where the real company name appears as a subdomain.",
   "confidenceThreshold": 2
  },
  {

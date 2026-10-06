@@ -76,6 +76,22 @@ class AdaptiveTests(unittest.TestCase):
     def test_between_60_and_79_stays(self):
         self.assertEqual(AdaptiveEngine.step("Medium", 60), "Medium")
 
+    def test_each_new_level_is_judged_on_its_own_five_answers(self):
+        # One correct answer after reaching Medium must not jump straight to Hard
+        self.assertEqual(AdaptiveEngine.recommend_difficulty(make_attempts([True] * 6))[0], "Medium")
+        self.assertEqual(AdaptiveEngine.recommend_difficulty(make_attempts([True] * 9))[0], "Medium")
+        self.assertEqual(AdaptiveEngine.recommend_difficulty(make_attempts([True] * 10))[0], "Hard")
+
+    def test_steps_down_one_level_per_five_answers(self):
+        attempts = make_attempts([False] * 6)
+        self.assertEqual(AdaptiveEngine.recommend_difficulty(attempts, baseline_score=90)[0], "Easy")
+        hard_start = make_attempts([True] * 10 + [False] * 6)
+        self.assertEqual(AdaptiveEngine.recommend_difficulty(hard_start)[0], "Medium")
+
+    def test_campaign_results_do_not_move_difficulty(self):
+        campaign = [SimpleNamespace(correct=True, campaign_recipient_id=1) for _ in range(5)]
+        self.assertEqual(AdaptiveEngine.recommend_difficulty(campaign)[0], "Easy")
+
 
 class TestStageTests(unittest.TestCase):
     """Slide 13: reasons are matched to the real clues, decoys never help."""
