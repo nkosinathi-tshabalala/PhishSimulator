@@ -214,7 +214,6 @@ export default function App() {
     return (
       <AppLayout
         currentPage={currentPage}
-        backgroundImage="/assets/IMG_5602.jpg"
         renderSidebar={(layout) => (
           <AdminSidebar currentPage={currentPage} onNavigate={handleNavigate} onLogout={handleLogout} {...layout} />
         )}
@@ -241,7 +240,6 @@ export default function App() {
   return (
     <AppLayout
       currentPage={currentPage}
-      backgroundImage="/assets/IMG_5601.jpg"
       renderSidebar={(layout) => (
         <Sidebar currentPage={currentPage} onNavigate={handleNavigate} onLogout={handleLogout} {...layout} />
       )}

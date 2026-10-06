@@ -64,11 +64,11 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
   ];
 
   return (
-    <main className="min-h-screen bg-[#05080c] text-slate-200">
+    <main className="min-h-screen bg-[#0b1221] text-slate-200">
       <section
-        className="relative isolate min-h-190 overflow-hidden bg-[#05080c]"
+        className="relative isolate min-h-190 overflow-hidden bg-[#0b1221]"
         style={{
-          backgroundImage: "linear-gradient(90deg, rgba(5, 8, 12, 0.97) 0%, rgba(5, 8, 12, 0.88) 42%, rgba(5, 8, 12, 0.55) 100%), url('/assets/IMG_5599.jpeg')",
+          backgroundImage: "linear-gradient(90deg, rgba(11,18,33, 0.97) 0%, rgba(11,18,33, 0.88) 42%, rgba(11,18,33, 0.55) 100%), url('/assets/IMG_5599.jpeg')",
           backgroundPosition: "center",
           backgroundSize: "cover",
         }}
@@ -76,8 +76,8 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
         <div className="absolute inset-0 bg-[linear-gradient(rgba(56,189,248,0.06)_1px,transparent_1px),linear-gradient(90deg,rgba(56,189,248,0.06)_1px,transparent_1px)] bg-size-[48px_48px] opacity-30" />
         <nav className="relative mx-auto flex max-w-7xl items-center justify-between px-6 py-6 lg:px-8">
           <button className="flex items-center gap-3 text-left" onClick={() => onNavigate("landing")}>
-            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-linear-to-br from-sky-400 to-indigo-500 shadow-lg shadow-sky-500/20">
-              <Fish className="h-5 w-5 text-white" />
+            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-linear-to-br from-cyan-300 to-sky-600 shadow-lg shadow-cyan-400/25">
+              <Fish className="h-5 w-5 text-slate-950" />
             </span>
             <span>
               <span className="block text-sm font-semibold tracking-[0.12em] text-white">PHISHSIMULATOR</span>
@@ -122,7 +122,7 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
           </div>
         </div>
 
-        <div className="absolute inset-x-0 bottom-0 border-t border-white/10 bg-[#05080c]/85 backdrop-blur-sm">
+        <div className="absolute inset-x-0 bottom-0 border-t border-white/10 bg-[#0b1221]/85 backdrop-blur-sm">
           <div className="mx-auto grid max-w-7xl grid-cols-3 divide-x divide-white/10 px-6 lg:px-8">
             {[
               [platformSummary.registered_players.toLocaleString(), "Learners enrolled"],
@@ -139,10 +139,10 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
       </section>
 
       <section
-        className="relative isolate overflow-hidden border-b border-white/10 bg-[#080b11] px-6 py-20 lg:px-8"
+        className="relative isolate overflow-hidden border-b border-white/10 bg-[#0b1221] px-6 py-20 lg:px-8"
         style={{
           backgroundImage:
-            "linear-gradient(rgba(8,11,17,0.94), rgba(8,11,17,0.97)), url('/assets/IMG_5597.jpeg')",
+            "linear-gradient(rgba(11,18,33,0.94), rgba(11,18,33,0.97)), url('/assets/IMG_5597.jpeg')",
           backgroundPosition: "center",
           backgroundSize: "cover",
         }}
@@ -174,10 +174,10 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
       </section>
 
       <section
-        className="relative isolate overflow-hidden bg-[#05080c] px-6 py-16 lg:px-8"
+        className="relative isolate overflow-hidden bg-[#0b1221] px-6 py-16 lg:px-8"
         style={{
           backgroundImage:
-            "linear-gradient(90deg, rgba(5,8,12,0.95) 0%, rgba(5,8,12,0.75) 55%, rgba(5,8,12,0.9) 100%), url('/assets/IMG_5598.jpeg')",
+            "linear-gradient(90deg, rgba(11,18,33,0.95) 0%, rgba(11,18,33,0.75) 55%, rgba(11,18,33,0.9) 100%), url('/assets/IMG_5598.jpeg')",
           backgroundPosition: "center",
           backgroundSize: "cover",
         }}
@@ -194,7 +194,7 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
         </div>
       </section>
 
-      <footer className="bg-[#05080c] px-6 py-6 text-sm text-slate-500 lg:px-8 border-t border-white/10">
+      <footer className="bg-[#0b1221] px-6 py-6 text-sm text-slate-500 lg:px-8 border-t border-white/10">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-4">
           <span>PhishSimulator</span>
           <span>Scenario-based phishing awareness training</span>

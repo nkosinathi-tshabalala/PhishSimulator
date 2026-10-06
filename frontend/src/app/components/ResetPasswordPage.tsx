@@ -53,7 +53,7 @@ export function ResetPasswordPage({ onNavigate, token }: ResetPasswordPageProps)
   return (
     <AuthCard
       icon={<Fish className="w-8 h-8 text-white" />}
-      iconClass="bg-linear-to-br from-sky-400 to-indigo-500 shadow-lg shadow-sky-500/20"
+      iconClass="bg-linear-to-br from-cyan-300 to-sky-600 shadow-lg shadow-cyan-400/25"
       title={token ? 'Choose a new password' : 'Reset Password'}
       description={token ? 'At least 8 characters with a letter and a number.' : 'Enter your email to receive a reset link'}
       onBack={() => onNavigate('login')}
