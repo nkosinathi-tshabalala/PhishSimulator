@@ -42,7 +42,7 @@
   "difficulty": "Medium",
   "sender": "GlobalCorp HR <hr-recruitment@globalcorp-careers.net>",
   "subject": "Job Offer: Remote Marketing Manager — R45,000/month",
-  "message": "Congratulations!\n\nAfter reviewing your online profile, we are pleased to offer you the position of Remote Marketing Manager at GlobalCorp with a starting salary of R45,000 per month.\n\nTo accept this offer, please complete the onboarding form and provide your ID copy and banking details:\n[Complete your application](https://globalcorp-careers.net/onboard)\n\nBest regards,\nGlobalCorp HR",
+  "message": "Congratulations!\n\nAfter reviewing your online profile, we are pleased to offer you the position of Remote Marketing Manager at GlobalCorp with a starting salary of R45,000 per month.\n\nTo accept this offer, please complete the onboarding form and provide your ID copy and banking details:\n[Complete your application](https://globalcorp-careers-portal.com/onboard)\n\nBest regards,\nGlobalCorp HR",
   "correct_answer": "REPORT",
   "phishing_cues": "Suspicious link,Credential request,Too good to be true",
   "attachment": null
@@ -138,7 +138,7 @@
   "difficulty": "Easy",
   "sender": "University of Pretoria <registrar@up.ac.za>",
   "subject": "Registration Opens 15 January 2025",
-  "message": "Dear Student,\n\nThis is a reminder that online registration for the 2025 academic year opens on 15 January. Please log in to your student portal at https://www.up.ac.za/student-portal to complete registration.\n\nFor assistance, contact the Student Service Centre at 012 420 3111.\n\nOffice of the Registrar\nUniversity of Pretoria",
+  "message": "Dear Student,\n\nThis is a reminder that online registration for the 2025 academic year opens on 15 January. Please log in to your student portal at https://www.up.ac.za/student-portal to complete registration.\n\nFor assistance, contact the Student Service Centre through the student portal.\n\nOffice of the Registrar\nUniversity of Pretoria",
   "correct_answer": "SAFE",
   "phishing_cues": "",
   "attachment": null
@@ -198,7 +198,7 @@
   "difficulty": "Hard",
   "sender": "Microsoft 365 Voice <voicemail@0ffice365-notify.com>",
   "subject": "You have a new voicemail (0:47)",
-  "message": "You received a new voicemail message.\n\nFrom: +27 11 555 0192\nLength: 0:47\n\nThe recording is attached to this email. Open the attachment to listen.\n\nMicrosoft 365 Voice",
+  "message": "You received a new voicemail message.\n\nFrom: Private number\nLength: 0:47\n\nThe recording is attached to this email. Open the attachment to listen.\n\nMicrosoft 365 Voice",
   "correct_answer": "REPORT",
   "phishing_cues": "Unexpected attachment,Fake sender",
   "attachment": "Voicemail_0192.zip"

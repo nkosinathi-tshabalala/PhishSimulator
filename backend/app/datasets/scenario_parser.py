@@ -2,7 +2,7 @@
 
 import re
 
-from app.utils.clues import detect_message_signs
+from app.utils.clues import contains_word, detect_message_signs
 from app.utils.links import suspicious_links
 
 
@@ -17,12 +17,12 @@ class ScenarioParser:
     SENDER_BAIT_WORDS = ("secure", "verify", "support", "account", "update", "login")
 
     CATEGORY_KEYWORDS = {
-        "Banking": ("bank", "account", "payment", "invoice"),
+        "Banking": ("bank", "payment", "invoice", "card", "transaction", "statement", "eft"),
         "Delivery": ("delivery", "parcel", "shipment", "package"),
         "Government": ("government", "tax", "irs", "sars", "benefit"),
         "Employment": ("job", "recruit", "interview", "employment"),
         "University": ("university", "student", "campus", "course"),
-        "Password Reset": ("password", "reset", "login", "credential"),
+        "Password Reset": ("password", "reset", "login", "log in", "credential", "verify your account", "re-confirm"),
         "Microsoft 365": ("microsoft", "office 365", "outlook", "teams"),
         "Social Media": ("facebook", "instagram", "linkedin", "social"),
     }
@@ -106,6 +106,9 @@ class ScenarioParser:
     # Made-up addresses the importer writes in (e.g. you@example.com) are not anyone's personal data
     MADE_UP_DOMAINS = ("example.com", "example.org", "example.net", "example.test", "phishsimulator.test")
 
+    # South African toll-free (0800) and share-call (0860, 0861) numbers, with or without +27
+    ORGANISATION_NUMBERS = ("0800", "0860", "0861", "27800", "27860", "27861")
+
     @staticmethod
     def personal_details(text):
         """Email addresses and phone numbers in a message, partly hidden, e.g. ("email address", "ja***@pths209.org")."""
@@ -116,6 +119,8 @@ class ScenarioParser:
                 found.append(("email address", f"{local[:2]}***@{domain}"))
         for number in dict.fromkeys(re.findall(ScenarioParser.PHONE_REGEX, text or "")):
             digits = re.sub(r"\D", "", number)
+            if digits.startswith(ScenarioParser.ORGANISATION_NUMBERS):
+                continue  # toll-free and share-call lines belong to organisations, not people
             found.append(("phone number", f"{digits[:3]} *** **{digits[-2:]}"))
         return found
 
@@ -181,11 +186,14 @@ class ScenarioParser:
     def infer_category(text):
         """Guess a training category from keywords in the message."""
         lower = text.lower()
-
-        for category, keywords in ScenarioParser.CATEGORY_KEYWORDS.items():
-            if any(keyword in lower for keyword in keywords):
-                return category
-
+        # The category whose keywords appear most often wins (ties go to the first in the list)
+        matches = {
+            category: sum(contains_word(lower, keyword) for keyword in keywords)
+            for category, keywords in ScenarioParser.CATEGORY_KEYWORDS.items()
+        }
+        best = max(matches, key=matches.get)
+        if matches[best]:
+            return best
         return "Password Reset" if "verify" in lower else "Social Media"
 
     @staticmethod

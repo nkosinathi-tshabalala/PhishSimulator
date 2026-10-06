@@ -1,5 +1,6 @@
 # Choosing scenarios for players and reviewing them for admins
 
+import re
 from datetime import datetime, timedelta
 
 from app.extensions import db
@@ -12,12 +13,12 @@ from app.models.email import EmailCampaign
 from app.models.simulation import SimulationAttempt
 from app.adaptive.adaptive_engine import AdaptiveEngine
 from app.datasets.scenario_parser import ScenarioParser
-from app.datasets.scenario_realism import GENERIC_MAILBOXES, link_targets, quality_score
+from app.datasets.scenario_realism import quality_review, quality_score
 from app.schemas.scenario_schema import ScenarioSchema
 from app.utils.clock import iso_utc, local_today, utc_now, utc_start_of
 from app.utils.clues import clue_options
 from app.utils.labels import LEGACY_TITLE_PREFIX, message_label
-from app.utils.links import describe_link, link_problems
+from app.utils.links import describe_link, find_urls, link_problems
 
 
 class ScenarioService:
@@ -41,9 +42,8 @@ class ScenarioService:
         ("links_safe", "Links made safe"),
     )
 
-    # Words that mark a sender as a team or system mailbox rather than a person
-    ROLE_WORDS = ("hr", "team", "support", "service", "security", "billing", "account", "recruit", "reply", "alert",
-                  "notif", "help", "admin", "info", "office", "sales", "update", "verify", "student", "it-")
+    # A quality score at or above this passes the automatic check
+    GOOD_QUALITY = 80
 
     # The dataset filter value for scenarios written by hand or loaded with the demo data
     NO_DATASET = "none"
@@ -266,18 +266,30 @@ class ScenarioService:
         }
 
     @staticmethod
+    def _quality_check(scenario, is_phishing, cues):
+        """The quality score worked out now (so it reflects the current rules), with every reason it lost points."""
+        score, problems = quality_review(
+            scenario.simulation_type or "EMAIL", scenario.sender, getattr(scenario, "subject", None),
+            scenario.message, is_phishing, cues,
+        )
+        if problems:
+            detail = f"{score}/100. " + "; ".join(f"{reason} (-{points})" for points, reason in problems) + "."
+        else:
+            detail = "100/100. Reads like a real message: no problems found."
+        return {"label": "Quality score", "passed": score >= ScenarioService.GOOD_QUALITY, "detail": detail}
+
+    @staticmethod
     def _contact_details_check(scenario):
         """Public datasets come from real mailboxes, so a message can still hold a real person's email address
         or phone number. Those must be replaced with made-up ones before players see them."""
         found = ScenarioParser.personal_details(scenario.message or "")
         sender = ScenarioParser.sender_address(scenario.sender)
         local = sender.split("@")[0].lower() if "@" in sender else ""
-        # A person-like address (jadkins@..., jaime.adkins@...), not a role mailbox (hr-recruitment@, noreply@)
-        personal_sender = (
-            bool(local) and local not in GENERIC_MAILBOXES
-            and not any(word in local for word in ScenarioService.ROLE_WORDS)
-            and not sender.lower().endswith(ScenarioParser.MADE_UP_DOMAINS)
-        )
+        # Shaped like a person: "t.mokoena@", "jaime.adkins@", or a display name such as "Adkins, Jaime"
+        personal_sender = bool(
+            (re.fullmatch(r"[a-z]{1,15}\.[a-z]{2,20}", local) and local.split(".")[0] not in ("it", "hr", "ict", "no"))
+            or re.match(r'\s*"?[A-Z][a-z]+, [A-Z][a-z]+', scenario.sender or "")
+        ) and not sender.lower().endswith(ScenarioParser.MADE_UP_DOMAINS)
 
         if found:
             listed = ", ".join(f"{kind} {value}" for kind, value in found)
@@ -285,7 +297,7 @@ class ScenarioService:
         else:
             detail = "No email addresses or phone numbers in the message text."
         if personal_sender:
-            detail += f" The sender ({sender}) came from the dataset: if it is a real person's address, change it."
+            detail += f" The sender ({sender}) looks like a person's address: if it is real, change it."
         return {"label": "No real contact details", "passed": not found, "detail": detail}
 
     @staticmethod
@@ -315,7 +327,7 @@ class ScenarioService:
     def quality_checks(scenario):
         """Automatic checks that help the admin fill in the QA checklist."""
         message = scenario.message or ""
-        links = link_targets(message)
+        links = find_urls(message)
         is_phishing = scenario.correct_answer.upper() == "REPORT"
         cues = scenario.get_phishing_cues()
 
@@ -337,14 +349,7 @@ class ScenarioService:
             },
             ScenarioService._contact_details_check(scenario),
             ScenarioService._links_check(scenario, is_phishing, cues, links),
-            {
-                "label": "Quality score",
-                "passed": (scenario.quality_score or 0) >= 70,
-                "detail": (
-                    f"{scenario.quality_score}/100 (sender, subject, length, clues, clean text)."
-                    if scenario.quality_score is not None else "Not scored yet: re-run dataset processing."
-                ),
-            },
+            ScenarioService._quality_check(scenario, is_phishing, cues),
         ]
 
     @staticmethod

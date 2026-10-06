@@ -6,6 +6,7 @@ from random import Random
 
 from app.datasets.scenario_parser import ScenarioParser
 from app.utils.clues import contains_word
+from app.utils.links import find_urls, suspicious_links
 
 
 LINK_MARKUP = re.compile(r"\[([^\]\n]{1,80})\]\(((?:https?://|www\.)[^\s)]+)\)")
@@ -127,32 +128,82 @@ def is_risky_attachment(file_name):
     return bool(file_name) and file_name.lower().endswith(RISKY_EXTENSIONS)
 
 
-def quality_score(channel, sender, subject, message, is_phishing, cues):
-    """0-100: how ready a generated scenario is for players (higher is better)."""
+# Phrases from a website's footer: a sign the text was copied from a web page, not written as a message
+FOOTER_PHRASES = ("all rights reserved", "privacy policy", "legal notices", "terms of use", "terms and conditions",
+                  "company products", "support resources", "cookie policy")
+# The message asks the reader to click or open a link
+ASKS_TO_CLICK = re.compile(r"\bclick (here|the link|below|on the link)\b|\blink below\b|\bfollow (this|the) link\b"
+                           r"|\btap (here|the link)\b", re.IGNORECASE)
+GAP_PATTERN = re.compile(r"[ \t]{3,}")
+
+
+def tidy_text(message):
+    """Clean text copied from a web page: no big gaps between words, no runs of blank lines,
+    and a body stored twice is kept once."""
+    lines = [re.sub(r"[ \t]+", " ", line).strip() for line in (message or "").replace("\r", "").split("\n")]
+    text = re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()
+    return ScenarioParser.drop_repeated_text(text)
+
+
+def quality_review(channel, sender, subject, message, is_phishing, cues):
+    """How ready a scenario is for players: starts at 100 and loses points for each problem, with a reason
+    an admin can act on. Returns (score, [(points lost, reason), ...])."""
     channel = channel.upper()
-    score = 15 if sender else 0
-    score += 10 if subject or channel == "SMS" else 0
+    message = message or ""
+    plain = LINK_MARKUP.sub(r"\1", message)
+    lowered = plain.lower()
+    problems = []
 
-    length = len(message.strip())
-    good_length = (20, 400) if channel == "SMS" else (80, 1500)
-    if good_length[0] <= length <= good_length[1]:
-        score += 25
-    elif length <= good_length[1] * 2:
-        score += 12
+    def lose(points, reason):
+        problems.append((points, reason))
 
-    if is_phishing:
-        score += 20 if len(cues) >= 2 else 12 if cues else 0
-    else:
-        score += 20 if len(cues) <= 1 else 10
+    if not sender:
+        lose(15, "no sender")
+    if channel == "EMAIL" and not subject:
+        lose(10, "no subject line")
 
-    score += 0 if ScenarioParser.find_personal_data(LINK_MARKUP.sub("", message)) else 15
-    score += 0 if RAW_TEXT_PATTERN.search(message) else 15
-    return score
+    length = len(plain.strip())
+    shortest, longest = (20, 400) if channel == "SMS" else (80, 1500)
+    if length < shortest:
+        lose(20, f"too short to judge ({length} characters)")
+    elif length > longest * 2:
+        lose(20, f"very long ({length} characters): trim it to the message itself")
+    elif length > longest:
+        lose(10, f"long ({length} characters)")
+
+    if len(GAP_PATTERN.findall(message)) >= 2:
+        lose(20, "big gaps between words (copied from a web page layout): re-process or edit the text")
+    if RAW_TEXT_PATTERN.search(message):
+        lose(20, "leftover HTML or email code in the text")
+    if ScenarioParser.drop_repeated_text(" ".join(plain.split())) != " ".join(plain.split()):
+        lose(20, "the same text appears twice")
+    if sum(phrase in lowered for phrase in FOOTER_PHRASES) >= 2:
+        lose(10, "ends with website footer text (copyright, privacy policy...)")
+    if ASKS_TO_CLICK.search(plain) and not find_urls(message):
+        lose(25, "asks the reader to click a link, but the link is missing")
+    if ScenarioParser.find_personal_data(plain):
+        lose(15, "contains an email address or phone number")
+
+    if is_phishing and not cues:
+        lose(25, "phishing but no warning signs are listed")
+    elif is_phishing and len(cues) == 1:
+        lose(5, "only one warning sign: fine for a Hard scenario")
+    if is_phishing and "Suspicious link" in cues and not suspicious_links(message):
+        lose(10, "lists 'Suspicious link', but no link looks fake")
+    if not is_phishing and suspicious_links(message):
+        lose(20, "marked genuine but contains a link that looks fake")
+
+    return max(100 - sum(points for points, _ in problems), 0), problems
+
+
+def quality_score(channel, sender, subject, message, is_phishing, cues):
+    """0-100: how ready a scenario is for players (see quality_review for the reasons)."""
+    return quality_review(channel, sender, subject, message, is_phishing, cues)[0]
 
 
 def enrich(channel, category, sender, subject, message, is_phishing, cues, attachment=None):
     """Return the realistic version of one scenario's fields (safe to run twice)."""
-    message = mask_links(message, category, channel)
+    message = mask_links(tidy_text(message), category, channel)
     sender = display_sender(sender, channel)
     attachment = attachment or attachment_for(message, category, is_phishing, channel)
 

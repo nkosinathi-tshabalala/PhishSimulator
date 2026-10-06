@@ -283,6 +283,10 @@ class LinkTests(unittest.TestCase):
         self.assertNotIn("Suspicious link", ScenarioParser.extract_cues("Track it at https://www.takealot.com/orders"))
         self.assertIn("Suspicious link", ScenarioParser.extract_cues("Track it at https://takealot-redeliver.co.za"))
 
+    def test_organisation_phone_numbers_are_not_personal_data(self):
+        self.assertEqual(ScenarioParser.find_personal_data("Call 0800 110 929 or 0860 10 20 43"), [])
+        self.assertEqual(ScenarioParser.find_personal_data("Call me on 082 555 1234"), ["phone number"])
+
     def test_made_up_addresses_are_not_personal_data(self):
         self.assertEqual(ScenarioParser.find_personal_data("Sent to you@example.com"), [])
         self.assertEqual(ScenarioParser.personal_details("Mail jadkins@pths209.org"), [("email address", "ja***@pths209.org")])

@@ -58,11 +58,18 @@ DIGIT_SWAPS = (
 )
 
 URL_PATTERN = re.compile(r"(?:https?://|www\.)[^\s<>\"'()\]]+", re.IGNORECASE)
+# A web address written without http:// or www., such as "login.cPanel.net/verify" (not part of an email address)
+BARE_DOMAIN = re.compile(
+    r"(?<![@\w./-])(?:[a-z0-9-]+\.)+(?:com|net|org|info|biz|io|co|za|xyz|top|ru|cn|online|site|app|support|help)"
+    r"(?![\w@-])(?:/[^\s<>\"'()\]]*)?", re.IGNORECASE)
 
 
 def find_urls(text):
-    """Every web address in the text (including ones hidden behind [button text](url))."""
-    return [url.rstrip(".,;:!?") for url in URL_PATTERN.findall(text or "")]
+    """Every web address in the text: with http:// or www., hidden behind [button text](url), or bare."""
+    text = text or ""
+    found = [url.rstrip(".,;:!?") for url in URL_PATTERN.findall(text)]
+    found += [url.rstrip(".,;:!?") for url in BARE_DOMAIN.findall(URL_PATTERN.sub(" ", text))]
+    return found
 
 
 def host_of(url):
