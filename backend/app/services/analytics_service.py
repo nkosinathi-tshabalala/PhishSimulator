@@ -128,7 +128,7 @@ class AnalyticsService:
             scenario = db.session.get(Scenario, scenario_id)
             if scenario:
                 most_difficult = {
-                    "title": scenario.title,
+                    "title": ScenarioService.display_title(scenario),
                     "category": scenario.category,
                     "difficulty": scenario.difficulty,
                     "success_rate": round((result["correct"] / result["attempts"]) * 100),
@@ -321,7 +321,7 @@ class AnalyticsService:
         for attempt in attempts[:RECENT_LIMIT]:
             scenario = db.session.get(Scenario, attempt.scenario_id)
             recent_attempts.append({
-                "scenario": ScenarioService.display_title(scenario) if scenario else "Deleted scenario",
+                "scenario": ScenarioService.player_label(scenario) if scenario else "Deleted scenario",
                 "type": attempt.simulation_type.upper(),
                 "source": "CAMPAIGN" if attempt.campaign_recipient_id else "TRAINING",
                 "correct": attempt.correct,

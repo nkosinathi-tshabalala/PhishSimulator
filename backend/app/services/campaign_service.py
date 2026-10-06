@@ -21,6 +21,8 @@ from app.models.analytics import PerformanceTracker
 from app.models.email import EmailCampaign, EmailCampaignRecipient
 from app.models.scenario import Scenario
 from app.models.simulation import SimulationAttempt, UserAction
+from app.services.scenario_service import ScenarioService
+from app.utils.labels import message_label
 
 TRACKING_PIXEL = bytes.fromhex(
     "47494638396101000100800000000000ffffff21f90401000000002c00000000010001000002024401003b"
@@ -86,7 +88,7 @@ class CampaignService:
             "players": CampaignService.list_players(),
             "scenarios": [{
                 "scenario_id": scenario.scenario_id,
-                "title": scenario.title,
+                "title": ScenarioService.display_title(scenario),
                 "sender": scenario.sender,
                 "subject": scenario.subject,
                 "message": scenario.message,
@@ -128,7 +130,8 @@ class CampaignService:
             email = {
                 "scenario_id": scenario.scenario_id,
                 "sender": scenario.sender,
-                "subject": scenario.subject or scenario.title,
+                # A real inbox must never see the admin's title (it may say "training")
+                "subject": scenario.subject or message_label(None, scenario.message),
                 "message": scenario.message,
                 "is_phishing": (scenario.correct_answer or "").upper() == "REPORT",
                 "phishing_cues": scenario.phishing_cues,
@@ -264,7 +267,7 @@ class CampaignService:
 
         sent, reason = Mailer.send(
             recipient.recipient_email,
-            campaign.subject or campaign.title,
+            campaign.subject or message_label(None, campaign.message),
             "\n".join(text_lines),
             from_name=_sender_display_name(campaign.sender),
             html_body=html_body,
@@ -391,7 +394,7 @@ class CampaignService:
             via_attachment=recipient.clicked_kind == "ATTACHMENT",
             first_name=first_name,
             sender=campaign.sender,
-            subject=campaign.subject or campaign.title,
+            subject=campaign.subject or message_label(None, campaign.message),
             attachment=campaign.attachment,
             cues=campaign.get_phishing_cues() if campaign.is_phishing else [],
             xp=recipient.xp_awarded,
@@ -675,7 +678,8 @@ class CampaignService:
             "status": "COMPLETED" if is_complete else campaign.status,
             "closes_at": _iso(campaign.launched_at + ignore_after) if campaign.launched_at else None,
             "attachment": campaign.attachment,
-            "scenario_title": campaign.title,
+            # Admin only: which scenario the email came from
+            "scenario_title": ScenarioService.display_title(campaign.scenario) if campaign.scenario else campaign.title,
             "is_custom": campaign.scenario is None or campaign.scenario.status == Scenario.CAMPAIGN_STATUS,
             "is_phishing": campaign.is_phishing,
             "created_at": campaign.created_at.isoformat(),

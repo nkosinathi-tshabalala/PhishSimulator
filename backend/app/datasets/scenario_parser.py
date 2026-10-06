@@ -159,12 +159,10 @@ class ScenarioParser:
 
     @staticmethod
     def build_scenario_title(message_type, subject, message):
-        """Create a distinct, readable title when the source has no subject."""
-        prefix = f"{str(message_type).upper()} training"
+        """A readable title from the message's own subject (or its first words). No "EMAIL training" prefix:
+        the channel is shown as a badge, and a title must never hint to a player that a message is a test."""
         compact = re.sub(r"\s+", " ", str(subject or message or "")).strip()
-        if not compact:
-            return prefix
-        return f"{prefix}: {compact[:180]}"
+        return compact[:180] or f"Untitled {str(message_type).lower()}"
 
     @staticmethod
     def infer_category(text):
@@ -188,6 +186,17 @@ class ScenarioParser:
         )
 
     @staticmethod
+    def drop_repeated_text(text):
+        """Some corpora store an email's plain and HTML parts together, so the whole body appears twice
+        (or three times). Keep a single copy. Short phrases (under 8 words) and other text are left alone."""
+        words = text.split()
+        for copies in (2, 3):
+            size, extra = divmod(len(words), copies)
+            if extra == 0 and size >= 8 and all(words[i * size:(i + 1) * size] == words[:size] for i in range(copies)):
+                return " ".join(words[:size])
+        return text
+
+    @staticmethod
     def parse_row(row, dataset_type="EMAIL"):
         """Convert one dataset row into a processed record, or None if unusable."""
         row = {str(key).strip().lower(): value for key, value in row.items()}
@@ -200,6 +209,7 @@ class ScenarioParser:
         if not message:
             return None
 
+        message = ScenarioParser.drop_repeated_text(message)
         receiver = ScenarioParser._value(row, "receiver", "to")
         subject = ScenarioParser.anonymise_recipient(subject, receiver)
         message = ScenarioParser.anonymise_recipient(message, receiver)

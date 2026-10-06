@@ -16,6 +16,7 @@ from app.datasets.scenario_realism import link_targets, quality_score
 from app.schemas.scenario_schema import ScenarioSchema
 from app.utils.clock import iso_utc, local_today, utc_now, utc_start_of
 from app.utils.clues import clue_options
+from app.utils.labels import LEGACY_TITLE_PREFIX, message_label
 
 
 class ScenarioService:
@@ -51,10 +52,16 @@ class ScenarioService:
 
     @staticmethod
     def display_title(scenario):
-        """Give legacy generated rows a distinct title without changing answers."""
+        """The admin's name for a scenario. Older imports were titled "EMAIL training: ..."; that prefix is hidden."""
         if scenario.title == "Dataset training scenario":
-            return f"{scenario.simulation_type.title()} training scenario #{scenario.scenario_id}"
-        return scenario.title
+            return f"{scenario.simulation_type.title()} scenario #{scenario.scenario_id}"
+        return LEGACY_TITLE_PREFIX.sub("", scenario.title or "") or scenario.title
+
+    @staticmethod
+    def player_label(scenario):
+        """How a player recognises a message afterwards: what they actually saw (the subject, or the start of the
+        text). Never the admin's title, which may say it is training."""
+        return message_label(scenario.subject, scenario.message)
 
     @staticmethod
     def _reviewable():
@@ -559,7 +566,6 @@ class ScenarioService:
         """What a player may see before deciding: never the answer or clues."""
         return {
             "scenario_id": scenario.scenario_id,
-            "title": ScenarioService.display_title(scenario),
             "simulation_type": scenario.simulation_type,
             "category": scenario.category,
             "difficulty": scenario.difficulty,

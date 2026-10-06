@@ -247,7 +247,7 @@ try:
     for channel in ("EMAIL", "SMS", "EMAIL", "SMS", "EMAIL", "EMAIL"):
         r = api("GET", f"/api/scenarios/random/{channel}", ptoken)
         scenario = data_of(r)
-        leaked += [key for key in ("correct_answer", "phishing_cues", "feedback") if key in scenario]
+        leaked += [key for key in ("correct_answer", "phishing_cues", "feedback", "title") if key in scenario]
         rr = api("POST", "/api/simulation/attempt", ptoken, json={
             "scenario_id": scenario.get("scenario_id"), "player_answer": "REPORT",
             "selected_clues": (scenario.get("clue_options") or [])[:2],
@@ -257,11 +257,14 @@ try:
         last_attempt = data_of(rr)
         TRACE.append((channel, scenario.get("category"), scenario.get("difficulty"), last_attempt))
     check("player: 6 attempts saved (email + SMS)", all(code in (200, 201) for code in attempt_codes), attempt_codes)
-    check("player: scenario sent to the player never includes the answer", not leaked, leaked)
+    check("player: scenario sent to the player never includes the answer or the admin's title", not leaked, leaked)
     check("player: attempt result has feedback, progress, changes",
           all(key in last_attempt for key in ("feedback", "progress", "changes")), list(last_attempt))
 
     perf_after = data_of(api("GET", "/api/analytics/my-performance", ptoken))
+    recent_names = [row.get("scenario", "") for row in perf_after.get("recent_attempts", [])]
+    check("player: recent decisions are named by what the player saw, never 'training'",
+          recent_names and not any("training" in name.lower() for name in recent_names), recent_names[:3])
     check("player: dashboard updates after training",
           perf_after.get("total_attempts") == 6 and perf_after.get("today_attempts") == 6
           and perf_after.get("practised_today") and perf_after.get("daily_streak") == 1

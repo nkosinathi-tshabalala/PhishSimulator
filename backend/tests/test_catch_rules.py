@@ -271,6 +271,12 @@ class ParserTests(unittest.TestCase):
         ))
         self.assertFalse(ScenarioParser.is_unreadable("Your parcel is waiting. Pay the fee at www.x.co today."))
 
+    def test_a_body_stored_twice_is_kept_once(self):
+        body = "Password will expire in 2 days. Click Here To Validate E-mail Thank you, Copyright 1993-2013"
+        self.assertEqual(ScenarioParser.drop_repeated_text(f"{body} {body}"), body)
+        self.assertEqual(ScenarioParser.drop_repeated_text("Hi Hi there"), "Hi Hi there")
+        self.assertEqual(ScenarioParser.drop_repeated_text("Pay now. Pay now. Pay now. Pay now."), "Pay now. Pay now. Pay now. Pay now.")
+
     def test_look_alike_sender_is_flagged(self):
         self.assertTrue(ScenarioParser.is_suspicious_sender("security@micr0soft.co"))
         self.assertFalse(ScenarioParser.is_suspicious_sender("noreply@microsoft.com"))

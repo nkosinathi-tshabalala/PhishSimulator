@@ -3,6 +3,7 @@
 from datetime import datetime
 
 from app.extensions import db
+from app.utils.labels import message_label
 
 
 class EmailCampaign(db.Model):
@@ -41,8 +42,9 @@ class EmailCampaign(db.Model):
 
     @property
     def title(self):
-        """The scenario's title, or the subject for a custom email."""
-        return self.scenario.title if self.scenario else (self.subject or "Custom email")
+        """The email's name as the recipient saw it: its subject, or the first words of the message.
+        Never the scenario's admin title, which may say it is training."""
+        return message_label(self.subject, self.message) or "Email"
 
 
 class EmailCampaignRecipient(db.Model):

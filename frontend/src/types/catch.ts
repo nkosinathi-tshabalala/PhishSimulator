@@ -18,7 +18,6 @@ export interface PracticeCategory {
 /** The message itself, as a player sees it before deciding (never the answer). */
 export interface MessageView {
   scenario_id: number;
-  title: string;
   simulation_type: Channel;
   category: string;
   difficulty: Difficulty;
