@@ -1,6 +1,7 @@
 # Builds the feedback a player sees after answering a scenario
 
 from app.utils.clues import CLUE_TIPS, real_clues
+from app.utils.links import explain_links
 
 
 class FeedbackGenerator:
@@ -96,9 +97,15 @@ class FeedbackGenerator:
             scenario.category, FeedbackGenerator.DEFAULT_GUIDANCE,
         )
 
+        # Name the fake link and say what gives it away, e.g. "m1crosoft.com imitates Microsoft ..."
+        link_reasons = explain_links(scenario.message or "")
+
         def with_tips(clues):
-            """Pair each clue with its tip."""
-            return [{"name": clue, "tip": CLUE_TIPS.get(clue, "")} for clue in clues]
+            """Pair each clue with its tip (for a suspicious link: which link, and why)."""
+            return [{
+                "name": clue,
+                "tip": " ".join(link_reasons) if clue == "Suspicious link" and link_reasons else CLUE_TIPS.get(clue, ""),
+            } for clue in clues]
 
         return {
             "headline": FeedbackGenerator._headline(scenario, correct, trap),

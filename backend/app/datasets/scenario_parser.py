@@ -3,6 +3,7 @@
 import re
 
 from app.utils.clues import detect_message_signs
+from app.utils.links import suspicious_links
 
 
 class ScenarioParser:
@@ -74,7 +75,8 @@ class ScenarioParser:
         """Detect the warning signs present in a message."""
         cues = []
 
-        if ScenarioParser.extract_urls(text):
+        # A link is only a warning sign when it looks fake (see app/utils/links.py), not just for being there
+        if suspicious_links(text):
             cues.append("Suspicious link")
         if ScenarioParser.is_suspicious_sender(sender):
             cues.append("Fake sender")
@@ -101,15 +103,26 @@ class ScenarioParser:
             return "Medium"
         return difficulty
 
+    # Made-up addresses the importer writes in (e.g. you@example.com) are not anyone's personal data
+    MADE_UP_DOMAINS = ("example.com", "example.org", "example.net", "example.test", "phishsimulator.test")
+
+    @staticmethod
+    def personal_details(text):
+        """Email addresses and phone numbers in a message, partly hidden, e.g. ("email address", "ja***@pths209.org")."""
+        found = []
+        for address in dict.fromkeys(re.findall(ScenarioParser.EMAIL_REGEX, text or "")):
+            if not address.lower().endswith(ScenarioParser.MADE_UP_DOMAINS):
+                local, domain = address.split("@", 1)
+                found.append(("email address", f"{local[:2]}***@{domain}"))
+        for number in dict.fromkeys(re.findall(ScenarioParser.PHONE_REGEX, text or "")):
+            digits = re.sub(r"\D", "", number)
+            found.append(("phone number", f"{digits[:3]} *** **{digits[-2:]}"))
+        return found
+
     @staticmethod
     def find_personal_data(text):
-        """Return the kinds of personal data found in a message body."""
-        found = []
-        if re.search(ScenarioParser.EMAIL_REGEX, text):
-            found.append("email address")
-        if re.search(ScenarioParser.PHONE_REGEX, text):
-            found.append("phone number")
-        return found
+        """The kinds of personal data in a message body ("email address", "phone number")."""
+        return list(dict.fromkeys(kind for kind, _ in ScenarioParser.personal_details(text)))
 
     MAX_MESSAGE_LENGTH = 5000
 

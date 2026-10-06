@@ -8,6 +8,7 @@ from app.adaptive.adaptive_engine import AdaptiveEngine
 from app.analytics.feedback_generator import FeedbackGenerator
 from app.datasets.scenario_parser import ScenarioParser
 from app.services.progress_service import ProgressService
+from app.utils.links import link_problems
 from app.utils.clues import (
     TRUST_SIGNALS,
     WARNING_SIGNS,
@@ -151,6 +152,7 @@ class CorrectStageTests(unittest.TestCase):
     def feedback(answer="REPORT", cues="Suspicious link,Urgency", correct=True, selected=(), trap=None):
         scenario = make_scenario(answer, cues)
         scenario.simulation_type, scenario.category, scenario.feedback = "EMAIL", "Banking", None
+        scenario.message = "Your card is blocked. Unlock it at [Secure my account](https://fnb-verify.co.za/unlock)"
         result = evaluate_justification(scenario, list(selected), "")
         return FeedbackGenerator.build(scenario, correct, result, trap)
 
@@ -161,6 +163,11 @@ class CorrectStageTests(unittest.TestCase):
         self.assertEqual([clue["name"] for clue in feedback["clues_missed"]], ["Urgency"])
         self.assertTrue(all(clue["tip"] for clue in feedback["clues_spotted"] + feedback["clues_missed"]))
         self.assertEqual(feedback["threat_explanation"], FeedbackGenerator.CATEGORY_GUIDANCE["Banking"][0])
+
+    def test_a_missed_link_clue_names_the_fake_link_and_why(self):
+        missed = {clue["name"]: clue["tip"] for clue in self.feedback()["clues_missed"]}
+        self.assertIn("fnb-verify.co.za", missed["Suspicious link"])
+        self.assertIn("FNB", missed["Suspicious link"])
 
     def test_genuine_messages_are_explained_with_trust_signals(self):
         feedback = self.feedback(answer="SAFE", cues="", correct=False)
@@ -247,6 +254,38 @@ class HelpStageRankTests(unittest.TestCase):
         facts.append({**make_fact(True), "campaign": True})
         progress = ProgressService.badge_progress(facts, [], {"daily_streak": 0, "longest_streak": 0})
         self.assertEqual((progress["sharp_eye"], progress["all_rounder"], progress["real_world_catch"]), (8, 8, 1))
+
+
+class LinkTests(unittest.TestCase):
+    """A link is a warning sign only when it looks fake, never just for being there."""
+
+    def test_genuine_links_are_fine(self):
+        for url in ("https://www.takealot.com/orders", "https://teams.microsoft.com/l/meetup-join/",
+                    "https://www.sars.gov.za/efiling", "https://onedrive.live.com/view", "https://www.up.ac.za/portal"):
+            self.assertEqual(link_problems(url), [], url)
+
+    def test_fake_links_are_caught_with_a_reason(self):
+        cases = {
+            "www.m1crosoft.com": "swapping letters for numbers",
+            "https://paypal.com.secure-login.ru/verify": "PayPal",
+            "http://192.168.10.4/login": "IP address",
+            "https://bit.ly/3xYz": "shortener",
+            "http://microsoft.com@evil.ru/login": "after the '@'",
+            "https://nsfas-portal-za.com/confirm": "NSFAS",
+            "https://customs-clearance-za.info/pay": "South African",
+            "https://parcel-check.xyz/pay": ".xyz",
+        }
+        for url, reason in cases.items():
+            problems = link_problems(url)
+            self.assertTrue(problems and reason in " ".join(problems), (url, problems))
+
+    def test_only_a_fake_link_becomes_the_suspicious_link_clue(self):
+        self.assertNotIn("Suspicious link", ScenarioParser.extract_cues("Track it at https://www.takealot.com/orders"))
+        self.assertIn("Suspicious link", ScenarioParser.extract_cues("Track it at https://takealot-redeliver.co.za"))
+
+    def test_made_up_addresses_are_not_personal_data(self):
+        self.assertEqual(ScenarioParser.find_personal_data("Sent to you@example.com"), [])
+        self.assertEqual(ScenarioParser.personal_details("Mail jadkins@pths209.org"), [("email address", "ja***@pths209.org")])
 
 
 class ParserTests(unittest.TestCase):

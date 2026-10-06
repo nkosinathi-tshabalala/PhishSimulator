@@ -211,9 +211,11 @@ Administrators upload CSV or JSON datasets from the Dataset Management page. The
 
    The original recipient's address is removed from message text (real corpora were collected from one mailbox), and yes/no flag columns some datasets use are not mistaken for a sender.
 3. Normalises message text, sender, subject, labels, category, difficulty and clues. Many obvious clues = Easy, few subtle clues = Hard.
+   A link only counts as the **Suspicious link** clue when it looks fake (`app/utils/links.py`): a letter swapped for a number (`m1crosoft.com`), a brand name on a site that isn't the brand's (`paypal.com.secure-login.ru`), a raw IP address, a link shortener, an `@` trick, a fake "-za" on a non-.za site, bait words such as `secure-` or `-portal`, or an unusual ending such as `.xyz`. A genuine message linking to the real site (`takealot.com`) is not flagged. The same reason is shown to the player in their feedback. A repeated body (some corpora store an email's plain and HTML parts together) is kept once.
 4. Saves each usable row as a dataset record (raw text).
 5. Creates a **Draft** scenario (linked by `dataset_id`) for each labelled row and makes it realistic (`app/datasets/scenario_realism.py`): email links hide behind button text, senders get a display name, emails that mention an attachment get a fake file (risky `.htm/.zip/.docm/.iso` for phishing, `.pdf/.docx/.xlsx` for genuine), and a quality score is calculated. Phishing and genuine messages get the same treatment, so the formatting never gives the answer away.
 6. The admin reviews drafts in **Scenario Review**: preview, automatic checks, QA checklist, then Approve → Activate (or Reject / Archive).
+   The automatic checks include **No real contact details** (email addresses or phone numbers still in the text, partly hidden, plus a person-like sender address; public datasets come from real mailboxes, so these must be replaced with made-up ones) and **Links checked** (each link with its verdict, and a warning when the clues and the links disagree).
 
 Datasets uploaded before these rules existed can be upgraded with **Re-run processing** in the dataset's details (unreviewed drafts are rewritten; reviewed scenarios are only re-scored).
 

@@ -12,11 +12,12 @@ from app.models.email import EmailCampaign
 from app.models.simulation import SimulationAttempt
 from app.adaptive.adaptive_engine import AdaptiveEngine
 from app.datasets.scenario_parser import ScenarioParser
-from app.datasets.scenario_realism import link_targets, quality_score
+from app.datasets.scenario_realism import GENERIC_MAILBOXES, link_targets, quality_score
 from app.schemas.scenario_schema import ScenarioSchema
 from app.utils.clock import iso_utc, local_today, utc_now, utc_start_of
 from app.utils.clues import clue_options
 from app.utils.labels import LEGACY_TITLE_PREFIX, message_label
+from app.utils.links import describe_link, link_problems
 
 
 class ScenarioService:
@@ -39,6 +40,10 @@ class ScenarioService:
         ("no_personal_data", "No real personal data"),
         ("links_safe", "Links made safe"),
     )
+
+    # Words that mark a sender as a team or system mailbox rather than a person
+    ROLE_WORDS = ("hr", "team", "support", "service", "security", "billing", "account", "recruit", "reply", "alert",
+                  "notif", "help", "admin", "info", "office", "sales", "update", "verify", "student", "it-")
 
     # The dataset filter value for scenarios written by hand or loaded with the demo data
     NO_DATASET = "none"
@@ -261,10 +266,55 @@ class ScenarioService:
         }
 
     @staticmethod
+    def _contact_details_check(scenario):
+        """Public datasets come from real mailboxes, so a message can still hold a real person's email address
+        or phone number. Those must be replaced with made-up ones before players see them."""
+        found = ScenarioParser.personal_details(scenario.message or "")
+        sender = ScenarioParser.sender_address(scenario.sender)
+        local = sender.split("@")[0].lower() if "@" in sender else ""
+        # A person-like address (jadkins@..., jaime.adkins@...), not a role mailbox (hr-recruitment@, noreply@)
+        personal_sender = (
+            bool(local) and local not in GENERIC_MAILBOXES
+            and not any(word in local for word in ScenarioService.ROLE_WORDS)
+            and not sender.lower().endswith(ScenarioParser.MADE_UP_DOMAINS)
+        )
+
+        if found:
+            listed = ", ".join(f"{kind} {value}" for kind, value in found)
+            detail = f"Found {listed} in the text. Replace with made-up details, or confirm they are fictional."
+        else:
+            detail = "No email addresses or phone numbers in the message text."
+        if personal_sender:
+            detail += f" The sender ({sender}) came from the dataset: if it is a real person's address, change it."
+        return {"label": "No real contact details", "passed": not found, "detail": detail}
+
+    @staticmethod
+    def _links_check(scenario, is_phishing, cues, links):
+        """Which links look fake and why. A link is only a warning sign when it fails a rule in app/utils/links.py
+        (look-alike name, brand on the wrong site, IP address, shortener, odd ending...), never just for existing."""
+        if not links:
+            note = "No links in the message."
+            if "Suspicious link" in cues:
+                return {"label": "Links checked", "passed": False,
+                        "detail": note + " Remove the 'Suspicious link' clue."}
+            return {"label": "Links checked", "passed": True, "detail": note}
+
+        verdicts = [describe_link(url) for url in dict.fromkeys(links)]
+        any_suspicious = any(link_problems(url) for url in links)
+        detail = "; ".join(verdicts) + ". Clicking never opens a website: it is recorded as trusting the message."
+
+        if is_phishing and "Suspicious link" in cues and not any_suspicious:
+            return {"label": "Links checked", "passed": False, "detail": detail
+                    + " The clues say 'Suspicious link', but no link breaks a rule: check it yourself."}
+        if not is_phishing and any_suspicious:
+            return {"label": "Links checked", "passed": False, "detail": detail
+                    + " A genuine message should not contain a link that looks fake."}
+        return {"label": "Links checked", "passed": True, "detail": detail}
+
+    @staticmethod
     def quality_checks(scenario):
         """Automatic checks that help the admin fill in the QA checklist."""
         message = scenario.message or ""
-        personal_data = ScenarioParser.find_personal_data(message)
         links = link_targets(message)
         is_phishing = scenario.correct_answer.upper() == "REPORT"
         cues = scenario.get_phishing_cues()
@@ -285,22 +335,8 @@ class ScenarioService:
                 "passed": len(message.strip()) >= ScenarioParser.MIN_MESSAGE_LENGTH,
                 "detail": f"{len(message.strip())} characters.",
             },
-            {
-                "label": "No personal data found",
-                "passed": not personal_data,
-                "detail": (
-                    f"Check for real {', '.join(personal_data)}."
-                    if personal_data else "No emails or phone numbers in the body."
-                ),
-            },
-            {
-                "label": "Links are safe",
-                "passed": True,
-                "detail": (
-                    f"{len(links)} link(s). Clicking one never opens a website: it is recorded as trust."
-                    if links else "No links in the message."
-                ),
-            },
+            ScenarioService._contact_details_check(scenario),
+            ScenarioService._links_check(scenario, is_phishing, cues, links),
             {
                 "label": "Quality score",
                 "passed": (scenario.quality_score or 0) >= 70,
