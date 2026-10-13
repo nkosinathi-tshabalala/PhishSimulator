@@ -58,12 +58,13 @@ def get_scenarios():
     filters = {
         "simulation_type": request.args.get("simulation_type"),
         "status": request.args.get("status"),
-        "dataset_id": request.args.get("dataset_id", type=int),
+        "dataset_id": request.args.get("dataset_id"),  # an id, or "none" for scenarios not from a dataset
         "difficulty": request.args.get("difficulty"),
         "category": request.args.get("category"),
         "answer": request.args.get("answer"),
         "search": request.args.get("search"),
         "min_quality": request.args.get("min_quality", type=int),
+        "when": request.args.get("when"),
         "sort": request.args.get("sort"),
         "order": request.args.get("order"),
     }

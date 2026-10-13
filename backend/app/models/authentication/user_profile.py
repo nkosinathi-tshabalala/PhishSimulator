@@ -37,6 +37,18 @@ class UserProfile(db.Model):
     nullable=False
     )
 
+    # Opt-in to simulated phishing emails in the player's real inbox; withdrawable at any time
+    campaign_consent = db.Column(
+        db.Boolean,
+        nullable=False,
+        default=False
+    )
+
+    campaign_consent_at = db.Column(
+        db.DateTime,
+        nullable=True
+    )
+
     updated_at = db.Column(
         db.DateTime,
         default=datetime.utcnow,

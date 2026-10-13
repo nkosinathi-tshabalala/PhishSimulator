@@ -143,10 +143,10 @@ export function CaughtPage({ variant }: { variant: "caught" | "reported" }) {
     window.location.href = info ? `/?login=${encodeURIComponent(info.email)}` : "/";
   };
 
-  if (!loaded) return <div className="min-h-screen bg-[#0a0e14]" />;
+  if (!loaded) return <div className="min-h-screen bg-[#0b1221]" />;
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-6 bg-[#0a0e14]">
+    <div className="min-h-screen flex items-center justify-center p-6 bg-[#0b1221]">
       <div className={`max-w-lg w-full rounded-2xl border bg-linear-to-br to-slate-900/40 p-8 text-center ${tone.card}`}>
         <div className={`w-16 h-16 mx-auto rounded-full flex items-center justify-center ${tone.badge}`}>
           <outcome.icon className={`w-8 h-8 ${tone.icon}`} />

@@ -61,6 +61,7 @@ class AuthService:
             age=int(data["age"]),
             it_background=bool(data["it_background"]),
             occupation=data["occupation"],
+            **AuthService._consent_fields(data.get("campaign_consent")),
         ))
         db.session.commit()
         return True, "Registration successful."
@@ -172,7 +173,7 @@ class AuthService:
 
     @staticmethod
     def update_profile(data):
-        """Save a player's name, age, occupation and IT background."""
+        """Save a player's name, age, occupation, IT background and campaign consent."""
         user = db.session.get(User, int(get_jwt_identity()))
         if not user or not user.player or not user.player.profile:
             return False, "Only players have profile details to edit.", None
@@ -192,6 +193,11 @@ class AuthService:
         profile.age = int(data["age"])
         profile.it_background = bool(data.get("it_background"))
         profile.occupation = occupation
+        if "campaign_consent" in data:
+            consent = bool(data["campaign_consent"])
+            if consent != profile.campaign_consent:
+                for name, value in AuthService._consent_fields(consent).items():
+                    setattr(profile, name, value)
         db.session.commit()
         return True, "Profile updated successfully.", AuthService._details(user, player, profile)
 
@@ -237,4 +243,12 @@ class AuthService:
             "age": profile.age if profile else None,
             "it_background": profile.it_background if profile else None,
             "occupation": profile.occupation.value if profile else None,
+            "campaign_consent": profile.campaign_consent if profile else None,
+            "campaign_consent_at": profile.campaign_consent_at.isoformat() if profile and profile.campaign_consent_at else None,
         }
+
+    @staticmethod
+    def _consent_fields(consent):
+        """Profile fields for a campaign-email consent choice: when it was given, or none once withdrawn."""
+        consent = bool(consent)
+        return {"campaign_consent": consent, "campaign_consent_at": datetime.utcnow() if consent else None}

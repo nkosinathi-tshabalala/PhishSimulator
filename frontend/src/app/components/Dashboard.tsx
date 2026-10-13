@@ -2,8 +2,6 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 import {
-  Activity,
-  AlertTriangle,
   Award,
   ChevronRight,
   ClipboardList,
@@ -24,12 +22,13 @@ import { Skeleton } from "./ui/skeleton";
 import AnalyticsService from "../../services/analyticsService";
 import {
   BADGE_ICONS,
-  BadgeGrid,
+  BadgeShowcase,
   DailyGoalRing,
+  ProfileStats,
   SkillRankCard,
-  StreakFlame,
   XpProgress,
 } from "./progress/ProgressWidgets";
+import { openProgressTab } from "./Analytics";
 import { goalPercent, pickGoals, type Goal, type GoalKind } from "./progress/goals";
 import { ChannelBadge, DifficultyBadge } from "./visuals";
 import { CampaignInbox, CampaignTag, formatXp } from "./CampaignInbox";
@@ -59,6 +58,7 @@ interface PlayerPerformance extends PlayerProgress {
   total_attempts: number;
   correct_attempts: number;
   baseline_score: number | null;
+  new_baselines?: number;
   difficulty: string;
   adaptive_reason: string;
   recent_attempts: Array<{
@@ -91,7 +91,7 @@ function greeting() {
   return "Good evening";
 }
 
-/** Player home page: level, daily goal, stats, goals, rank and badges. */
+/** Player home page: what to do next (goals, training, inbox) and a quick look at progress. */
 export function Dashboard({ user, onNavigate }: DashboardProps) {
   const [performance, setPerformance] = useState<PlayerPerformance | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -118,13 +118,17 @@ export function Dashboard({ user, onNavigate }: DashboardProps) {
 
       <CampaignInbox />
 
-      <TrainingCards onNavigate={onNavigate} />
-
       {isLoading ? (
         <DashboardSkeletons />
       ) : performance && (
         <>
-          <StatCards performance={performance} />
+          <ProfileStats
+            progress={performance}
+            completed={performance.total_attempts}
+            onOpen={(tab) => openProgressTab(tab, onNavigate)}
+          />
+
+          <TrainingCards onNavigate={onNavigate} />
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             <GoalsPanel performance={performance} onNavigate={onNavigate} />
@@ -143,9 +147,14 @@ export function Dashboard({ user, onNavigate }: DashboardProps) {
             icon={Trophy}
             iconClass="text-amber-400"
             title="Badges"
-            description={`${performance.badges.filter((badge) => badge.earned).length} of ${performance.badges.length} earned. Hover or tap one to see how to earn it.`}
+            description={`${performance.badges.filter((badge) => badge.earned).length} of ${performance.badges.length} collected`}
+            action={(
+              <Button variant="ghost" size="sm" onClick={() => openProgressTab("badges", onNavigate)}>
+                View all
+              </Button>
+            )}
           >
-            <BadgeGrid badges={performance.badges} />
+            <BadgeShowcase badges={performance.badges} />
           </Panel>
         </>
       )}
@@ -153,7 +162,8 @@ export function Dashboard({ user, onNavigate }: DashboardProps) {
   );
 }
 
-/** Card with the same header layout everywhere on this page, so panels line up. */
+/** Card with the same header layout everywhere on this page, so panels line up.
+ * Inside a grid the cards stretch to the tallest one in the row on their own. */
 function Panel({ icon: Icon, iconClass, title, description, action, className = "", children }: {
   icon: typeof Target;
   iconClass: string;
@@ -164,7 +174,7 @@ function Panel({ icon: Icon, iconClass, title, description, action, className = 
   children: ReactNode;
 }) {
   return (
-    <Card className={`h-full gap-4 ${className}`}>
+    <Card className={`gap-4 ${className}`}>
       <CardHeader className="flex flex-row items-start justify-between gap-3">
         <div className="space-y-1.5 min-w-0">
           <CardTitle className="text-base flex items-center gap-2">
@@ -204,15 +214,11 @@ function WelcomeBanner({ firstName, performance, isLoading, onNavigate }: {
             {isLoading
               ? "Loading your progress..."
               : performance?.total_attempts
-                ? `You've made ${performance.total_attempts} decisions. Next up: ${performance.difficulty} scenarios.`
+                ? `You've made ${performance.total_attempts} decisions at ${performance.overall_accuracy}% accuracy. Next up: ${performance.difficulty} scenarios.`
                 : "Ready for your first scenario? Spot the phish before it spots you."}
           </p>
           {performance && (
             <div className="flex flex-wrap items-center gap-2 mt-3">
-              <span className="inline-flex items-center gap-1 rounded-full bg-black/25 px-3 py-1 text-xs text-white">
-                <StreakFlame days={performance.daily_streak} className="text-xs" />
-                day streak
-              </span>
               <DifficultyBadge difficulty={performance.difficulty} title={performance.adaptive_reason} />
             </div>
           )}
@@ -304,55 +310,6 @@ function TrainingCards({ onNavigate }: { onNavigate: (page: string) => void }) {
           </div>
           <ChevronRight className="w-4 h-4 opacity-60 transition-transform group-hover:translate-x-0.5" />
         </button>
-      ))}
-    </div>
-  );
-}
-
-/** Accuracy, missed phishing, false alarms and risky clicks. */
-function StatCards({ performance }: { performance: PlayerPerformance }) {
-  const stats = [
-    {
-      label: "Accuracy",
-      value: `${performance.overall_accuracy}%`,
-      hint: `${performance.correct_attempts} of ${performance.total_attempts} correct`,
-      icon: Target,
-      tone: "from-sky-500/25 to-sky-500/5 text-sky-300",
-    },
-    {
-      label: "Missed phishing",
-      value: `${performance.false_negative_rate}%`,
-      hint: "Phishing you marked safe",
-      icon: AlertTriangle,
-      tone: "from-red-500/25 to-red-500/5 text-red-300",
-    },
-    {
-      label: "False alarms",
-      value: `${performance.false_positive_rate}%`,
-      hint: "Safe messages you reported",
-      icon: Activity,
-      tone: "from-amber-500/25 to-amber-500/5 text-amber-300",
-    },
-    {
-      label: "Risky clicks",
-      value: performance.phishing_links_clicked + performance.malicious_files_opened,
-      hint: `${performance.phishing_links_clicked} links, ${performance.malicious_files_opened} files. Aim for zero`,
-      icon: Flame,
-      tone: "from-orange-500/25 to-orange-500/5 text-orange-300",
-    },
-  ];
-
-  return (
-    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-      {stats.map((stat) => (
-        <div key={stat.label} className={`rounded-xl border border-border bg-linear-to-br p-4 ${stat.tone}`}>
-          <div className="flex items-center justify-between">
-            <span className="text-sm text-foreground">{stat.label}</span>
-            <stat.icon className="w-4 h-4" />
-          </div>
-          <div className="mt-2 text-2xl font-bold text-white">{stat.value}</div>
-          <div className="text-xs text-muted-foreground mt-0.5 truncate" title={stat.hint}>{stat.hint}</div>
-        </div>
       ))}
     </div>
   );
@@ -518,8 +475,8 @@ function RecentActivity({ performance, onNavigate }: {
 function DashboardSkeletons() {
   return (
     <>
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {[1, 2, 3, 4].map((item) => <Skeleton key={item} className="h-28 rounded-xl" />)}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {[1, 2, 3, 4].map((item) => <Skeleton key={item} className="h-24 rounded-xl" />)}
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {[1, 2, 3].map((item) => <Skeleton key={item} className="h-80 rounded-xl" />)}

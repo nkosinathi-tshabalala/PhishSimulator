@@ -22,11 +22,14 @@ export interface Goal {
 export interface GoalInput extends Progress {
   total_attempts: number;
   baseline_score: number | null;
+  /** Switched-on baseline assessments for the player's role that they have not taken yet. */
+  new_baselines?: number;
 }
 
-// Open-ended ladders: after the last step the target keeps rising, so there is always a next goal
-const STREAK_MILESTONES = [3, 7, 14, 30, 60, 100];
-const DECISION_MILESTONES = [25, 50, 100, 250, 500, 1000];
+// Open-ended ladders that take over once every streak or milestone badge is earned,
+// so the target keeps rising and there is always a next goal (the badges cover the earlier steps)
+const STREAK_MILESTONES = [60, 100, 200, 365];
+const DECISION_MILESTONES = [250, 500, 1000];
 // Mirrors ProgressService.GUARDIAN_MAX_MISSED_PERCENT on the backend
 const GUARDIAN_MAX_MISSED = 5;
 
@@ -52,6 +55,13 @@ export function buildGoals(player: GoalInput): Goal[] {
     goals.push({
       id: "quiz", kind: "quiz", title: "Take the baseline quiz",
       detail: "5 minutes. Sets your starting level", progress: 0, target: 1, action: "quiz",
+    });
+  } else if ((player.new_baselines ?? 0) > 0) {
+    // The admin switched on another baseline assessment for this player's role
+    const count = player.new_baselines ?? 0;
+    goals.push({
+      id: "quiz", kind: "quiz", title: count === 1 ? "A new baseline assessment is ready" : `${count} new baseline assessments are ready`,
+      detail: "Written for your role. About 5 minutes each", progress: 0, target: count, action: "quiz",
     });
   }
 
@@ -98,26 +108,33 @@ export function buildGoals(player: GoalInput): Goal[] {
     });
   }
 
-  for (const badge of player.badges.filter((item) => !item.earned)) {
+  // Real-World Catch needs a campaign email, which players cannot start themselves, so it is not a goal
+  for (const badge of player.badges.filter((item) => !item.earned && item.key !== "real_world_catch")) {
     goals.push({
       id: `badge-${badge.key}`, kind: "badge", title: `Unlock ${badge.name}`, detail: badge.description,
       progress: badge.progress, target: badge.target, badgeKey: badge.key, action: "simulations",
     });
   }
 
-  const streakTarget = nextMilestone(player.daily_streak, STREAK_MILESTONES, 50);
-  goals.push({
-    id: "streak", kind: "streak", title: `${streakTarget}-day streak`,
-    detail: "Practise on consecutive days", progress: player.daily_streak, target: streakTarget,
-    label: `${player.daily_streak} / ${streakTarget} days`,
-  });
+  const allEarned = (group: string) => player.badges.filter((badge) => badge.group === group).every((badge) => badge.earned);
 
-  const decisionsTarget = nextMilestone(player.total_attempts, DECISION_MILESTONES, 500);
-  goals.push({
-    id: "decisions", kind: "decisions", title: `Make ${decisionsTarget} decisions`,
-    detail: "Total scenarios answered", progress: player.total_attempts, target: decisionsTarget,
-    action: "simulations",
-  });
+  if (allEarned("streak")) {
+    const streakTarget = nextMilestone(player.daily_streak, STREAK_MILESTONES, 100);
+    goals.push({
+      id: "streak", kind: "streak", title: `${streakTarget}-day streak`,
+      detail: "Practise on consecutive days", progress: player.daily_streak, target: streakTarget,
+      label: `${player.daily_streak} / ${streakTarget} days`,
+    });
+  }
+
+  if (allEarned("milestone")) {
+    const decisionsTarget = nextMilestone(player.total_attempts, DECISION_MILESTONES, 500);
+    goals.push({
+      id: "decisions", kind: "decisions", title: `Make ${decisionsTarget} decisions`,
+      detail: "Total scenarios answered", progress: player.total_attempts, target: decisionsTarget,
+      action: "simulations",
+    });
+  }
 
   return goals.filter((goal) => goal.progress < goal.target);
 }

@@ -1,4 +1,4 @@
-# Database table: one attempt at the baseline quiz
+# Database table: one player's attempt at a baseline assessment
 
 from datetime import datetime
 
@@ -36,6 +36,18 @@ class BaselineAssessment(db.Model):
         db.Float,
         default=0.0,
         nullable=False
+    )
+
+    # Which baseline assessment was taken (empty for attempts from before assessments had names)
+    template_id = db.Column(
+        db.Integer,
+        db.ForeignKey("baseline_template.template_id"),
+        nullable=True
+    )
+
+    template = db.relationship(
+        "BaselineTemplate",
+        back_populates="assessments"
     )
 
     player = db.relationship(

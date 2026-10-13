@@ -1,7 +1,7 @@
 // Page layout: sidebar on the left, page on the right
 
 import { useEffect, useState } from "react";
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { Fish, Menu } from "lucide-react";
 import type { SidebarLayoutProps } from "./NavSidebar";
 
@@ -9,7 +9,8 @@ interface AppLayoutProps {
   // Draws the sidebar; the layout says whether it is collapsed and how to toggle it
   renderSidebar: (layout: SidebarLayoutProps) => ReactNode;
   currentPage: string;
-  backgroundImage: string;
+  /** Background photo for this area (recoloured into the theme), e.g. "/assets/backdrop-admin.webp". */
+  backdrop: string;
   children: ReactNode;
 }
 
@@ -25,7 +26,7 @@ function readCollapsed() {
 }
 
 /** Sidebar plus page; on phones the sidebar becomes a slide-in menu. */
-export function AppLayout({ renderSidebar, currentPage, backgroundImage, children }: AppLayoutProps) {
+export function AppLayout({ renderSidebar, currentPage, backdrop, children }: AppLayoutProps) {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(readCollapsed);
 
@@ -64,7 +65,7 @@ export function AppLayout({ renderSidebar, currentPage, backgroundImage, childre
       )}
 
       <div className="flex-1 flex flex-col min-w-0">
-        <div className="md:hidden flex items-center gap-3 border-b border-white/10 bg-[#0a101c] px-4 py-3">
+        <div className="md:hidden flex items-center gap-3 border-b border-sidebar-border bg-sidebar px-4 py-3">
           <button
             type="button"
             aria-label="Open menu"
@@ -73,19 +74,13 @@ export function AppLayout({ renderSidebar, currentPage, backgroundImage, childre
           >
             <Menu className="w-5 h-5" />
           </button>
-          <Fish className="w-5 h-5 text-sky-400" />
+          <Fish className="w-5 h-5 text-cyan-300" />
           <span className="font-bold text-sm tracking-[0.08em] text-white">PHISHSIMULATOR</span>
         </div>
 
         <main
-          className="flex-1 overflow-auto"
-          style={{
-            backgroundColor: "#0a0e14",
-            backgroundImage: `linear-gradient(rgba(10,14,20,0.93), rgba(10,14,20,0.96)), url('${backgroundImage}')`,
-            backgroundSize: "cover",
-            backgroundPosition: "center",
-            backgroundAttachment: "fixed",
-          }}
+          className="app-backdrop flex-1 overflow-auto"
+          style={{ "--backdrop-image": `url('${backdrop}')` } as CSSProperties}
         >
           {children}
         </main>

@@ -5,6 +5,7 @@ import { Clock, LogIn, LogOut, ShieldCheck } from "lucide-react";
 import { Button } from "./ui/button";
 import AuthService from "../../services/authService";
 import { SESSION_EXPIRED_EVENT } from "../../services/api";
+import { getToken } from "../../services/session";
 
 interface SessionWatcherProps {
   onSignInAgain: () => void;
@@ -18,7 +19,7 @@ const ACTIVE_WINDOW_MS = 5 * 60 * 1000;
 
 /** Seconds until the stored login expires (0 if there is none). */
 function secondsLeft() {
-  const token = localStorage.getItem("access_token");
+  const token = getToken();
   if (!token) return 0;
   try {
     const payload = JSON.parse(atob(token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")));

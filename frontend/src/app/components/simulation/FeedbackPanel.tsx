@@ -55,12 +55,6 @@ export function FeedbackPanel({ result, streak, onNext, onViewProgress }: Feedba
 
       {feedback.trap && feedback.trap_warning && <PhishedAlert trap={feedback.trap} warning={feedback.trap_warning} />}
 
-      {!result.correct && (
-        <p className="text-xs text-muted-foreground">
-          Wrong answers earn 0 XP, but you never lose XP. Read the clues below and try the next one.
-        </p>
-      )}
-
       <div className="grid md:grid-cols-2 gap-4">
         <ClueList
           title="Clues you spotted"
@@ -74,12 +68,6 @@ export function FeedbackPanel({ result, streak, onNext, onViewProgress }: Feedba
           empty="None: you found every clue on offer."
         />
       </div>
-
-      {feedback.wrong_picks.length > 0 && (
-        <p className="text-xs text-amber-300">
-          Decoys you picked (not true for this message): {feedback.wrong_picks.join(", ")}
-        </p>
-      )}
 
       <div className="rounded-md bg-muted/60 p-3 space-y-2 text-sm">
         <p className="flex gap-2">

@@ -74,6 +74,17 @@ class StandingTests(unittest.TestCase):
     def test_equal_scores_share_a_place(self):
         self.assertEqual(ProgressService.place_in([(80, 50), (80, 50)], (80, 50)), 1)
 
+    def test_unrated_players_count_but_rank_below_every_rated_player(self):
+        scores = [(True, 40, 10), (True, 90, 300), (False, 0, 900), (False, 0, 50)]
+        self.assertEqual(ProgressService.place_in(scores, (True, 40, 10)), 2)
+        self.assertEqual(ProgressService.place_in(scores, (False, 0, 900)), 3)
+        self.assertEqual(ProgressService.place_in(scores, (False, 0, 50)), 4)
+
+    def test_top_percent_is_small_for_the_best_players(self):
+        self.assertEqual(ProgressService.top_percent(1, 24), 5)
+        self.assertEqual(ProgressService.top_percent(12, 24), 50)
+        self.assertEqual(ProgressService.top_percent(21, 24), 88)
+
 
 if __name__ == "__main__":
     unittest.main()

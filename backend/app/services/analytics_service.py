@@ -2,7 +2,7 @@
 
 import csv
 import io
-from datetime import datetime, time, timedelta, timezone
+from datetime import date, timedelta, timezone
 from math import ceil
 
 from sqlalchemy import func
@@ -19,9 +19,11 @@ from app.models.simulation import SimulationAttempt, SimulationSession, UserActi
 from app.adaptive.adaptive_engine import AdaptiveEngine
 from app.analytics import FeedbackGenerator, trends
 from app.analytics.filters import MetricFilters, category_options
+from app.services.baseline_service import BaselineService
 from app.services.campaign_service import CampaignService
 from app.services.progress_service import ProgressService
 from app.services.scenario_service import ScenarioService
+from app.utils.clock import local_date, local_today, utc_start_of
 
 
 # How many of the player's latest decisions My Progress lists
@@ -50,7 +52,7 @@ class AnalyticsService:
     @staticmethod
     def get_admin_dashboard_stats():
         """Headline numbers for the admin dashboard."""
-        today_start = datetime.combine(datetime.today().date(), time.min)
+        today_start = utc_start_of(local_today())
         total_attempts = db.session.query(func.count(SimulationAttempt.attempt_id)).scalar() or 0
         correct_attempts = (
             db.session.query(func.count(SimulationAttempt.attempt_id))
@@ -127,7 +129,7 @@ class AnalyticsService:
             scenario = db.session.get(Scenario, scenario_id)
             if scenario:
                 most_difficult = {
-                    "title": scenario.title,
+                    "title": ScenarioService.display_title(scenario),
                     "category": scenario.category,
                     "difficulty": scenario.difficulty,
                     "success_rate": round((result["correct"] / result["attempts"]) * 100),
@@ -310,7 +312,7 @@ class AnalyticsService:
         false_negative_rate = round((false_negatives / total_attempts) * 100) if total_attempts else 0
         difficulty, adaptive_reason = AdaptiveEngine.recommend_difficulty(
             all_attempts,
-            baseline.score if baseline else None,
+            BaselineService.starting_score(player.player_id, all_attempts),
         )
         progress = ProgressService.summary(all_attempts)
         # Private position among all players (only "#N of M", no one else's details)
@@ -320,7 +322,7 @@ class AnalyticsService:
         for attempt in attempts[:RECENT_LIMIT]:
             scenario = db.session.get(Scenario, attempt.scenario_id)
             recent_attempts.append({
-                "scenario": ScenarioService.display_title(scenario) if scenario else "Deleted scenario",
+                "scenario": ScenarioService.player_label(scenario) if scenario else "Deleted scenario",
                 "type": attempt.simulation_type.upper(),
                 "source": "CAMPAIGN" if attempt.campaign_recipient_id else "TRAINING",
                 "correct": attempt.correct,
@@ -341,9 +343,13 @@ class AnalyticsService:
             "phishing_links_clicked": trap_counts.get("CLICKED_LINK", 0),
             "malicious_files_opened": trap_counts.get("OPENED_ATTACHMENT", 0),
             "total_attempts": total_attempts,
+            # Every simulation ever completed, whatever the filters (for the stats strip)
+            "completed_simulations": len(all_attempts),
             "correct_attempts": correct_attempts,
             "baseline_score": round(baseline.score) if baseline else None,
             "baseline_completed_at": AnalyticsService._to_utc_isoformat(baseline.completed_at) if baseline else None,
+            # Switched-on baseline assessments for the player's role that they have not taken yet
+            "new_baselines": BaselineService.count_new_for(player),
             "difficulty": difficulty,
             "adaptive_reason": adaptive_reason,
             **progress,
@@ -355,6 +361,44 @@ class AnalyticsService:
             "by_category": trends.by_category(attempts, AnalyticsService._scenario_categories()),
             "category_options": category_options(),
         }
+
+    @staticmethod
+    def get_player_activity(user_id, year=None):
+        """Activity per day for one year, for the calendar on My Progress: decisions in training
+        and campaign emails, plus finished baseline quizzes."""
+        player = Player.query.filter_by(user_id=user_id).first()
+        if not player:
+            return None
+
+        this_year = local_today().year
+        first_year = min(local_date(player.user.created_at).year, this_year) if player.user else this_year
+        year = min(max(year or this_year, first_year), this_year)
+        start, end = utc_start_of(date(year, 1, 1)), utc_start_of(date(year + 1, 1, 1))
+
+        days = {}
+        AnalyticsService._count_by_day(days, db.session.query(SimulationAttempt.attempted_at).filter(
+            SimulationAttempt.player_id == player.player_id,
+            SimulationAttempt.attempted_at >= start, SimulationAttempt.attempted_at < end,
+        ))
+        AnalyticsService._count_by_day(days, db.session.query(BaselineAssessment.completed_at).filter(
+            BaselineAssessment.player_id == player.player_id,
+            BaselineAssessment.completed_at >= start, BaselineAssessment.completed_at < end,
+        ))
+        return {
+            "year": year,
+            "first_year": first_year,
+            "last_year": this_year,
+            "days": days,
+            "total": sum(days.values()),
+            "active_days": len(days),
+        }
+
+    @staticmethod
+    def _count_by_day(days, timestamps):
+        """Add one to the day (YYYY-MM-DD) of each timestamp."""
+        for (moment,) in timestamps:
+            key = local_date(moment).isoformat()
+            days[key] = days.get(key, 0) + 1
 
     @staticmethod
     def get_monitored_user(user_id):
@@ -501,14 +545,14 @@ class AnalyticsService:
         """New accounts per day inside the chart window, for the activity chart."""
         first_day = last_day - timedelta(days=days - 1)
         query = db.session.query(User.created_at).filter(
-            User.created_at >= datetime.combine(first_day, time.min),
-            User.created_at < datetime.combine(last_day + timedelta(days=1), time.min),
+            User.created_at >= utc_start_of(first_day),
+            User.created_at < utc_start_of(last_day + timedelta(days=1)),
         )
         if filters.group:
             query = query.filter(User.user_id.in_(filters.group_users()))
         counts = {}
         for (created_at,) in query:
-            counts[created_at.date()] = counts.get(created_at.date(), 0) + 1
+            counts[local_date(created_at)] = counts.get(local_date(created_at), 0) + 1
         return counts
 
     @staticmethod

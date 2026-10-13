@@ -1,12 +1,13 @@
 // API calls for datasets (admin only)
 
 import { apiRequest } from "./api";
+import { getToken } from "./session";
 
 /** API calls for datasets. */
 class DatasetService {
   /** Every uploaded dataset. */
   async getDatasets() {
-    const token = localStorage.getItem("access_token");
+    const token = getToken();
 
     return await apiRequest(
       "/datasets",
@@ -18,7 +19,7 @@ class DatasetService {
 
   /** Upload a CSV or JSON dataset. */
   async uploadDataset(formData: FormData) {
-    const token = localStorage.getItem("access_token");
+    const token = getToken();
 
     return await apiRequest(
       "/datasets/upload",
@@ -30,7 +31,7 @@ class DatasetService {
 
   /** Delete a dataset. */
   async deleteDataset(datasetId: number) {
-    const token = localStorage.getItem("access_token");
+    const token = getToken();
 
     return await apiRequest(
       `/datasets/${datasetId}`,
@@ -42,7 +43,7 @@ class DatasetService {
 
   /** Re-apply the realism rules to a dataset's drafts. */
   async reprocessDataset(datasetId: number) {
-    const token = localStorage.getItem("access_token");
+    const token = getToken();
 
     return await apiRequest(
       `/datasets/${datasetId}/reprocess`,
@@ -54,7 +55,7 @@ class DatasetService {
 
   /** One dataset's details. */
   async getDataset(datasetId: number) {
-    const token = localStorage.getItem("access_token");
+    const token = getToken();
 
     return await apiRequest(
       `/datasets/${datasetId}`,

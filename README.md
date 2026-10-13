@@ -10,9 +10,9 @@ PhishSimulator is a scenario-based, gamified phishing-awareness trainer built on
 | **A · Approve** | Dataset upload → quality report (reject if poor) → **Draft** scenarios → admin preview + 6-item QA checklist → **Approved** → **Active**. Only Active scenarios reach players. | `services/dataset_service.py`, `services/scenario_service.py`, `ScenarioManagementPage.tsx` |
 | **T · Test** | Inspect a realistic message: sender display names hide the real address until opened, link text hides the real address until hovered, and emails may carry an attachment. Clicking a link or opening a file counts as trusting the message. Then Report / Mark Safe, then "Why?": 6 clue buttons (always 3 warning signs + 3 trust signals, real clues mixed with decoys) plus an optional written reason matched with regex keywords. Each decoy picked cancels one correct clue, so guessing doesn't pay. | `utils/clues.py`, `services/simulation_service.py`, `simulation/DecisionPanel.tsx` |
 | **C · Correct** | Instant feedback: clues spotted vs missed, a threat explanation, and a safe-behaviour tip. | `analytics/feedback_generator.py`, `simulation/FeedbackPanel.tsx` |
-| **H · Help** | XP = (Easy 10 / Medium 20 / Hard 30 + 5 per real clue, max 15) × 1.29^(level−1). Each level needs ×1.5 more XP (max level 10). Private skill rank from weighted accuracy on the last 20 attempts (Easy ×1, Medium ×1.5, Hard ×2): Recruit, Spotter (50), Analyst (65), Defender (80), Guardian (90+ and ≤5% missed phishing). Badges (with progress bars): First Catch, Clue Hunter, Category Master, Zero Misses, Comeback. A daily goal, a practice-day streak, and **Review mistakes** to retry scenarios answered wrong. | `services/progress_service.py`, `progress/ProgressWidgets.tsx` |
+| **H · Help** | XP = (Easy 10 / Medium 20 / Hard 30 + 5 per real clue, max 15) × 1.29^(level−1). Each level needs ×1.5 more XP (max level 10). Private skill rank from weighted accuracy on the last 20 attempts (Easy ×1, Medium ×1.5, Hard ×2): Recruit, Spotter (50), Analyst (65), Defender (80), Guardian (90+ and ≤5% missed phishing). 15 badges in three groups (streaks, milestones, skills; see "Gamification" below), a daily goal, current and best practice-day streaks, a yearly activity calendar, a private position among all players, and **Review mistakes** to retry scenarios answered wrong. | `services/progress_service.py`, `progress/ProgressWidgets.tsx` |
 
-**Adaptive loop:** under 5 attempts the baseline sets the level. After that, the last 5 answers step the difficulty one level up (80%+), one level down (under 60%), or keep it. Scenario choice skips the last 2 categories, prefers the player's job group, prefers unseen scenarios, and never repeats within 5.
+**Adaptive loop:** under 5 attempts the baseline sets the level. After that, every 5 answers at a level step the difficulty one level up (80%+), one level down (under 60%), or keep it; after a change the new level gets 5 fresh answers before the next check. Campaign emails don't move the difficulty. Scenario choice skips the last 2 categories, prefers the player's job group, prefers unseen scenarios, and never repeats within 5.
 
 ## Main capabilities
 
@@ -28,7 +28,8 @@ PhishSimulator is a scenario-based, gamified phishing-awareness trainer built on
 - Every table and list has a search, filters and click-to-sort columns (click once for ascending, again for descending), and every row opens its details.
 - The metrics pages (admin **System Analytics** and the player's **My Progress**) filter by date range (7, 30 or 90 days, all time, or custom dates), channel, difficulty, category, training vs campaign emails and, for admins, group (students, employees, other). XP, level and badges always count the full history.
 - Skeleton loaders and toast notifications (shadcn/ui + Sonner) throughout.
-- Private progress: XP, levels, level multiplier, badges and skill rank, plus your position among all rated players (e.g. **#11 of 27, top 41%**). Players only ever see their own position, never another player's name or score.
+- Private progress, inspired by platforms like TryHackMe: a stats strip (rank, badges, streak, simulations completed), 15 badges, current and best streaks, a yearly activity calendar, XP, levels and the skill rank, plus your position among all players (e.g. **#11 of 41, top 27%**; players with fewer than 10 decisions are not rated yet and sit below everyone who is). Players only ever see their own position, never another player's name or score.
+- **Home** is about what to do next (daily goal, training, goals, campaign inbox, recent decisions); **My Progress** is about how you are doing, in three tabs: *Overview* (activity calendar, skill rank, level), *Performance* (filtered metrics and charts) and *Badges* (the full collection).
 - Administrator dashboard, user monitoring, baseline-question management and analytics, with tinted stat cards throughout.
 - Email phishing campaigns: send a real training email through Gmail to your own inboxes — from an approved scenario or a custom email you write, phishing or genuine, with a link and/or a look-alike attachment — then track opens, clicks, attachment opens, reports and "ignored" (no action inside the response window). Once a recipient acts, the result is locked; once every recipient's result is final, the campaign shows as **Completed**. Every result emails the recipient branded feedback (good or bad) and awards or deducts XP, and each result counts as a real decision in the player's stats, streak, rank and Home **Inbox**.
 - Local reset and realistic demo-data generation utilities.
@@ -180,9 +181,9 @@ cd backend
 `seed_demo.py` loads a fixed, reproducible dataset (random seed 2026). The scenario and baseline-question content lives in `backend/app/seed/*.json`; players, history and campaigns are generated. It creates:
 
 - **41 active scenarios**: South African email and SMS messages, 23 phishing and 18 legitimate, across all 8 categories and 3 difficulties, with catalogue clue names. Four carry a look-alike attachment. (Uploaded datasets are **not** part of the seed; you add your own from the Datasets page.)
-- **5 baseline questions** and an admin from `ADMIN_EMAIL` / `ADMIN_PASSWORD` in `backend/.env` (default **admin@phishsimulator.com** / **Admin#2026**).
+- **3 baseline questions** (kept short for demos; add more on the Baseline page) and an admin from `ADMIN_EMAIL` / `ADMIN_PASSWORD` in `backend/.env` (default **admin@phishsimulator.com** / **Admin#2026**).
 - An **owner player** for your own address only if `OWNER_EMAIL` is set. Leave it blank to register yourself in the app instead.
-- **40 test players** with realistic South African names and `@phishsimulator.test` emails, each with a profile, a keyword-marked baseline, login and training sessions, and a practice history spread over the last 30 days so the trends and metrics look real. Accuracy falls with difficulty (Easy > Medium > Hard) and improves slightly over time.
+- **40 test players** with realistic South African names and `@phishsimulator.test` emails, each with a profile, a keyword-marked baseline, login and training sessions, and about four months of practice. Each player has a habit, from never trained through occasional and weekly to daily, so streaks, badges, the activity calendar and the trends look real (a few dedicated players hold month-long streaks). Accuracy falls with difficulty (Easy > Medium > Hard) and improves slightly over time.
 - **Two finished campaigns** to the owner's address (one reported phishing, one clicked genuine), when an owner player is created, so the campaign metrics and the player Inbox show data.
 
 Every player uses the password `Player#2026`. Override defaults with the `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `DEMO_PASSWORD` and `OWNER_EMAIL` environment variables.
@@ -210,9 +211,12 @@ Administrators upload CSV or JSON datasets from the Dataset Management page. The
 
    The original recipient's address is removed from message text (real corpora were collected from one mailbox), and yes/no flag columns some datasets use are not mistaken for a sender.
 3. Normalises message text, sender, subject, labels, category, difficulty and clues. Many obvious clues = Easy, few subtle clues = Hard.
+   A link only counts as the **Suspicious link** clue when it looks fake (`app/utils/links.py`): a letter swapped for a number (`m1crosoft.com`), a brand name on a site that isn't the brand's (`paypal.com.secure-login.ru`), a raw IP address, a link shortener, an `@` trick, a fake "-za" on a non-.za site, bait words such as `secure-` or `-portal`, or an unusual ending such as `.xyz`. A genuine message linking to the real site (`takealot.com`) is not flagged. The same reason is shown to the player in their feedback. A repeated body (some corpora store an email's plain and HTML parts together) is kept once.
 4. Saves each usable row as a dataset record (raw text).
 5. Creates a **Draft** scenario (linked by `dataset_id`) for each labelled row and makes it realistic (`app/datasets/scenario_realism.py`): email links hide behind button text, senders get a display name, emails that mention an attachment get a fake file (risky `.htm/.zip/.docm/.iso` for phishing, `.pdf/.docx/.xlsx` for genuine), and a quality score is calculated. Phishing and genuine messages get the same treatment, so the formatting never gives the answer away.
 6. The admin reviews drafts in **Scenario Review**: preview, automatic checks, QA checklist, then Approve → Activate (or Reject / Archive).
+   The automatic checks include **No real contact details** (email addresses or phone numbers still in the text, partly hidden, plus a person-like sender address; public datasets come from real mailboxes, so these must be replaced with made-up ones) and **Links checked** (each link with its verdict, and a warning when the clues and the links disagree).
+   The **quality score** starts at 100 and loses points for each problem, and the review screen lists every reason: no sender or subject, too short or too long, big gaps between words (text copied from a web page), leftover HTML, the same text twice, website footer text, "click here" with no link, contact details, no warning signs on a phishing message, or clues that disagree with the links. 80 or more passes. Re-processing a dataset tidies its drafts (gaps, blank lines, repeated text) and re-scores them.
 
 Datasets uploaded before these rules existed can be upgraded with **Re-run processing** in the dataset's details (unreviewed drafts are rewritten; reviewed scenarios are only re-scored).
 
@@ -231,6 +235,8 @@ Difficulty moves one step at a time:
 - Before five attempts, a baseline score of 70 or higher starts at Medium; otherwise Easy.
 - After that, if 80%+ of the last five answers are correct, step up one level (Easy → Medium → Hard).
 - Below 60%, step down one level. Otherwise stay.
+- After a change, the window starts again: the new level is judged on 5 answers given at that level, so a player can't jump from Easy to Hard in two answers.
+- Real-inbox campaign results don't count, because those emails are not chosen at the player's difficulty.
 
 Category selection avoids the two most recent categories when possible, prefers unpractised relevant categories, and then reinforces the weakest relevant area. Occupation priorities are:
 
@@ -239,6 +245,30 @@ Category selection avoids the two most recent categories when possible, prefers 
 - Other: Government, Banking, Delivery, Social Media.
 
 Players can select a category manually for focused practice. Otherwise, the system prefers unseen scenarios, applies a short repeat cooldown, and then falls back to random eligible content. This prevents large dataset uploads from becoming a long fixed queue.
+
+## Gamification and progress
+
+Each mechanic has a learning purpose, and progress stays private: there is no public leaderboard.
+
+| Mechanic | What the player sees | Why it is there |
+| --- | --- | --- |
+| XP and levels | XP for correct decisions, more for harder scenarios and spotted clues; a level multiplier | Rewards effort and shows steady progress |
+| Skill rank | Recruit to Guardian, from weighted accuracy on the last 20 decisions; it can fall | Measures skill separately from effort |
+| Private position | "Top 5%" in the top half; below it, "#21 of 24" and how many players to pass to reach the top half | Relative feedback without names, scores or a leaderboard, and never "Top 88%" for a weak result |
+| Streaks | Current and best run of practice days | Encourages short, regular practice instead of cramming |
+| Daily goal and goals | 5 decisions a day; one current goal and the next four | A clear next step on every visit |
+| Badges | 15 in three groups (below) | Most of them need skill, not just activity |
+| Yearly activity | A calendar of practice days with a count per day | Makes the habit visible |
+
+A practice day counts when the player makes at least one decision (training or a campaign email), not when they merely log in, so streaks reward learning rather than visits. Days follow local time (`APP_UTC_OFFSET_HOURS`, default 2 for South Africa), so practice just after midnight counts for the new day.
+
+| Group | Badges |
+| --- | --- |
+| Streaks | Day One (first practice), 5-Day Streak, 2-Week Streak, Month Streak (30 days) |
+| Milestones | Getting Started (10 simulations), Committed (50), Centurion (100) |
+| Skills | First Catch, Clue Hunter, Sharp Eye (5 Hard phishing caught), Zero Misses, Category Master, All-Rounder (a correct decision in every category), Comeback, Real-World Catch (report a phishing campaign email) |
+
+Badge rules, targets and "how to earn it" text live in one place: `ProgressService.BADGES` in `backend/app/services/progress_service.py`. A new badge is celebrated after the decision that earns it.
 
 ## Email campaigns
 
@@ -273,7 +303,7 @@ The admin report shows opens, clicks, attachment opens, reports and ignored per 
 | Accidental commits | `.githooks/pre-commit` blocks a commit that adds an `.env` file, a key file, uploaded data, or a line such as `SMTP_PASSWORD=...`. Turn it on once per clone with `git config core.hooksPath .githooks`. |
 | Passwords | Stored as bcrypt hashes. New passwords need at least 8 characters with a letter and a number (sign-up, change and reset). |
 | Guessing passwords | Five wrong passwords in a row lock the account for 15 minutes. The login reply never says whether an email exists. |
-| Sessions | Login tokens last 15 minutes and renew while you are active. Each token belongs to a login session, so logging out (or resetting the password) stops it working immediately. |
+| Sessions | Login tokens last 15 minutes and renew while you are active. Each token belongs to a login session, so logging out (or resetting the password) stops it working immediately. Each browser tab keeps its own login, so you can be the admin in one tab and a player in another; closing a tab signs that tab out. |
 | Password reset | A one-time link that works for 30 minutes. Only a SHA-256 hash of the token is stored, and using it signs out every session. Reset emails, like campaigns, only go to allow-listed addresses. |
 | Errors | Unexpected errors are logged on the server; the browser only sees "Something went wrong". |
 | Headers | The API sends `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy` and `Cache-Control: no-store`. nginx adds a Content-Security-Policy so the page only runs code from the app itself. |
@@ -286,7 +316,7 @@ One known trade-off: the login token is kept in the browser's `localStorage`, wh
 ## Important development rules
 
 - Keep correctness and score validation in the backend; do not trust frontend-supplied correctness.
-- Keep progress private. Players see only their own XP, badges and skill rank, never other players.
+- Keep progress private. Players see only their own XP, badges, streaks, skill rank and position, never another player's name or score.
 - Never send `correct_answer`, clues or feedback to the player before they submit a decision.
 - Preserve adaptive variety and occupation-based recommendations.
 - Do not commit `.env` files or `backend/uploads/`; enable the pre-commit hook (`git config core.hooksPath .githooks`) to be stopped if you try.
@@ -301,6 +331,12 @@ Backend syntax check and CATCH rule tests:
 ```powershell
 .\backend\.venv\Scripts\python.exe -m compileall -q backend\app backend\seed_demo.py
 cd backend; .\.venv\Scripts\python.exe -m unittest discover tests
+```
+
+End-to-end check of the whole API (about 140 checks across every CATCH stage). It builds a fresh throwaway database on your PostgreSQL server from every migration plus the demo data, prints a trace of one test learner, then drops the database; your own database is never touched:
+
+```powershell
+cd backend; .\.venv\Scripts\python.exe tests\e2e_check.py
 ```
 
 After pulling model changes, apply migrations with `flask --app run.py db upgrade`.

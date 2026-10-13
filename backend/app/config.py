@@ -53,6 +53,9 @@ class Config:
     MAX_CONTENT_LENGTH = int(os.getenv("MAX_UPLOAD_MB", "50")) * 1024 * 1024
 
     SQLALCHEMY_DATABASE_URI = _database_url()
+    # Test each pooled connection before use, so a database restart (or a laptop waking from sleep)
+    # does not turn the next request into an error
+    SQLALCHEMY_ENGINE_OPTIONS = {"pool_pre_ping": True}
 
     # "development" locally (from .env); anything else is treated as production
     FLASK_ENV = os.getenv("FLASK_ENV", "production")

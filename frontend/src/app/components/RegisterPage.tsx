@@ -45,6 +45,7 @@ export function RegisterPage({ onNavigate, onRegister }: RegisterPageProps) {
     age: "",
     itBackground: "no",
     role: "",
+    campaignConsent: false,
   });
 
   const [isLoading, setIsLoading] = useState(false);
@@ -67,6 +68,7 @@ export function RegisterPage({ onNavigate, onRegister }: RegisterPageProps) {
         age: Number(formData.age),
         it_background: formData.itBackground === "yes",
         occupation: formData.role.toUpperCase(),
+        campaign_consent: formData.campaignConsent,
       });
 
       if (!response.ok) {
@@ -94,14 +96,14 @@ export function RegisterPage({ onNavigate, onRegister }: RegisterPageProps) {
         className="relative hidden w-1/2 overflow-hidden lg:flex lg:flex-col lg:justify-between lg:p-12"
         style={{
           backgroundImage:
-            "linear-gradient(180deg, rgba(5,8,12,0.85) 0%, rgba(5,8,12,0.7) 60%, rgba(5,8,12,0.95) 100%), url('/assets/IMG_5596.jpeg')",
+            "linear-gradient(180deg, rgba(11,18,33,0.85) 0%, rgba(11,18,33,0.7) 60%, rgba(11,18,33,0.95) 100%), url('/assets/IMG_5596.jpeg')",
           backgroundPosition: "center",
           backgroundSize: "cover",
         }}
       >
         <div className="flex items-center gap-3">
-          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-linear-to-br from-sky-400 to-indigo-500 shadow-lg shadow-sky-500/20">
-            <Fish className="h-5 w-5 text-white" />
+          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-linear-to-br from-cyan-300 to-sky-600 shadow-lg shadow-cyan-400/25">
+            <Fish className="h-5 w-5 text-slate-950" />
           </span>
           <span className="text-sm font-semibold tracking-[0.12em] text-white">PHISHSIMULATOR</span>
         </div>
@@ -130,8 +132,8 @@ export function RegisterPage({ onNavigate, onRegister }: RegisterPageProps) {
 
           <div className="text-center">
             <div className="flex justify-center mb-4">
-              <div className="w-16 h-16 rounded-2xl bg-linear-to-br from-sky-400 to-indigo-500 shadow-lg shadow-sky-500/20 flex items-center justify-center">
-                <Fish className="w-8 h-8 text-white" />
+              <div className="w-16 h-16 rounded-2xl bg-linear-to-br from-cyan-300 to-sky-600 shadow-lg shadow-cyan-400/25 flex items-center justify-center">
+                <Fish className="w-8 h-8 text-slate-950" />
               </div>
             </div>
 
@@ -292,6 +294,22 @@ export function RegisterPage({ onNavigate, onRegister }: RegisterPageProps) {
                 </SelectContent>
               </Select>
             </div>
+
+            <label className="flex items-start gap-3 rounded-md border border-border p-3 cursor-pointer">
+              <input
+                type="checkbox"
+                className="mt-0.5 w-4 h-4 accent-sky-500 shrink-0"
+                checked={formData.campaignConsent}
+                onChange={(event) => setFormData({ ...formData, campaignConsent: event.target.checked })}
+              />
+              <span className="text-sm">
+                <span className="font-medium">Training email campaigns (optional)</span>
+                <span className="block text-xs text-muted-foreground">
+                  I agree to receive PhishSimulator training emails at this address at any time. I can change this in
+                  my profile whenever I like.
+                </span>
+              </span>
+            </label>
 
             {successMessage && (
               <Alert className="border-green-500/30 bg-green-500/10">

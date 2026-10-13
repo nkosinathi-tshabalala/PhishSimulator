@@ -2,7 +2,8 @@
 
 import re
 
-from app.utils.clues import detect_message_signs
+from app.utils.clues import contains_word, detect_message_signs
+from app.utils.links import suspicious_links
 
 
 class ScenarioParser:
@@ -16,12 +17,12 @@ class ScenarioParser:
     SENDER_BAIT_WORDS = ("secure", "verify", "support", "account", "update", "login")
 
     CATEGORY_KEYWORDS = {
-        "Banking": ("bank", "account", "payment", "invoice"),
+        "Banking": ("bank", "payment", "invoice", "card", "transaction", "statement", "eft"),
         "Delivery": ("delivery", "parcel", "shipment", "package"),
         "Government": ("government", "tax", "irs", "sars", "benefit"),
         "Employment": ("job", "recruit", "interview", "employment"),
         "University": ("university", "student", "campus", "course"),
-        "Password Reset": ("password", "reset", "login", "credential"),
+        "Password Reset": ("password", "reset", "login", "log in", "credential", "verify your account", "re-confirm"),
         "Microsoft 365": ("microsoft", "office 365", "outlook", "teams"),
         "Social Media": ("facebook", "instagram", "linkedin", "social"),
     }
@@ -74,7 +75,8 @@ class ScenarioParser:
         """Detect the warning signs present in a message."""
         cues = []
 
-        if ScenarioParser.extract_urls(text):
+        # A link is only a warning sign when it looks fake (see app/utils/links.py), not just for being there
+        if suspicious_links(text):
             cues.append("Suspicious link")
         if ScenarioParser.is_suspicious_sender(sender):
             cues.append("Fake sender")
@@ -101,15 +103,31 @@ class ScenarioParser:
             return "Medium"
         return difficulty
 
+    # Made-up addresses the importer writes in (e.g. you@example.com) are not anyone's personal data
+    MADE_UP_DOMAINS = ("example.com", "example.org", "example.net", "example.test", "phishsimulator.test")
+
+    # South African toll-free (0800) and share-call (0860, 0861) numbers, with or without +27
+    ORGANISATION_NUMBERS = ("0800", "0860", "0861", "27800", "27860", "27861")
+
+    @staticmethod
+    def personal_details(text):
+        """Email addresses and phone numbers in a message, partly hidden, e.g. ("email address", "ja***@pths209.org")."""
+        found = []
+        for address in dict.fromkeys(re.findall(ScenarioParser.EMAIL_REGEX, text or "")):
+            if not address.lower().endswith(ScenarioParser.MADE_UP_DOMAINS):
+                local, domain = address.split("@", 1)
+                found.append(("email address", f"{local[:2]}***@{domain}"))
+        for number in dict.fromkeys(re.findall(ScenarioParser.PHONE_REGEX, text or "")):
+            digits = re.sub(r"\D", "", number)
+            if digits.startswith(ScenarioParser.ORGANISATION_NUMBERS):
+                continue  # toll-free and share-call lines belong to organisations, not people
+            found.append(("phone number", f"{digits[:3]} *** **{digits[-2:]}"))
+        return found
+
     @staticmethod
     def find_personal_data(text):
-        """Return the kinds of personal data found in a message body."""
-        found = []
-        if re.search(ScenarioParser.EMAIL_REGEX, text):
-            found.append("email address")
-        if re.search(ScenarioParser.PHONE_REGEX, text):
-            found.append("phone number")
-        return found
+        """The kinds of personal data in a message body ("email address", "phone number")."""
+        return list(dict.fromkeys(kind for kind, _ in ScenarioParser.personal_details(text)))
 
     MAX_MESSAGE_LENGTH = 5000
 
@@ -159,22 +177,23 @@ class ScenarioParser:
 
     @staticmethod
     def build_scenario_title(message_type, subject, message):
-        """Create a distinct, readable title when the source has no subject."""
-        prefix = f"{str(message_type).upper()} training"
+        """A readable title from the message's own subject (or its first words). No "EMAIL training" prefix:
+        the channel is shown as a badge, and a title must never hint to a player that a message is a test."""
         compact = re.sub(r"\s+", " ", str(subject or message or "")).strip()
-        if not compact:
-            return prefix
-        return f"{prefix}: {compact[:180]}"
+        return compact[:180] or f"Untitled {str(message_type).lower()}"
 
     @staticmethod
     def infer_category(text):
         """Guess a training category from keywords in the message."""
         lower = text.lower()
-
-        for category, keywords in ScenarioParser.CATEGORY_KEYWORDS.items():
-            if any(keyword in lower for keyword in keywords):
-                return category
-
+        # The category whose keywords appear most often wins (ties go to the first in the list)
+        matches = {
+            category: sum(contains_word(lower, keyword) for keyword in keywords)
+            for category, keywords in ScenarioParser.CATEGORY_KEYWORDS.items()
+        }
+        best = max(matches, key=matches.get)
+        if matches[best]:
+            return best
         return "Password Reset" if "verify" in lower else "Social Media"
 
     @staticmethod
@@ -186,6 +205,17 @@ class ScenarioParser:
             ScenarioParser.PHISHING_TYPE_CATEGORIES.get(key)
             or ScenarioParser.infer_category(full_text)
         )
+
+    @staticmethod
+    def drop_repeated_text(text):
+        """Some corpora store an email's plain and HTML parts together, so the whole body appears twice
+        (or three times). Keep a single copy. Short phrases (under 8 words) and other text are left alone."""
+        words = text.split()
+        for copies in (2, 3):
+            size, extra = divmod(len(words), copies)
+            if extra == 0 and size >= 8 and all(words[i * size:(i + 1) * size] == words[:size] for i in range(copies)):
+                return " ".join(words[:size])
+        return text
 
     @staticmethod
     def parse_row(row, dataset_type="EMAIL"):
@@ -200,6 +230,7 @@ class ScenarioParser:
         if not message:
             return None
 
+        message = ScenarioParser.drop_repeated_text(message)
         receiver = ScenarioParser._value(row, "receiver", "to")
         subject = ScenarioParser.anonymise_recipient(subject, receiver)
         message = ScenarioParser.anonymise_recipient(message, receiver)

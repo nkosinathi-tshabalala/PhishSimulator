@@ -1,7 +1,7 @@
 # Filters for the metrics pages: a date range plus channel, difficulty, category, source and group
 
 from dataclasses import dataclass
-from datetime import date, datetime, time, timedelta
+from datetime import date, timedelta
 
 from sqlalchemy import func, select
 
@@ -10,6 +10,7 @@ from app.extensions import db
 from app.models.authentication import Player, UserProfile
 from app.models.scenario import Scenario
 from app.models.simulation import SimulationAttempt
+from app.utils.clock import local_date, local_today, utc_start_of
 
 # Quick date ranges the pages offer, in days
 RANGE_DAYS = {"7d": 7, "30d": 30, "90d": 90}
@@ -52,7 +53,7 @@ class MetricFilters:
         start, end = _date(args.get("start")), _date(args.get("end"))
         days = RANGE_DAYS.get(args.get("range", ""))
         if days:
-            end = today or datetime.utcnow().date()
+            end = today or local_today()
             start = end - timedelta(days=days - 1)
         if start and end and start > end:
             start, end = end, start
@@ -71,12 +72,12 @@ class MetricFilters:
         return any((self.start, self.end, self.channel, self.difficulty, self.category, self.source, self.group))
 
     def in_range(self, column):
-        """Conditions that keep a timestamp column inside the chosen dates."""
+        """Conditions that keep a timestamp column inside the chosen (local) dates."""
         conditions = []
         if self.start:
-            conditions.append(column >= datetime.combine(self.start, time.min))
+            conditions.append(column >= utc_start_of(self.start))
         if self.end:
-            conditions.append(column < datetime.combine(self.end + timedelta(days=1), time.min))
+            conditions.append(column < utc_start_of(self.end + timedelta(days=1)))
         return conditions
 
     def group_players(self):
@@ -108,8 +109,8 @@ class MetricFilters:
 
     def chart_window(self, attempts, today=None):
         """(days, last day) for the trend charts: the chosen dates, or from the first attempt to today."""
-        end = self.end or today or datetime.utcnow().date()
-        first_attempt = min((attempt.attempted_at.date() for attempt in attempts), default=end - timedelta(days=13))
+        end = self.end or today or local_today()
+        first_attempt = min((local_date(attempt.attempted_at) for attempt in attempts), default=end - timedelta(days=13))
         start = self.start or first_attempt
         days = min(max((end - start).days + 1, 1), MAX_CHART_DAYS)
         return days, end

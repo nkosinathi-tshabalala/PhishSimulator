@@ -88,6 +88,17 @@ class Scenario(db.Model):
         default=datetime.utcnow
     )
 
+    # When an admin approved it (cleared if it goes back to draft or is rejected)
+    approved_at = db.Column(
+        db.DateTime
+    )
+
+    # Last edit or status change
+    updated_at = db.Column(
+        db.DateTime,
+        default=datetime.utcnow
+    )
+
     def get_phishing_cues(self):
         """Return the stored clues as a list."""
         if not self.phishing_cues:

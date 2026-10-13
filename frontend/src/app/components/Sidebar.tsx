@@ -14,11 +14,11 @@ interface SidebarProps extends SidebarLayoutProps {
 }
 
 const PLAYER_ITEMS: NavItem[] = [
-  { id: "dashboard", label: "Home", icon: Home, description: "Your progress at a glance", color: "text-sky-400" },
-  { id: "quiz", label: "Baseline Quiz", icon: ClipboardList, description: "Measure your starting level", color: "text-amber-400" },
-  { id: "simulations", label: "Training", icon: Mail, description: "Email, SMS and Inbox Rush", color: "text-purple-400" },
-  { id: "performance", label: "My Progress", icon: Activity, description: "XP, badges, skill rank and history", color: "text-green-400" },
-  { id: "profile", label: "Profile", icon: User, description: "Manage your account details", color: "text-slate-300" },
+  { id: "dashboard", label: "Home", icon: Home, description: "Your progress at a glance" },
+  { id: "quiz", label: "Baseline", icon: ClipboardList, description: "Assessments that set your starting level" },
+  { id: "simulations", label: "Training", icon: Mail, description: "Email, SMS and Inbox Rush" },
+  { id: "performance", label: "My Progress", icon: Activity, description: "XP, badges, skill rank and history" },
+  { id: "profile", label: "Profile", icon: User, description: "Manage your account details" },
 ];
 
 /** Navigation for players, with the rank card at the bottom. */
@@ -41,7 +41,7 @@ export function Sidebar(props: SidebarProps) {
           type="button"
           onClick={() => props.onNavigate("performance")}
           title={`${progress.skill.tier} · Level ${progress.level} · ${progress.xp} XP`}
-          className="rounded-xl p-1 hover:bg-white/10"
+          className="rounded-xl p-1 hover:bg-sidebar-accent"
         >
           <TierEmblem tier={progress.skill.tier} size="sm" />
         </button>
@@ -65,7 +65,7 @@ function RankCard({ progress, onOpen }: { progress: Progress; onOpen: () => void
     <button
       onClick={onOpen}
       title="Private skill rank: only you can see it"
-      className="w-full rounded-xl border border-white/10 bg-linear-to-br from-white/[0.07] to-transparent p-3 text-left transition-colors hover:border-white/25"
+      className="w-full rounded-xl border border-sidebar-border bg-sidebar-accent/60 p-3 text-left transition-colors hover:border-cyan-300/30"
     >
       <div className="flex items-center gap-3">
         <TierEmblem tier={skill.tier} size="sm" />

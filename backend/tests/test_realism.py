@@ -1,7 +1,7 @@
 # Tests for realistic scenario generation and the Help-stage rules
 
 import unittest
-from datetime import date
+from datetime import date, datetime
 from types import SimpleNamespace
 
 from app.datasets.scenario_realism import (
@@ -10,11 +10,16 @@ from app.datasets.scenario_realism import (
     enrich,
     link_targets,
     mask_links,
+    quality_review,
     quality_score,
+    tidy_text,
 )
 from app.schemas.simulation_schema import SimulationSchema
 from app.services.progress_service import ProgressService
 from app.services.scenario_service import ScenarioService
+from app.utils.clock import local_date, utc_start_of
+from app.utils.links import find_urls
+from app.datasets.scenario_parser import ScenarioParser
 
 
 class LinkMaskingTests(unittest.TestCase):
@@ -41,6 +46,42 @@ class LinkMaskingTests(unittest.TestCase):
     def test_link_targets_find_hidden_and_visible_addresses(self):
         text = "[Sign in](https://fake.example/login) or visit https://real.example."
         self.assertEqual(link_targets(text), ["https://fake.example/login", "https://real.example"])
+
+
+class QualityReviewTests(unittest.TestCase):
+    """The quality score explains every point it takes off."""
+
+    def review(self, message, subject="Verify Your Account", cues=("Credential request", "Urgency"), phishing=True):
+        return quality_review("EMAIL", "cPanel <service@cpanel.com>", subject, message, phishing, list(cues))
+
+    def test_a_clean_message_scores_100(self):
+        message = ("Your Microsoft 365 password expires today. To keep your mailbox, reset it before 17:00.\n"
+                   "[Reset password](https://m1crosoft.com/reset)")
+        score, problems = self.review(message, cues=("Urgency", "Suspicious link"))
+        self.assertEqual((score, problems), (100, []))
+
+    def test_web_page_text_loses_points_with_reasons(self):
+        message = ("Dear client,          Our Technical          Services Department are upgrading.          "
+                   "Please click the link below. 2015 All Rights Reserved / Legal Notices / Privacy Policy")
+        score, problems = self.review(message)
+        reasons = " ".join(reason for _, reason in problems)
+        self.assertLess(score, 80)
+        self.assertIn("big gaps", reasons)
+        self.assertIn("footer", reasons)
+        self.assertIn("link is missing", reasons)
+
+    def test_tidying_removes_gaps_and_a_repeated_body(self):
+        body = "Password will expire in 2 days. Click Here To Validate E-mail Thank you, Copyright 1993-2013"
+        self.assertEqual(tidy_text(f"{body}   {body}"), body)
+        self.assertEqual(tidy_text("Dear client,          Our team\n\n\n\nThanks"), "Dear client, Our team\n\nThanks")
+
+    def test_a_bare_web_address_counts_as_a_link(self):
+        self.assertEqual(find_urls("please click the link below: login.cPanel.net This is required"), ["login.cPanel.net"])
+        self.assertEqual(find_urls("Email jane@company.co.za for help"), [])
+
+    def test_account_alone_does_not_mean_banking(self):
+        self.assertEqual(ScenarioParser.infer_category("Please login to re-confirm your account"), "Password Reset")
+        self.assertEqual(ScenarioParser.infer_category("Your bank card transaction of R300 was declined"), "Banking")
 
 
 class SenderAndAttachmentTests(unittest.TestCase):
@@ -70,7 +111,8 @@ class SenderAndAttachmentTests(unittest.TestCase):
         self.assertIn("Unexpected attachment", fields["phishing_cues"])
 
     def test_quality_prefers_complete_clean_messages(self):
-        good = quality_score("EMAIL", "a@b.com", "Hello", "x" * 200, True, ["Urgency", "Suspicious link"])
+        message = "Your password expires today. " * 5 + "[Reset password](https://m1crosoft.com/reset)"
+        good = quality_score("EMAIL", "a@b.com", "Hello", message, True, ["Urgency", "Suspicious link"])
         raw = quality_score("EMAIL", "", "", "<html>content-type: text</html>", True, [])
         self.assertEqual(good, 100)
         self.assertLess(raw, 40)
@@ -118,6 +160,19 @@ class DailyHabitTests(unittest.TestCase):
         activity = ProgressService.daily_activity(self.facts_on(today, today, date(2026, 9, 27)), today)
         self.assertEqual(activity["today_attempts"], 2)
         self.assertEqual(activity["daily_streak"], 2)
+
+    def test_a_missed_day_ends_the_streak_but_not_the_best(self):
+        today = date(2026, 9, 28)
+        facts = self.facts_on(date(2026, 9, 26), date(2026, 9, 20), date(2026, 9, 21), date(2026, 9, 22))
+        activity = ProgressService.daily_activity(facts, today)
+        self.assertEqual(activity["daily_streak"], 0)
+        self.assertEqual(activity["longest_streak"], 3)
+
+    def test_days_follow_local_time_not_utc(self):
+        # 22:30 UTC on 30 Sep is 00:30 on 1 Oct in South Africa (UTC+2)
+        self.assertEqual(local_date(datetime(2026, 9, 30, 22, 30)), date(2026, 10, 1))
+        self.assertEqual(local_date(datetime(2026, 9, 30, 21, 59)), date(2026, 9, 30))
+        self.assertEqual(utc_start_of(date(2026, 10, 1)), datetime(2026, 9, 30, 22, 0))
 
 
 if __name__ == "__main__":

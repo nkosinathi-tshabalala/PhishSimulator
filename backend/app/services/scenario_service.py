@@ -1,17 +1,24 @@
 # Choosing scenarios for players and reviewing them for admins
 
+import re
+from datetime import datetime, timedelta
+
 from app.extensions import db
 
+from app.models.datasets import Dataset
 from app.models.scenario import Scenario
 from app.models.authentication import Player
-from app.models.baseline import BaselineAssessment
+from app.services.baseline_service import BaselineService
 from app.models.email import EmailCampaign
 from app.models.simulation import SimulationAttempt
 from app.adaptive.adaptive_engine import AdaptiveEngine
 from app.datasets.scenario_parser import ScenarioParser
-from app.datasets.scenario_realism import link_targets, quality_score
+from app.datasets.scenario_realism import quality_review, quality_score
 from app.schemas.scenario_schema import ScenarioSchema
+from app.utils.clock import iso_utc, local_today, utc_now, utc_start_of
 from app.utils.clues import clue_options
+from app.utils.labels import LEGACY_TITLE_PREFIX, message_label
+from app.utils.links import describe_link, find_urls, link_problems
 
 
 class ScenarioService:
@@ -35,16 +42,31 @@ class ScenarioService:
         ("links_safe", "Links made safe"),
     )
 
+    # A quality score at or above this passes the automatic check
+    GOOD_QUALITY = 80
+
+    # The dataset filter value for scenarios written by hand or loaded with the demo data
+    NO_DATASET = "none"
+
+    # "When" filter periods, in local days (today counts as one)
+    WHEN_DAYS = {"today": 1, "7d": 7, "30d": 30, "90d": 90}
+
     COOLDOWN_ATTEMPTS = 5
     MISTAKE_REVIEW_GAP = 3
     TRIAGE_SIZE = 6
 
     @staticmethod
     def display_title(scenario):
-        """Give legacy generated rows a distinct title without changing answers."""
+        """The admin's name for a scenario. Older imports were titled "EMAIL training: ..."; that prefix is hidden."""
         if scenario.title == "Dataset training scenario":
-            return f"{scenario.simulation_type.title()} training scenario #{scenario.scenario_id}"
-        return scenario.title
+            return f"{scenario.simulation_type.title()} scenario #{scenario.scenario_id}"
+        return LEGACY_TITLE_PREFIX.sub("", scenario.title or "") or scenario.title
+
+    @staticmethod
+    def player_label(scenario):
+        """How a player recognises a message afterwards: what they actually saw (the subject, or the start of the
+        text). Never the admin's title, which may say it is training."""
+        return message_label(scenario.subject, scenario.message)
 
     @staticmethod
     def _reviewable():
@@ -58,8 +80,11 @@ class ScenarioService:
         channel = (filters.get("simulation_type") or "").upper()
         if channel in {"EMAIL", "SMS"}:
             query = query.filter(db.func.upper(Scenario.simulation_type) == channel)
-        if filters.get("dataset_id"):
-            query = query.filter(Scenario.dataset_id == filters["dataset_id"])
+        dataset = str(filters.get("dataset_id") or "")
+        if dataset == ScenarioService.NO_DATASET:
+            query = query.filter(Scenario.dataset_id.is_(None))
+        elif dataset.isdigit():
+            query = query.filter(Scenario.dataset_id == int(dataset))
         if filters.get("difficulty"):
             query = query.filter(Scenario.difficulty == filters["difficulty"])
         if filters.get("category"):
@@ -73,10 +98,23 @@ class ScenarioService:
             ))
         if filters.get("min_quality"):
             query = query.filter(Scenario.quality_score >= int(filters["min_quality"]))
+        when = ScenarioService._when_filter(filters.get("when"))
+        if when is not None:
+            query = query.filter(when)
         status = (filters.get("status") or "").upper()
         if include_status and status in ScenarioService.STATUSES:
             query = query.filter(db.func.upper(Scenario.status) == status)
         return query
+
+    @staticmethod
+    def _when_filter(value):
+        """'approved_7d', 'updated_today' and so on: approved or changed since local midnight N days ago."""
+        field, _, period = (value or "").partition("_")
+        column = {"approved": Scenario.approved_at, "updated": Scenario.updated_at}.get(field)
+        days = ScenarioService.WHEN_DAYS.get(period)
+        if column is None or days is None:
+            return None
+        return column >= utc_start_of(local_today() - timedelta(days=days - 1))
 
     @staticmethod
     def get_scenarios(page=1, per_page=25, filters=None):
@@ -110,11 +148,14 @@ class ScenarioService:
             "quality_score": scenario.quality_score,
             "has_attachment": bool(scenario.attachment),
             "uses": uses.get(scenario.scenario_id, 0),
+            "approved_at": iso_utc(scenario.approved_at),
+            "updated_at": iso_utc(scenario.updated_at),
         } for scenario in scenario_page.items]
 
         return True, "Scenarios retrieved successfully.", {
             "scenarios": rows,
             "stats": ScenarioService._stats(ScenarioService._filtered_query(filters, include_status=False)),
+            "groups": ScenarioService._dataset_groups(filters),
             "categories": sorted(name for (name,) in ScenarioService._reviewable().with_entities(Scenario.category).distinct()),
             "pagination": {
                 "page": scenario_page.page,
@@ -123,6 +164,18 @@ class ScenarioService:
                 "total": scenario_page.total,
             },
         }
+
+    @staticmethod
+    def _set_status(scenario, status):
+        """Change a scenario's status and record when. Approving stamps the approval time;
+        going back to draft or being rejected clears it."""
+        now = utc_now()
+        scenario.status = status
+        scenario.updated_at = now
+        if status == "APPROVED":
+            scenario.approved_at = now
+        elif status in {"DRAFT", "REJECTED"}:
+            scenario.approved_at = None
 
     @staticmethod
     def _sort_order(filters):
@@ -142,10 +195,57 @@ class ScenarioService:
             "quality": Scenario.quality_score,
             "uses": uses,
             "created": Scenario.created_at,
+            "approved": Scenario.approved_at,
+            "updated": Scenario.updated_at,
         }
         column = columns.get(filters.get("sort"), Scenario.created_at)
         direction = column.asc() if filters.get("order") == "asc" else column.desc()
         return direction.nulls_last(), Scenario.scenario_id
+
+    @staticmethod
+    def _dataset_groups(filters):
+        """The datasets that have scenarios under the current filters (ignoring the dataset filter itself),
+        newest upload first, with scenarios added by hand or with the demo data as the last group.
+        `count` follows the selected stage; `by_status` shows every stage."""
+        without_dataset = {**filters, "dataset_id": ""}
+        query = ScenarioService._filtered_query(without_dataset, include_status=False)
+        rows = query.with_entities(
+            Scenario.dataset_id, db.func.upper(Scenario.status), db.func.count(),
+        ).group_by(Scenario.dataset_id, db.func.upper(Scenario.status)).all()
+
+        status = (filters.get("status") or "").upper()
+        groups = {}
+        for dataset_id, row_status, count in rows:
+            group = groups.setdefault(dataset_id, {
+                "by_status": {name: 0 for name in ScenarioService.STATUSES}, "count": 0,
+            })
+            group["by_status"][row_status] = group["by_status"].get(row_status, 0) + count
+            if not status or row_status == status:
+                group["count"] += count
+
+        datasets = {
+            dataset.dataset_id: dataset
+            for dataset in Dataset.query.filter(Dataset.dataset_id.in_([i for i in groups if i is not None])).all()
+        } if groups else {}
+
+        def describe(dataset_id):
+            dataset = datasets.get(dataset_id)
+            return {
+                "dataset_id": dataset_id if dataset_id is not None else ScenarioService.NO_DATASET,
+                "name": dataset.name if dataset else "Added by hand or demo data",
+                "uploaded_at": iso_utc(dataset.uploaded_at) if dataset else None,
+                **groups[dataset_id],
+            }
+
+        def upload_time(dataset_id):
+            """When the dataset was uploaded (for newest-first order)."""
+            return datasets[dataset_id].uploaded_at or datetime.min
+
+        uploaded = sorted((i for i in groups if i in datasets), key=upload_time, reverse=True)
+        ordered = [describe(i) for i in uploaded]
+        if None in groups:
+            ordered.append(describe(None))
+        return [group for group in ordered if group["count"]]
 
     @staticmethod
     def _stats(query):
@@ -166,11 +266,68 @@ class ScenarioService:
         }
 
     @staticmethod
+    def _quality_check(scenario, is_phishing, cues):
+        """The quality score worked out now (so it reflects the current rules), with every reason it lost points."""
+        score, problems = quality_review(
+            scenario.simulation_type or "EMAIL", scenario.sender, getattr(scenario, "subject", None),
+            scenario.message, is_phishing, cues,
+        )
+        if problems:
+            detail = f"{score}/100. " + "; ".join(f"{reason} (-{points})" for points, reason in problems) + "."
+        else:
+            detail = "100/100. Reads like a real message: no problems found."
+        return {"label": "Quality score", "passed": score >= ScenarioService.GOOD_QUALITY, "detail": detail}
+
+    @staticmethod
+    def _contact_details_check(scenario):
+        """Public datasets come from real mailboxes, so a message can still hold a real person's email address
+        or phone number. Those must be replaced with made-up ones before players see them."""
+        found = ScenarioParser.personal_details(scenario.message or "")
+        sender = ScenarioParser.sender_address(scenario.sender)
+        local = sender.split("@")[0].lower() if "@" in sender else ""
+        # Shaped like a person: "t.mokoena@", "jaime.adkins@", or a display name such as "Adkins, Jaime"
+        personal_sender = bool(
+            (re.fullmatch(r"[a-z]{1,15}\.[a-z]{2,20}", local) and local.split(".")[0] not in ("it", "hr", "ict", "no"))
+            or re.match(r'\s*"?[A-Z][a-z]+, [A-Z][a-z]+', scenario.sender or "")
+        ) and not sender.lower().endswith(ScenarioParser.MADE_UP_DOMAINS)
+
+        if found:
+            listed = ", ".join(f"{kind} {value}" for kind, value in found)
+            detail = f"Found {listed} in the text. Replace with made-up details, or confirm they are fictional."
+        else:
+            detail = "No email addresses or phone numbers in the message text."
+        if personal_sender:
+            detail += f" The sender ({sender}) looks like a person's address: if it is real, change it."
+        return {"label": "No real contact details", "passed": not found, "detail": detail}
+
+    @staticmethod
+    def _links_check(scenario, is_phishing, cues, links):
+        """Which links look fake and why. A link is only a warning sign when it fails a rule in app/utils/links.py
+        (look-alike name, brand on the wrong site, IP address, shortener, odd ending...), never just for existing."""
+        if not links:
+            note = "No links in the message."
+            if "Suspicious link" in cues:
+                return {"label": "Links checked", "passed": False,
+                        "detail": note + " Remove the 'Suspicious link' clue."}
+            return {"label": "Links checked", "passed": True, "detail": note}
+
+        verdicts = [describe_link(url) for url in dict.fromkeys(links)]
+        any_suspicious = any(link_problems(url) for url in links)
+        detail = "; ".join(verdicts) + ". Clicking never opens a website: it is recorded as trusting the message."
+
+        if is_phishing and "Suspicious link" in cues and not any_suspicious:
+            return {"label": "Links checked", "passed": False, "detail": detail
+                    + " The clues say 'Suspicious link', but no link breaks a rule: check it yourself."}
+        if not is_phishing and any_suspicious:
+            return {"label": "Links checked", "passed": False, "detail": detail
+                    + " A genuine message should not contain a link that looks fake."}
+        return {"label": "Links checked", "passed": True, "detail": detail}
+
+    @staticmethod
     def quality_checks(scenario):
         """Automatic checks that help the admin fill in the QA checklist."""
         message = scenario.message or ""
-        personal_data = ScenarioParser.find_personal_data(message)
-        links = link_targets(message)
+        links = find_urls(message)
         is_phishing = scenario.correct_answer.upper() == "REPORT"
         cues = scenario.get_phishing_cues()
 
@@ -190,30 +347,9 @@ class ScenarioService:
                 "passed": len(message.strip()) >= ScenarioParser.MIN_MESSAGE_LENGTH,
                 "detail": f"{len(message.strip())} characters.",
             },
-            {
-                "label": "No personal data found",
-                "passed": not personal_data,
-                "detail": (
-                    f"Check for real {', '.join(personal_data)}."
-                    if personal_data else "No emails or phone numbers in the body."
-                ),
-            },
-            {
-                "label": "Links are safe",
-                "passed": True,
-                "detail": (
-                    f"{len(links)} link(s). Clicking one never opens a website: it is recorded as trust."
-                    if links else "No links in the message."
-                ),
-            },
-            {
-                "label": "Quality score",
-                "passed": (scenario.quality_score or 0) >= 70,
-                "detail": (
-                    f"{scenario.quality_score}/100 (sender, subject, length, clues, clean text)."
-                    if scenario.quality_score is not None else "Not scored yet: re-run dataset processing."
-                ),
-            },
+            ScenarioService._contact_details_check(scenario),
+            ScenarioService._links_check(scenario, is_phishing, cues, links),
+            ScenarioService._quality_check(scenario, is_phishing, cues),
         ]
 
     @staticmethod
@@ -239,6 +375,9 @@ class ScenarioService:
             "status": (scenario.status or "DRAFT").upper(),
             "dataset_id": scenario.dataset_id,
             "quality_score": scenario.quality_score,
+            "created_at": iso_utc(scenario.created_at),
+            "approved_at": iso_utc(scenario.approved_at),
+            "updated_at": iso_utc(scenario.updated_at),
             "quality_checks": ScenarioService.quality_checks(scenario),
             "qa_checklist": [
                 {"key": key, "label": label} for key, label in ScenarioService.QA_CHECKLIST
@@ -297,8 +436,9 @@ class ScenarioService:
         scenario.quality_score = ScenarioService._score(scenario)
 
         message = "Scenario updated successfully."
+        scenario.updated_at = utc_now()
         if (scenario.status or "").upper() in {"APPROVED", "ACTIVE"}:
-            scenario.status = "DRAFT"
+            ScenarioService._set_status(scenario, "DRAFT")
             message = "Scenario updated and moved back to draft for review."
         db.session.commit()
 
@@ -340,7 +480,7 @@ class ScenarioService:
         if action == "approve" and not ScenarioService._checklist_complete(checklist):
             return False, "Tick every QA checklist item before approving.", None
 
-        scenario.status = new_status
+        ScenarioService._set_status(scenario, new_status)
         db.session.commit()
         return True, f"Scenario is now {new_status.lower()}.", {
             "scenario_id": scenario.scenario_id,
@@ -370,8 +510,14 @@ class ScenarioService:
 
         _, new_status = ScenarioService.REVIEW_ACTIONS[action]
         matching_ids = query.with_entities(Scenario.scenario_id)
+        now = utc_now()
+        changes = {Scenario.status: new_status, Scenario.updated_at: now}
+        if new_status == "APPROVED":
+            changes[Scenario.approved_at] = now
+        elif new_status in {"DRAFT", "REJECTED"}:
+            changes[Scenario.approved_at] = None
         updated = Scenario.query.filter(Scenario.scenario_id.in_(matching_ids)).update(
-            {Scenario.status: new_status}, synchronize_session=False,
+            changes, synchronize_session=False,
         )
         db.session.commit()
         return True, f"{updated} scenario(s) are now {new_status.lower()}.", {"updated": updated}
@@ -403,14 +549,10 @@ class ScenarioService:
         attempts = SimulationAttempt.query.filter_by(
             player_id=player.player_id
         ).order_by(SimulationAttempt.attempted_at.desc()).all()
-        baseline = BaselineAssessment.query.filter(
-            BaselineAssessment.player_id == player.player_id,
-            BaselineAssessment.completed_at.is_not(None),
-        ).order_by(BaselineAssessment.completed_at.desc()).first()
-
+        # The baseline taken before their 5th training decision sets the start; later ones change nothing
         difficulty, reason = AdaptiveEngine.recommend_difficulty(
             attempts,
-            baseline.score if baseline else None,
+            BaselineService.starting_score(player.player_id, attempts),
         )
         return player, attempts, difficulty, reason
 
@@ -461,7 +603,6 @@ class ScenarioService:
         """What a player may see before deciding: never the answer or clues."""
         return {
             "scenario_id": scenario.scenario_id,
-            "title": ScenarioService.display_title(scenario),
             "simulation_type": scenario.simulation_type,
             "category": scenario.category,
             "difficulty": scenario.difficulty,

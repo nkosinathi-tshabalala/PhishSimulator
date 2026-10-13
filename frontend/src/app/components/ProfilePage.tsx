@@ -32,6 +32,8 @@ interface CurrentUser {
   occupation: string | null;
   it_background: boolean | null;
   role: string;
+  campaign_consent?: boolean | null;
+  campaign_consent_at?: string | null;
 }
 
 interface ProfilePageProps {
@@ -52,6 +54,7 @@ export function ProfilePage({
     age: "",
     itBackground: "no",
     occupation: "",
+    campaignConsent: false,
   });
 
   const [passwordData, setPasswordData] = useState({
@@ -81,6 +84,7 @@ export function ProfilePage({
       age: user.age !== null ? user.age.toString() : "",
       itBackground: user.it_background === true ? "yes" : "no",
       occupation: user.occupation ?? "",
+      campaignConsent: user.campaign_consent === true,
     });
   }, [user]);
 
@@ -97,6 +101,7 @@ export function ProfilePage({
         age: Number(profileData.age),
         it_background: profileData.itBackground === "yes",
         occupation: profileData.occupation,
+        campaign_consent: profileData.campaignConsent,
       });
 
       if (!response.ok) {
@@ -271,15 +276,13 @@ export function ProfilePage({
 
                   <Select
                     value={profileData.occupation}
-                    onValueChange={(value) =>
-                      setProfileData({
-                        ...profileData,
-                        occupation: value,
-                      })
-                    }
+                    onValueChange={(value) => {
+                      // The select can report an empty value while the saved one loads; keep the saved one
+                      if (value) setProfileData((current) => ({ ...current, occupation: value }));
+                    }}
                   >
                     <SelectTrigger id="occupation">
-                      <SelectValue />
+                      <SelectValue placeholder="Select your occupation" />
                     </SelectTrigger>
 
                     <SelectContent>
@@ -289,6 +292,26 @@ export function ProfilePage({
                     </SelectContent>
                   </Select>
                 </div>
+
+                <label className="flex items-start gap-3 rounded-md border border-border p-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5 w-4 h-4 accent-sky-500 shrink-0"
+                    checked={profileData.campaignConsent}
+                    onChange={(event) => setProfileData({ ...profileData, campaignConsent: event.target.checked })}
+                  />
+                  <span className="text-sm">
+                    <span className="font-medium">Training email campaigns</span>
+                    <span className="block text-xs text-muted-foreground">
+                      I agree to receive PhishSimulator training emails at my address at any time. Untick to stop them.
+                    </span>
+                    {user?.campaign_consent && user.campaign_consent_at && (
+                      <span className="block text-xs text-green-300/90 mt-1">
+                        Agreed on {new Date(user.campaign_consent_at).toLocaleDateString()}
+                      </span>
+                    )}
+                  </span>
+                </label>
 
                 {successMessage && (
                   <div className="rounded-md border border-green-500/30 bg-green-500/10 p-3">

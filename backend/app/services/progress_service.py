@@ -1,10 +1,14 @@
 # XP, levels, badges and the private skill rank (CATCH "Help")
 
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
+from math import ceil
 
+from app.datasets.scenario_parser import ScenarioParser
 from app.extensions import db
+from app.models.authentication import Player
 from app.models.scenario import Scenario
 from app.models.simulation import SimulationAttempt
+from app.utils.clock import local_date, local_today
 
 
 class ProgressService:
@@ -29,12 +33,40 @@ class ProgressService:
     )
     GUARDIAN_MAX_MISSED_PERCENT = 5
 
+    # (key, group, name, short description, target, how to earn it). Streaks build the habit,
+    # milestones reward effort, and skill badges reward getting better, so most badges need skill.
     BADGES = (
-        ("first_catch", "First Catch", "First phishing message reported correctly", 1),
-        ("clue_hunter", "Clue Hunter", "Spot every clue in 5 scenarios", 5),
-        ("category_master", "Category Master", "90%+ over 10 scenarios in one category", 10),
-        ("zero_misses", "Zero Misses", "10 in a row with no missed phishing", 10),
-        ("comeback", "Comeback", "Skill rank rises after a drop", 1),
+        ("day_one", "streak", "Day One", "Practise for the first time", 1,
+         "Make your first decision in any training mode."),
+        ("streak_5", "streak", "5-Day Streak", "Practise 5 days in a row", 5,
+         "Make at least one decision every day for 5 days. A day counts when you practise, not just log in."),
+        ("streak_14", "streak", "2-Week Streak", "Practise 14 days in a row", 14,
+         "Keep your daily practice going for 14 days without a gap."),
+        ("streak_30", "streak", "Month Streak", "Practise 30 days in a row", 30,
+         "A whole month of daily practice. Even one scenario a day keeps it alive."),
+        ("decisions_10", "milestone", "Getting Started", "Complete 10 simulations", 10,
+         "Answer 10 scenarios in email, SMS or Inbox Rush training. Campaign emails count too."),
+        ("decisions_50", "milestone", "Committed", "Complete 50 simulations", 50,
+         "Answer 50 scenarios in total."),
+        ("decisions_100", "milestone", "Centurion", "Complete 100 simulations", 100,
+         "Answer 100 scenarios in total."),
+        ("first_catch", "skill", "First Catch", "First phishing message reported correctly", 1,
+         "Report a phishing message correctly. Every mode counts, including Inbox Rush."),
+        ("clue_hunter", "skill", "Clue Hunter", "Spot every clue in 5 scenarios", 5,
+         "Answer correctly and tick every warning sign in the message, with no wrong picks. Do it 5 times."),
+        ("sharp_eye", "skill", "Sharp Eye", "Catch 5 Hard phishing messages", 5,
+         "Report 5 phishing messages from Hard scenarios correctly. Their clues are the subtlest."),
+        ("zero_misses", "skill", "Zero Misses", "10 in a row with no missed phishing", 10,
+         "Make 10 decisions in a row without marking a phishing message as safe. False alarms don't break the run."),
+        ("category_master", "skill", "Category Master", "90%+ over 10 scenarios in one category", 10,
+         "Answer 10 scenarios in one category, like Banking, and get at least 90% of them right. Retakes count."),
+        ("all_rounder", "skill", "All-Rounder", "A correct decision in every category", len(ScenarioParser.CATEGORY_KEYWORDS),
+         "Get at least one scenario right in each category: banking, delivery, government, jobs, university, "
+         "passwords, Microsoft 365 and social media."),
+        ("comeback", "skill", "Comeback", "Skill rank rises after a drop", 1,
+         "Your skill rank has to drop and then climb back up. Keep training after a bad run."),
+        ("real_world_catch", "skill", "Real-World Catch", "Report a phishing campaign email", 1,
+         "Report a phishing test email that arrived in your real inbox, instead of clicking it."),
     )
 
     DAILY_GOAL = 5
@@ -158,20 +190,51 @@ class ProgressService:
         return False
 
     @staticmethod
-    def badge_progress(facts, tiers):
+    def _streak_progress(target, current, longest):
+        """A streak badge is earned once any run reached the target; until then the current run counts."""
+        return target if longest >= target else current
+
+    @staticmethod
+    def badge_progress(facts, tiers, streaks):
         """How far the player is towards each badge (compared with its target)."""
+        caught = [fact for fact in facts if fact["is_phishing"] and fact["correct"]]
+        categories_right = {fact["category"] for fact in facts if fact["correct"]}
+        current, longest = streaks["daily_streak"], streaks["longest_streak"]
         return {
-            "first_catch": int(any(fact["is_phishing"] and fact["correct"] for fact in facts)),
+            "day_one": int(bool(facts)),
+            "streak_5": ProgressService._streak_progress(5, current, longest),
+            "streak_14": ProgressService._streak_progress(14, current, longest),
+            "streak_30": ProgressService._streak_progress(30, current, longest),
+            "decisions_10": len(facts),
+            "decisions_50": len(facts),
+            "decisions_100": len(facts),
+            "first_catch": int(bool(caught)),
             "clue_hunter": sum(1 for fact in facts if fact["correct"] and fact["clue_score"] == 100),
-            "category_master": ProgressService._category_mastery_progress(facts),
+            "sharp_eye": sum(1 for fact in caught if fact["difficulty"] == "Hard"),
             "zero_misses": ProgressService._longest_run_without_missed_phishing(facts),
+            "category_master": ProgressService._category_mastery_progress(facts),
+            "all_rounder": len(categories_right & set(ScenarioParser.CATEGORY_KEYWORDS)),
             "comeback": int(ProgressService._had_comeback(tiers)),
+            "real_world_catch": int(any(fact.get("campaign") for fact in caught)),
         }
 
     @staticmethod
+    def longest_streak(days):
+        """The most practice days in a row, from a set of dates."""
+        longest = 0
+        for day in days:
+            if day - timedelta(days=1) in days:
+                continue  # not the start of a run
+            length = 1
+            while day + timedelta(days=length) in days:
+                length += 1
+            longest = max(longest, length)
+        return longest
+
+    @staticmethod
     def daily_activity(facts, today=None):
-        """Practice-day streak and today's decisions (days are in UTC)."""
-        today = today or datetime.now(timezone.utc).date()
+        """Practice-day streak and today's decisions (local days, see app/utils/clock.py)."""
+        today = today or local_today()
         days = {fact["date"] for fact in facts if fact.get("date")}
 
         day = today if today in days else today - timedelta(days=1)
@@ -183,22 +246,25 @@ class ProgressService:
         done_today = sum(1 for fact in facts if fact.get("date") == today)
         return {
             "daily_streak": streak,
+            "longest_streak": ProgressService.longest_streak(days),
             "practised_today": today in days,
             "today_attempts": done_today,
             "daily_goal": ProgressService.DAILY_GOAL,
         }
 
     @staticmethod
-    def attempt_facts(attempts):
-        """Turn attempts (any order) into simple dictionaries, oldest first."""
+    def attempt_facts(attempts, scenarios=None):
+        """Turn attempts (any order) into simple dictionaries, oldest first.
+        `scenarios` (id -> Scenario) can be passed in to avoid loading them again."""
         ordered = sorted(attempts, key=lambda attempt: (attempt.attempted_at, attempt.attempt_id))
-        scenario_ids = {attempt.scenario_id for attempt in ordered}
-        scenarios = {
-            scenario.scenario_id: scenario
-            for scenario in db.session.query(Scenario).filter(
-                Scenario.scenario_id.in_(scenario_ids)
-            ).all()
-        } if scenario_ids else {}
+        if scenarios is None:
+            scenario_ids = {attempt.scenario_id for attempt in ordered}
+            scenarios = {
+                scenario.scenario_id: scenario
+                for scenario in db.session.query(Scenario).filter(
+                    Scenario.scenario_id.in_(scenario_ids)
+                ).all()
+            } if scenario_ids else {}
 
         facts = []
         for attempt in ordered:
@@ -210,15 +276,15 @@ class ProgressService:
                 "category": scenario.category if scenario else "Unknown",
                 "clue_score": attempt.clue_score,
                 "xp": attempt.score or 0,
-                "date": attempt.attempted_at.date() if attempt.attempted_at else None,
+                "date": local_date(attempt.attempted_at) if attempt.attempted_at else None,
+                "campaign": bool(attempt.campaign_recipient_id),
             })
         return facts
 
     @staticmethod
     def running_xp(facts):
-        """Total XP, added up in time order and never below 0 at any step.
-        A campaign penalty takes away only what the player has, so there is no hidden debt:
-        whatever they earn afterwards shows straight away."""
+        """Total XP, added up in time order. No decision takes XP away (mistakes earn 0), so this only
+        grows; the floor at 0 stays as a guard for any older record with a negative value."""
         xp = 0
         for fact in facts:
             xp = max(xp + fact["xp"], 0)
@@ -244,7 +310,8 @@ class ProgressService:
             ProgressService.TIERS[tier_index + 1]
             if tier_index + 1 < len(ProgressService.TIERS) else None
         )
-        badge_progress = ProgressService.badge_progress(facts, tiers)
+        streaks = ProgressService.daily_activity(facts)
+        badge_progress = ProgressService.badge_progress(facts, tiers, streaks)
 
         return {
             "xp": xp,
@@ -269,41 +336,57 @@ class ProgressService:
             "badges": [
                 {
                     "key": key,
+                    "group": group,
                     "name": name,
                     "description": description,
+                    "how": how,
                     "earned": badge_progress[key] >= target,
                     "progress": min(badge_progress[key], target),
                     "target": target,
                 }
-                for key, name, description, target in ProgressService.BADGES
+                for key, group, name, description, target, how in ProgressService.BADGES
             ],
-            **ProgressService.daily_activity(facts),
+            **streaks,
         }
 
     @staticmethod
     def place_in(scores, own):
-        """1-based position of `own` among (rating, xp) scores, best first. Equal scores share a place."""
+        """1-based position of `own` among (rated, rating, xp) scores, best first. Equal scores share a place."""
         return 1 + sum(score > own for score in scores)
 
     @staticmethod
+    def top_percent(position, out_of):
+        """The share of players at or above this position: #1 of 24 is the top 5%, #21 of 24 the top 88%.
+        Small means good. Rounded up, because "top 5%" means within the best 5%."""
+        return ceil(position / out_of * 100)
+
+    @staticmethod
     def standing(player_id):
-        """This player's position among all rated players, by skill rating and then XP.
-        Only the position and the number of players leave this method: never anyone else's name or score."""
-        attempts_by_player = {}
+        """This player's position among ALL players. Rated players (10+ decisions) come first, by skill
+        rating and then XP; players not yet rated follow, by XP. Only the position and the player count
+        leave this method: never anyone else's name or score."""
+        attempts_by_player = {player: [] for (player,) in db.session.query(Player.player_id)}
         for attempt in SimulationAttempt.query.all():
             attempts_by_player.setdefault(attempt.player_id, []).append(attempt)
+        scenarios = {scenario.scenario_id: scenario for scenario in Scenario.query.all()}
 
         scores = {}
         for other_id, attempts in attempts_by_player.items():
-            facts = ProgressService.attempt_facts(attempts)
-            if len(facts) >= ProgressService.MIN_RATED_ATTEMPTS:
-                scores[other_id] = (ProgressService.skill_rating(facts)["rating"], ProgressService.running_xp(facts))
+            facts = ProgressService.attempt_facts(attempts, scenarios)
+            rated = len(facts) >= ProgressService.MIN_RATED_ATTEMPTS
+            rating = ProgressService.skill_rating(facts)["rating"] if rated else 0
+            scores[other_id] = (rated, rating, ProgressService.running_xp(facts))
 
         out_of = len(scores)
         if player_id not in scores:
-            return {"position": None, "out_of": out_of, "top_percent": None}
+            return {"position": None, "out_of": out_of, "top_percent": None, "rated": False}
         position = ProgressService.place_in(scores.values(), scores[player_id])
-        return {"position": position, "out_of": out_of, "top_percent": max(round(position / out_of * 100), 1)}
+        return {
+            "position": position,
+            "out_of": out_of,
+            "top_percent": ProgressService.top_percent(position, out_of),
+            "rated": scores[player_id][0],
+        }
 
     @staticmethod
     def summary(attempts):

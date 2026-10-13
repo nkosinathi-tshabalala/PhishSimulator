@@ -1,4 +1,4 @@
-// Player page: the baseline quiz and its results (CATCH "Check")
+// Player page: the baseline assessments for the player's role, the quiz and its results (CATCH "Check")
 
 import { useEffect, useState } from "react";
 import {
@@ -8,7 +8,8 @@ import {
   ClipboardList,
   Info,
   LoaderCircle,
-  RotateCcw,
+  PlayCircle,
+  Sparkles,
   XCircle,
 } from "lucide-react";
 import { Button } from "./ui/button";
@@ -41,18 +42,38 @@ interface QuestionResult {
 }
 
 interface QuizSummary {
+  templateName?: string;
+  role?: string | null;
   overallScore: number;
   questionsPassed: number;
   confidenceLevel: string;
   startingDifficulty: string;
+  /** False when taken after the player's first 5 training decisions: saved, but their answers set the difficulty. */
+  setsDifficulty?: boolean;
   results: QuestionResult[];
+}
+
+/** One baseline assessment offered to the player: new, or already taken. */
+interface AvailableAssessment {
+  templateId: number;
+  name: string;
+  role: string;
+  description: string;
+  questionCount: number;
+  status: "new" | "completed";
+  assessmentId: number | null;
+  score: number | null;
+  completedAt: string | null;
 }
 
 const MIN_ANSWER_LENGTH = 10;
 
-/** CATCH "Check": a short open-text quiz that sets the starting difficulty. */
+/** CATCH "Check": short open-text baseline assessments for the player's role; the latest sets the starting level. */
 export function BaselineQuiz({ onBack }: BaselineQuizProps) {
+  const [available, setAvailable] = useState<AvailableAssessment[]>([]);
+  const [role, setRole] = useState<string | null>(null);
   const [assessmentId, setAssessmentId] = useState<number | null>(null);
+  const [assessmentName, setAssessmentName] = useState("");
   const [questions, setQuestions] = useState<Question[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [answer, setAnswer] = useState("");
@@ -61,31 +82,50 @@ export function BaselineQuiz({ onBack }: BaselineQuizProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
 
-  useEffect(() => {
-    const load = async () => {
-      const latest = await BaselineService.getLatestResult();
-      if (latest.ok && latest.data.success && latest.data.data) {
-        setSummary(latest.data.data);
-        setIsLoading(false);
-        return;
-      }
-      await startQuiz();
-    };
-    load();
-  }, []);
-
-  const startQuiz = async () => {
+  const loadList = async () => {
     setIsLoading(true);
     setError("");
-    const response = await BaselineService.startAssessment({});
+    const response = await BaselineService.getAvailable();
+    if (response.ok && response.data.success) {
+      setAvailable(response.data.data.assessments || []);
+      setRole(response.data.data.role);
+    } else {
+      setError(response.data.message || "Unable to load your baseline assessments.");
+    }
+    setAssessmentId(null);
+    setQuestions([]);
+    setSummary(null);
+    setIsLoading(false);
+  };
+
+  useEffect(() => {
+    loadList();
+  }, []);
+
+  const startQuiz = async (templateId: number) => {
+    setIsLoading(true);
+    setError("");
+    const response = await BaselineService.startAssessment({ template_id: templateId });
     if (response.ok && response.data.success) {
       setAssessmentId(response.data.data.assessment_id);
+      setAssessmentName(response.data.data.name);
       setQuestions(response.data.data.questions || []);
       setCurrentIndex(0);
       setAnswer("");
       setSummary(null);
     } else {
-      setError(response.data.message || "Unable to start the quiz.");
+      setError(response.data.message || "Unable to start the assessment.");
+    }
+    setIsLoading(false);
+  };
+
+  const viewResult = async (id: number) => {
+    setIsLoading(true);
+    const response = await BaselineService.getResult(id);
+    if (response.ok && response.data.success) {
+      setSummary(response.data.data);
+    } else {
+      setError(response.data.message || "That result could not be loaded.");
     }
     setIsLoading(false);
   };
@@ -126,21 +166,25 @@ export function BaselineQuiz({ onBack }: BaselineQuizProps) {
     return (
       <div className="h-full flex items-center justify-center gap-2 text-muted-foreground">
         <LoaderCircle className="w-4 h-4 animate-spin" />
-        Loading quiz...
+        Loading...
       </div>
     );
   }
 
   if (summary) {
-    return <QuizResults summary={summary} onBack={onBack} onRetake={startQuiz} />;
+    return <QuizResults summary={summary} onBack={onBack} onList={loadList} />;
   }
 
   if (!questions.length) {
     return (
-      <div className="h-full flex flex-col items-center justify-center gap-3 text-muted-foreground">
-        {error || "No baseline questions found."}
-        <Button variant="outline" onClick={onBack}>Back to home</Button>
-      </div>
+      <AssessmentList
+        assessments={available}
+        role={role}
+        error={error}
+        onStart={startQuiz}
+        onView={viewResult}
+        onBack={onBack}
+      />
     );
   }
 
@@ -150,9 +194,10 @@ export function BaselineQuiz({ onBack }: BaselineQuizProps) {
   return (
     <div className="h-full flex flex-col">
       <QuizHeader
-        title="Baseline Quiz"
+        title={assessmentName || "Baseline assessment"}
         subtitle={`Question ${currentIndex + 1} of ${questions.length}`}
-        onBack={onBack}
+        onBack={loadList}
+        backLabel="Back to your baseline assessments"
       />
       <div className="px-6 py-3 border-b">
         <Progress value={percent} className="h-1.5" />
@@ -199,10 +244,15 @@ export function BaselineQuiz({ onBack }: BaselineQuizProps) {
 }
 
 /** Page header with a back button. */
-function QuizHeader({ title, subtitle, onBack }: { title: string; subtitle: string; onBack: () => void }) {
+function QuizHeader({ title, subtitle, onBack, backLabel = "Back to home" }: {
+  title: string;
+  subtitle: string;
+  onBack: () => void;
+  backLabel?: string;
+}) {
   return (
     <div className="border-b p-4 flex items-center gap-4">
-      <Button variant="ghost" size="icon" onClick={onBack} title="Back to home">
+      <Button variant="ghost" size="icon" onClick={onBack} title={backLabel} aria-label={backLabel}>
         <ArrowLeft className="w-5 h-5" />
       </Button>
       <div className="w-10 h-10 rounded-lg bg-amber-400/15 flex items-center justify-center">
@@ -216,21 +266,122 @@ function QuizHeader({ title, subtitle, onBack }: { title: string; subtitle: stri
   );
 }
 
-/** Overall quiz score and every marked answer. */
-function QuizResults({ summary, onBack, onRetake }: {
+/** The player's baseline assessments: start a new one, or open a result. */
+function AssessmentList({ assessments, role, error, onStart, onView, onBack }: {
+  assessments: AvailableAssessment[];
+  role: string | null;
+  error: string;
+  onStart: (templateId: number) => void;
+  onView: (assessmentId: number) => void;
+  onBack: () => void;
+}) {
+  const fresh = assessments.filter((item) => item.status === "new");
+  const done = assessments.filter((item) => item.status === "completed");
+
+  return (
+    <div className="h-full overflow-y-auto">
+      <QuizHeader
+        title="Baseline assessments"
+        subtitle={role ? `Written for ${role.toLowerCase()}s. Each one can be taken once` : "Each one can be taken once"}
+        onBack={onBack}
+      />
+      <div className="p-6 max-w-3xl mx-auto space-y-6">
+        <div className="flex items-start gap-3 rounded-xl border border-sky-500/25 bg-sky-500/10 p-4 text-sm text-sky-100/90">
+          <Info className="w-4 h-4 mt-0.5 shrink-0 text-sky-300" />
+          Short open questions about messages you might really receive. Answer in your own words: there are no
+          trick questions and no time limit. A baseline taken before you start training sets your starting
+          level. After your first 5 training decisions your answers set the difficulty, and new baselines show
+          how you've improved.
+        </div>
+
+        {error && <p className="text-sm text-destructive" role="alert">{error}</p>}
+
+        <section className="space-y-3">
+          <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Ready to take</h3>
+          {fresh.map((item) => (
+            <Card key={item.templateId} className="border-sky-500/30">
+              <CardContent className="p-4 flex flex-col sm:flex-row sm:items-center gap-4">
+                <div className="w-10 h-10 rounded-lg bg-sky-500/15 flex items-center justify-center shrink-0">
+                  <Sparkles className="w-5 h-5 text-sky-300" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-semibold">
+                    {item.role} · {item.name}
+                    <span className="ml-2 rounded-full bg-sky-500/20 px-2 py-0.5 text-xs font-medium text-sky-200">New</span>
+                  </p>
+                  {item.description && <p className="text-sm text-muted-foreground">{item.description}</p>}
+                  <p className="text-xs text-muted-foreground mt-1">{item.questionCount} questions · about 5 minutes</p>
+                </div>
+                <Button onClick={() => onStart(item.templateId)}>
+                  <PlayCircle className="w-4 h-4" />
+                  Start
+                </Button>
+              </CardContent>
+            </Card>
+          ))}
+          {!fresh.length && (
+            <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+              {done.length
+                ? "You've taken every baseline assessment available to you. New ones appear here when your trainer switches them on."
+                : "No baseline assessment is available for your role yet. Please ask your trainer."}
+            </p>
+          )}
+        </section>
+
+        {done.length > 0 && (
+          <section className="space-y-3">
+            <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Completed</h3>
+            {done.map((item) => (
+              <Card key={item.templateId}>
+                <CardContent className="p-4 flex flex-col sm:flex-row sm:items-center gap-4">
+                  <div className="w-10 h-10 rounded-lg bg-green-500/15 flex items-center justify-center shrink-0">
+                    <CheckCircle2 className="w-5 h-5 text-green-300" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold">{item.role} · {item.name}</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Score {item.score}% · taken {item.completedAt ? new Date(item.completedAt).toLocaleDateString() : ""}
+                    </p>
+                  </div>
+                  {item.assessmentId && (
+                    <Button variant="outline" onClick={() => onView(item.assessmentId as number)}>
+                      View result
+                    </Button>
+                  )}
+                </CardContent>
+              </Card>
+            ))}
+          </section>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Overall score and every marked answer. */
+function QuizResults({ summary, onBack, onList }: {
   summary: QuizSummary;
   onBack: () => void;
-  onRetake: () => void;
+  onList: () => void;
 }) {
   const stats = [
     { label: "Questions passed", value: `${summary.questionsPassed}/${summary.results.length}`, tone: "text-green-400" },
     { label: "Confidence level", value: summary.confidenceLevel, tone: "text-foreground" },
-    { label: "Starting difficulty", value: summary.startingDifficulty, tone: "text-sky-400" },
+    summary.setsDifficulty === false
+      ? { label: "Difficulty", value: "Set by your answers", tone: "text-sky-400" }
+      : { label: "Starting difficulty", value: summary.startingDifficulty, tone: "text-sky-400" },
   ];
 
   return (
     <div className="h-full overflow-y-auto">
-      <QuizHeader title="Baseline Quiz Results" subtitle="Your training starts from here" onBack={onBack} />
+      <QuizHeader
+        title={summary.templateName ? `${summary.role ? `${summary.role} · ` : ""}${summary.templateName}` : "Baseline result"}
+        subtitle={summary.setsDifficulty === false
+          ? "Saved to show your progress. Your training answers already set your difficulty"
+          : "This result sets the level your training starts at"}
+        onBack={onList}
+        backLabel="Back to your baseline assessments"
+      />
 
       <div className="p-6 max-w-3xl mx-auto space-y-6">
         <Card className="border-sky-500/25 bg-linear-to-br from-sky-600/20 via-indigo-600/10 to-card">
@@ -259,9 +410,9 @@ function QuizResults({ summary, onBack, onRetake }: {
 
         <div className="flex flex-col sm:flex-row gap-3 pb-6">
           <Button onClick={onBack} className="flex-1">Back to home</Button>
-          <Button onClick={onRetake} variant="outline" className="flex-1">
-            <RotateCcw className="w-4 h-4" />
-            Retake quiz
+          <Button onClick={onList} variant="outline" className="flex-1">
+            <ClipboardList className="w-4 h-4" />
+            All baseline assessments
           </Button>
         </div>
       </div>

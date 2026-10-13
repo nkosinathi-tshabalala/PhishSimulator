@@ -44,6 +44,18 @@ class BaselineQuestion(db.Model):
         default=2
     )
 
+    # The baseline assessment this question belongs to (its role and on/off switch live there)
+    template_id = db.Column(
+        db.Integer,
+        db.ForeignKey("baseline_template.template_id"),
+        nullable=True
+    )
+
+    template = db.relationship(
+        "BaselineTemplate",
+        back_populates="questions"
+    )
+
     responses = db.relationship(
         "BaselineResponse",
         back_populates="question",

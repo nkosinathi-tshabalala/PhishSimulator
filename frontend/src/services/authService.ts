@@ -1,6 +1,7 @@
 // API calls for accounts and signing in
 
 import { apiRequest } from "./api";
+import { getToken, clearToken } from "./session";
 
 /** API calls for accounts and signing in. */
 class AuthService {
@@ -30,21 +31,21 @@ class AuthService {
 
   /** The signed-in user's details. */
   async getCurrentUser() {
-    const token = localStorage.getItem("access_token");
+    const token = getToken();
 
     return await apiRequest("/auth/me", "GET", null, token);
   }
 
   /** Save profile changes. */
   async updateProfile(profileData: any) {
-    const token = localStorage.getItem("access_token");
+    const token = getToken();
 
     return await apiRequest("/auth/update-profile", "PUT", profileData, token);
   }
 
   /** Change the password. */
   async changePassword(passwordData: any) {
-    const token = localStorage.getItem("access_token");
+    const token = getToken();
 
     return await apiRequest(
       "/auth/change-password",
@@ -56,14 +57,14 @@ class AuthService {
 
   /** Sign out and forget the token. */
   async logout() {
-    const token = localStorage.getItem("access_token");
+    const token = getToken();
 
     try {
       if (token) {
         await apiRequest("/auth/logout", "POST", null, token);
       }
     } finally {
-      localStorage.removeItem("access_token");
+      clearToken();
     }
   }
 }

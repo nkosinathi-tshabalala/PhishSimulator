@@ -134,10 +134,6 @@ export function SimulationsPage({ onNavigate }: SimulationsPageProps) {
             ))}
           </div>
         </div>
-
-        <p className="text-xs text-muted-foreground text-center">
-          Nothing in a scenario is real, but acting on a message counts as trusting it, just like in a real inbox.
-        </p>
       </div>
     </div>
   );
