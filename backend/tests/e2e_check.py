@@ -207,9 +207,10 @@ try:
 
     available = data_of(api("GET", "/api/baseline/available", ptoken))
     offered = available.get("assessments") or []
-    check("baseline: a new Student is offered Student · Baseline assessment 1, marked new",
-          [(row["role"], row["name"], row["status"]) for row in offered] == [("Student", "Baseline assessment 1", "new")]
-          and available.get("newCount") == 1, offered)
+    check("baseline: a new Student is offered both switched-on Student assessments (1 and 2), marked new",
+          [(row["role"], row["name"], row["status"]) for row in offered]
+          == [("Student", "Baseline assessment 1", "new"), ("Student", "Baseline assessment 2", "new")]
+          and available.get("newCount") == 2, offered)
     r = api("POST", "/api/baseline/start", ptoken)
     start = data_of(r)
     questions = start.get("questions") or []
@@ -236,8 +237,8 @@ try:
     check("baseline: the same assessment cannot be taken twice", r.status_code == 400 and "already taken" in (body(r).get("message") or ""),
           f"{r.status_code} {body(r).get('message')}")
     after = data_of(api("GET", "/api/baseline/available", ptoken))
-    check("baseline: afterwards it shows as completed with its score, nothing new",
-          after.get("newCount") == 0 and (after.get("assessments") or [{}])[0].get("status") == "completed"
+    check("baseline: afterwards it shows as completed with its score; assessment 2 is still new",
+          after.get("newCount") == 1 and (after.get("assessments") or [{}])[0].get("status") == "completed"
           and (after.get("assessments") or [{}])[0].get("score") == baseline_summary.get("overallScore"), after)
 
     # The Check rule, and its known weakness: it counts expected keywords, not understanding
@@ -357,8 +358,8 @@ try:
     if qid:
         check("admin: one baseline question", api("GET", f"/api/baseline/questions/{qid}", atoken).status_code == 200)
     layout = sorted((t["role"], t["name"], t["isActive"], t["questionCount"]) for t in templates)
-    check("bank: each role has Baseline assessment 1 (on) and 2 (off), 5 questions each",
-          layout == sorted((role, f"Baseline assessment {n}", n == 1, 5)
+    check("bank: each role has Baseline assessment 1 and 2 (5 questions each); the demo has Student 2 on, the others off",
+          layout == sorted((role, f"Baseline assessment {n}", n == 1 or role == "Student", 5)
                            for role in ("Student", "Employee", "Other") for n in (1, 2)), layout)
     by_name = {(t["role"], t["name"]): t for t in templates}
     student_2 = by_name.get(("Student", "Baseline assessment 2"), {})
@@ -366,11 +367,18 @@ try:
     check("bank: times taken and average score are counted per assessment",
           student_1.get("timesTaken", 0) >= 2 and student_1.get("averageScore") is not None, student_1.get("timesTaken"))
 
-    r = api("POST", f"/api/baseline/templates/{student_2.get('id')}/active", ptoken, json={"active": True})
+    check("demo: about half of the demo students have taken Student · Baseline assessment 2",
+          5 <= student_2.get("timesTaken", 0) <= 15, student_2.get("timesTaken"))
+    employee_2 = by_name.get(("Employee", "Baseline assessment 2"), {})
+    r = api("POST", f"/api/baseline/templates/{employee_2.get('id')}/active", ptoken, json={"active": True})
     check("bank: a player cannot switch assessments on", r.status_code == 403, r.status_code)
-    r = api("POST", f"/api/baseline/templates/{student_2.get('id')}/active", atoken, json={"active": True})
-    check("bank: admin switches Student · Baseline assessment 2 on", r.status_code == 200 and data_of(r).get("isActive") is True,
+    before = {row["name"] for row in data_of(api("GET", "/api/baseline/available", etoken)).get("assessments") or []}
+    r = api("POST", f"/api/baseline/templates/{employee_2.get('id')}/active", atoken, json={"active": True})
+    check("bank: admin switches Employee · Baseline assessment 2 on", r.status_code == 200 and data_of(r).get("isActive") is True,
           f"{r.status_code} {body(r).get('message')}")
+    now_offered = {row["name"]: row["status"] for row in data_of(api("GET", "/api/baseline/available", etoken)).get("assessments") or []}
+    check("baseline: the employee is offered it straight away, as new",
+          "Baseline assessment 2" not in before and now_offered.get("Baseline assessment 2") == "new", now_offered)
     fresh = data_of(api("GET", "/api/baseline/available", ptoken))
     check("baseline: the student now sees Baseline assessment 2 as new (and 1 as completed)",
           fresh.get("newCount") == 1

@@ -61,6 +61,9 @@ OWNER_EMAIL = (os.getenv("OWNER_EMAIL") or "").strip().lower()
 # CAMPAIGN_ALLOWED_RECIPIENTS too, or the alias addresses cannot be picked for campaigns.
 DEMO_EMAIL = (os.getenv("DEMO_EMAIL") or "").strip().lower()
 FAKE_DOMAIN = "phishsimulator.test"
+# Students' second baseline assessment was switched on this many days ago, and about this share took it
+SECOND_BASELINE_DAYS = 21
+SECOND_BASELINE_SHARE = 0.5
 # Every fourth test player has not agreed to campaign emails (30 of 40 have)
 NO_CONSENT_EVERY = 4
 
@@ -155,6 +158,31 @@ def role_template(occupation):
     return BaselineTemplate.query.filter(
         BaselineTemplate.is_active.is_(True), BaselineTemplate.occupation == occupation.value,
     ).order_by(BaselineTemplate.template_id).first()
+
+
+def seed_second_baseline(rng):
+    """Students: "Baseline assessment 2" was switched on three weeks ago and about half of the students have
+    taken it, so the Baseline pages show new and completed assessments side by side. The second assessments
+    for employees and other players stay off, so switching one on can be shown live."""
+    template = BaselineTemplate.query.filter_by(
+        occupation=Occupation.STUDENT.value, name="Baseline assessment 2").first()
+    if not template:
+        return 0
+    now = datetime.utcnow()
+    switched_on = now - timedelta(days=SECOND_BASELINE_DAYS)
+    template.is_active, template.activated_at = True, switched_on
+    taken = 0
+    students = Player.query.join(UserProfile).filter(
+        UserProfile.occupation == Occupation.STUDENT).order_by(Player.player_id).all()
+    for player in students:
+        if rng.random() < SECOND_BASELINE_SHARE:
+            start = max(switched_on, player.joined_at)
+            when = min(start + timedelta(days=rng.randint(0, SECOND_BASELINE_DAYS - 1), hours=rng.randint(8, 20)),
+                       now - timedelta(hours=1))
+            seed_baseline(player, template, rng, when)
+            taken += 1
+    db.session.commit()
+    return taken
 
 
 def make_user(email, password, role, full_name=None, profile=None, joined_at=None, consent=False):
@@ -431,6 +459,7 @@ def main():
             habit = rng.choices(HABITS, weights=HABIT_WEIGHTS)[0]
             seed_attempts(player, scenarios, rng, joined, max(0.3, ability - 0.1), habit)
         db.session.commit()
+        second_baseline = seed_second_baseline(rng)
 
         if owner:
             joined = owner.joined_at
@@ -451,6 +480,8 @@ def main():
         print(f"  test players: {demo_email(PLAYERS[0][0])} ... / {DEMO_PASSWORD}  ({consenting} of {players} consented)")
         print(f"  {players} players, {len(scenarios)} scenarios, {BaselineTemplate.query.count()} baseline assessments ({len(questions)} questions), "
               f"{attempts} decisions, {campaigns} campaigns")
+        print(f"  baselines: assessment 1 on for every role; Student assessment 2 on ({second_baseline} students took it); "
+              "Employee and Other assessment 2 off (switch one on live)")
 
 
 if __name__ == "__main__":
