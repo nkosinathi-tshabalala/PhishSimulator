@@ -27,7 +27,7 @@ from app.extensions import bcrypt, db
 from app.enums.occupation import Occupation
 from app.models.analytics import PerformanceTracker
 from app.models.authentication import Player, User, UserProfile, UserSession
-from app.models.baseline import BaselineAssessment, BaselineQuestion, BaselineResponse
+from app.models.baseline import BaselineAssessment, BaselineQuestion, BaselineResponse, BaselineTemplate
 from app.models.email import EmailCampaign, EmailCampaignRecipient
 from app.models.scenario import Scenario
 from app.models.simulation import SimulationAttempt, SimulationSession, UserAction
@@ -119,7 +119,7 @@ def wipe_dynamic_data():
     """Clear everything the seed creates, so it can be re-run without a full reset."""
     for model in (UserAction, SimulationAttempt, SimulationSession, BaselineResponse, BaselineAssessment,
                   PerformanceTracker, EmailCampaignRecipient, EmailCampaign, UserProfile, Player,
-                  UserSession, BaselineQuestion, Scenario):
+                  UserSession, BaselineQuestion, BaselineTemplate, Scenario):
         db.session.query(model).delete()
     db.session.query(User).delete()
     db.session.commit()
@@ -145,18 +145,16 @@ def seed_scenarios():
 
 
 def seed_baseline_questions():
-    """The role-based question bank: 5 active questions per role plus spares the admin can switch on."""
+    """The template bank: per role, "Baseline assessment 1" switched on and "Baseline assessment 2" off."""
     BaselineService.load_templates()
     return BaselineQuestion.query.all()
 
 
-def role_questions(occupation):
-    """The questions a player of this role answers (the first active ones, so the seed is repeatable)."""
-    active = BaselineQuestion.query.filter(BaselineQuestion.is_active.is_(True)).order_by(
-        BaselineQuestion.question_id).all()
-    own = [question for question in active if question.occupation == occupation.value]
-    general = [question for question in active if not question.occupation]
-    return (own + general)[:BaselineService.QUESTIONS_PER_ASSESSMENT]
+def role_template(occupation):
+    """The baseline assessment a player of this role took when they joined (their role's first active one)."""
+    return BaselineTemplate.query.filter(
+        BaselineTemplate.is_active.is_(True), BaselineTemplate.occupation == occupation.value,
+    ).order_by(BaselineTemplate.template_id).first()
 
 
 def make_user(email, password, role, full_name=None, profile=None, joined_at=None, consent=False):
@@ -177,10 +175,12 @@ def make_user(email, password, role, full_name=None, profile=None, joined_at=Non
     return user, None
 
 
-def seed_baseline(player, questions, rng, joined_at):
-    """A completed baseline assessment on the player's role questions: score reflects their ability."""
+def seed_baseline(player, template, rng, joined_at):
+    """A completed baseline assessment (their role's first one): score reflects the player's ability."""
     ability = rng.uniform(0.35, 0.95)
+    questions = list(template.questions) if template else []
     assessment = BaselineAssessment(player_id=player.player_id, started_at=joined_at,
+                                    template_id=template.template_id if template else None,
                                     completed_at=joined_at + timedelta(minutes=6))
     db.session.add(assessment)
     db.session.flush()
@@ -395,7 +395,7 @@ def refresh_players():
         db.session.commit()
         _, message, _ = BaselineService.load_templates()
         print(f"Test players updated: {moved} new addresses, {consenting} of {len(PLAYERS)} consenting.")
-        print(f"Question bank: {message}")
+        print(f"Baseline template bank: {message}")
         if not DEMO_EMAIL:
             print("DEMO_EMAIL is not set, so test players keep their @phishsimulator.test addresses.")
 
@@ -427,14 +427,14 @@ def main():
             _, player = make_user(demo_email(name), DEMO_PASSWORD, "PLAYER", full_name=name,
                                   profile=(age, occupation, it_background), joined_at=joined,
                                   consent=demo_consent(index))
-            ability = seed_baseline(player, role_questions(occupation), rng, joined) / 100
+            ability = seed_baseline(player, role_template(occupation), rng, joined) / 100
             habit = rng.choices(HABITS, weights=HABIT_WEIGHTS)[0]
             seed_attempts(player, scenarios, rng, joined, max(0.3, ability - 0.1), habit)
         db.session.commit()
 
         if owner:
             joined = owner.joined_at
-            ability = seed_baseline(owner, role_questions(Occupation.STUDENT), rng, joined) / 100
+            ability = seed_baseline(owner, role_template(Occupation.STUDENT), rng, joined) / 100
             # The account you demo with, so give it a solid history to look at
             seed_attempts(owner, scenarios, rng, joined, max(0.55, ability), HABITS[3])
             db.session.commit()
@@ -449,7 +449,7 @@ def main():
             print(f"  you:   {OWNER_EMAIL} / {DEMO_PASSWORD}  (campaigns can be sent here)")
         consenting = UserProfile.query.filter(UserProfile.campaign_consent.is_(True)).count()
         print(f"  test players: {demo_email(PLAYERS[0][0])} ... / {DEMO_PASSWORD}  ({consenting} of {players} consented)")
-        print(f"  {players} players, {len(scenarios)} scenarios, {len(questions)} baseline questions in the bank, "
+        print(f"  {players} players, {len(scenarios)} scenarios, {BaselineTemplate.query.count()} baseline assessments ({len(questions)} questions), "
               f"{attempts} decisions, {campaigns} campaigns")
 
 

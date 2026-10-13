@@ -19,6 +19,7 @@ from app.models.simulation import SimulationAttempt, SimulationSession, UserActi
 from app.adaptive.adaptive_engine import AdaptiveEngine
 from app.analytics import FeedbackGenerator, trends
 from app.analytics.filters import MetricFilters, category_options
+from app.services.baseline_service import BaselineService
 from app.services.campaign_service import CampaignService
 from app.services.progress_service import ProgressService
 from app.services.scenario_service import ScenarioService
@@ -347,6 +348,8 @@ class AnalyticsService:
             "correct_attempts": correct_attempts,
             "baseline_score": round(baseline.score) if baseline else None,
             "baseline_completed_at": AnalyticsService._to_utc_isoformat(baseline.completed_at) if baseline else None,
+            # Switched-on baseline assessments for the player's role that they have not taken yet
+            "new_baselines": BaselineService.count_new_for(player),
             "difficulty": difficulty,
             "adaptive_reason": adaptive_reason,
             **progress,

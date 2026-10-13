@@ -19,12 +19,32 @@ def get_latest_result():
     return respond(success, message, result)
 
 
-# POST /api/baseline/start - starts a quiz and returns the questions (no answers)
+# GET /api/baseline/available - the player's baseline assessments: new ones and ones already taken
+@baseline_bp.route("/available", methods=["GET"])
+@jwt_required()
+def get_available():
+    """The baseline assessments offered to the player's role."""
+    success, message, result = BaselineService.get_available(get_jwt_identity())
+    return respond(success, message, result)
+
+
+# GET /api/baseline/assessments/<id> - one of the player's own completed results
+@baseline_bp.route("/assessments/<int:assessment_id>", methods=["GET"])
+@jwt_required()
+def get_result(assessment_id):
+    """A completed baseline assessment with its marked answers."""
+    success, message, result = BaselineService.get_result(assessment_id, get_jwt_identity())
+    return respond(success, message, result, error_status=404)
+
+
+# POST /api/baseline/start - takes an optional template_id; returns the questions (no answers)
 @baseline_bp.route("/start", methods=["POST"])
 @jwt_required()
 def start_assessment():
-    """Start a new quiz attempt."""
-    success, message, result = BaselineService.start_assessment(get_jwt_identity())
+    """Start a baseline assessment the player has not taken yet."""
+    success, message, result = BaselineService.start_assessment(
+        get_jwt_identity(), request.get_json(silent=True) or {},
+    )
     return respond(success, message, result)
 
 
@@ -52,17 +72,67 @@ def complete_assessment():
     return respond(success, message, result)
 
 
-# GET /api/baseline/questions - admin only: every question with its marking guide
-@baseline_bp.route("/questions", methods=["GET"])
+# GET /api/baseline/templates - admin only: every baseline assessment with its questions
+@baseline_bp.route("/templates", methods=["GET"])
 @jwt_required()
 @require_admin
-def get_questions():
-    """Admin: list the quiz questions."""
-    success, message, result = BaselineService.get_questions()
+def get_templates():
+    """Admin: the baseline assessments by role."""
+    success, message, result = BaselineService.get_templates()
     return respond(success, message, result)
 
 
-# POST /api/baseline/questions - admin only: question, instruction, keywords, example answer, feedback
+# POST /api/baseline/templates - admin only: takes name (optional), occupation, description
+@baseline_bp.route("/templates", methods=["POST"])
+@jwt_required()
+@require_admin
+def create_template():
+    """Admin: add an empty baseline assessment for a role."""
+    success, message, result = BaselineService.create_template(request.get_json(silent=True) or {})
+    return respond(success, message, result, ok_status=201)
+
+
+# PUT /api/baseline/templates/<id> - admin only: rename or describe an assessment
+@baseline_bp.route("/templates/<int:template_id>", methods=["PUT"])
+@jwt_required()
+@require_admin
+def update_template(template_id):
+    """Admin: edit a baseline assessment's name, role or description."""
+    success, message, result = BaselineService.update_template(template_id, request.get_json(silent=True) or {})
+    return respond(success, message, result)
+
+
+# DELETE /api/baseline/templates/<id> - admin only: only while no player has taken it
+@baseline_bp.route("/templates/<int:template_id>", methods=["DELETE"])
+@jwt_required()
+@require_admin
+def delete_template(template_id):
+    """Admin: delete a baseline assessment nobody has taken."""
+    success, message, result = BaselineService.delete_template(template_id)
+    return respond(success, message, result)
+
+
+# POST /api/baseline/templates/<id>/active - admin only: takes {"active": true|false}
+@baseline_bp.route("/templates/<int:template_id>/active", methods=["POST"])
+@jwt_required()
+@require_admin
+def set_template_active(template_id):
+    """Admin: switch a baseline assessment on or off for its role."""
+    success, message, result = BaselineService.set_template_active(template_id, request.get_json(silent=True) or {})
+    return respond(success, message, result)
+
+
+# POST /api/baseline/templates/load-bank - admin only: adds missing assessments and questions from the bank
+@baseline_bp.route("/templates/load-bank", methods=["POST"])
+@jwt_required()
+@require_admin
+def load_template_bank():
+    """Admin: add the template-bank assessments and questions that are not here yet."""
+    success, message, result = BaselineService.load_templates()
+    return respond(success, message, result)
+
+
+# POST /api/baseline/questions - admin only: templateId, question, instruction, keywords, example answer, feedback
 @baseline_bp.route("/questions", methods=["POST"])
 @jwt_required()
 @require_admin
@@ -102,24 +172,4 @@ def update_question(question_id):
 def delete_question(question_id):
     """Admin: delete a quiz question."""
     success, message, result = BaselineService.delete_question(question_id)
-    return respond(success, message, result)
-
-
-# POST /api/baseline/questions/<id>/active - admin only: takes {"active": true|false}
-@baseline_bp.route("/questions/<int:question_id>/active", methods=["POST"])
-@jwt_required()
-@require_admin
-def set_question_active(question_id):
-    """Admin: switch a question on or off for players."""
-    success, message, result = BaselineService.set_active(question_id, request.get_json(silent=True) or {})
-    return respond(success, message, result)
-
-
-# POST /api/baseline/questions/load-templates - admin only: adds missing questions from the role bank
-@baseline_bp.route("/questions/load-templates", methods=["POST"])
-@jwt_required()
-@require_admin
-def load_question_templates():
-    """Admin: add the template questions that are not in the bank yet."""
-    success, message, result = BaselineService.load_templates()
     return respond(success, message, result)

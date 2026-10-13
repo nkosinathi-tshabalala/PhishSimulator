@@ -99,13 +99,24 @@ class BaselineSchema:
                 "of expected keywords."
             )
 
+        if "templateId" in data and not isinstance(data["templateId"], int):
+            return False, "Choose the baseline assessment this question belongs to."
+
+        return True, None
+
+    @staticmethod
+    def validate_template(data, require_name=True):
+        """Check a baseline assessment's name, role and description."""
+        name = str(data.get("name") or "").strip()
+        if require_name and not name:
+            return False, "Give the baseline assessment a name, e.g. Baseline assessment 2."
+        if len(name) > 120:
+            return False, "The name can be at most 120 characters."
         occupation = data.get("occupation")
         if occupation not in (None, "", *(role.value for role in Occupation)):
             return False, "Role must be Student, Employee, Other, or empty for every role."
-
-        if "isActive" in data and not isinstance(data["isActive"], bool):
-            return False, "Active must be true or false."
-
+        if len(str(data.get("description") or "")) > 500:
+            return False, "The description can be at most 500 characters."
         return True, None
     
     @staticmethod

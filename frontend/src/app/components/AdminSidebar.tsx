@@ -13,7 +13,7 @@ const ADMIN_ITEMS: NavItem[] = [
   { id: "admin-dashboard", label: "Dashboard", icon: Home, description: "Overview of platform activity" },
   { id: "datasets", label: "Datasets", icon: Database, description: "Upload and quality-check training data" },
   { id: "scenarios", label: "Scenario Review", icon: FileText, description: "Approve and activate scenarios" },
-  { id: "baseline-management", label: "Baseline Questions", icon: ClipboardList, description: "Edit the player baseline quiz" },
+  { id: "baseline-management", label: "Baseline Assessments", icon: ClipboardList, description: "Baseline assessments for each role" },
   { id: "users", label: "Users", icon: Users, description: "View and moderate registered players" },
   { id: "analytics", label: "Analytics", icon: BarChart3, description: "Platform-wide performance insights" },
   { id: "email-dispatcher", label: "Email Campaigns", icon: Send, description: "Send phishing tests to your own inboxes and track them" },

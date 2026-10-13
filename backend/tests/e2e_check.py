@@ -200,17 +200,25 @@ try:
           len(perf_new.get("badges", [])) == 15 and perf_new.get("total_attempts") == 0
           and perf_new.get("baseline_score") is None, {k: perf_new.get(k) for k in ("total_attempts", "baseline_score")})
 
+    with app.app_context():
+        from app.models.baseline.baseline_question import BaselineQuestion
+        # Which baseline assessment (role, name) each question belongs to
+        home_of = {q.question_id: (q.template.occupation, q.template.name) for q in BaselineQuestion.query.all()}
+
+    available = data_of(api("GET", "/api/baseline/available", ptoken))
+    offered = available.get("assessments") or []
+    check("baseline: a new Student is offered Student · Baseline assessment 1, marked new",
+          [(row["role"], row["name"], row["status"]) for row in offered] == [("Student", "Baseline assessment 1", "new")]
+          and available.get("newCount") == 1, offered)
     r = api("POST", "/api/baseline/start", ptoken)
     start = data_of(r)
     questions = start.get("questions") or []
     check("player: baseline quiz starts", r.status_code == 200 and questions, f"{r.status_code} {body(r).get('message')}")
-    with app.app_context():
-        from app.models.baseline.baseline_question import BaselineQuestion
-        role_of = {question.question_id: question.occupation for question in BaselineQuestion.query.all()}
-    given_roles = [role_of.get(question.get("id")) for question in questions]
-    check("baseline: a Student gets 5 questions, all written for students",
-          len(questions) == 5 and set(given_roles) == {"Student"}, given_roles)
+    given_homes = {home_of.get(question.get("id")) for question in questions}
+    check("baseline: it has 5 questions, all from Student · Baseline assessment 1",
+          len(questions) == 5 and given_homes == {("Student", "Baseline assessment 1")}, given_homes)
     assessment_id = start.get("assessment_id") or (start.get("assessment") or {}).get("assessment_id")
+    first_template = start.get("template_id")
     answered = 0
     for question in questions:
         qid = question.get("question_id") or question.get("id")
@@ -224,6 +232,13 @@ try:
     baseline_summary = data_of(r)
     check("player: baseline completes", r.status_code == 200, f"{r.status_code} {body(r).get('message')}")
     check("player: baseline result", api("GET", "/api/baseline/latest-result", ptoken).status_code == 200)
+    r = api("POST", "/api/baseline/start", ptoken, json={"template_id": first_template})
+    check("baseline: the same assessment cannot be taken twice", r.status_code == 400 and "already taken" in (body(r).get("message") or ""),
+          f"{r.status_code} {body(r).get('message')}")
+    after = data_of(api("GET", "/api/baseline/available", ptoken))
+    check("baseline: afterwards it shows as completed with its score, nothing new",
+          after.get("newCount") == 0 and (after.get("assessments") or [{}])[0].get("status") == "completed"
+          and (after.get("assessments") or [{}])[0].get("score") == baseline_summary.get("overallScore"), after)
 
     # The Check rule, and its known weakness: it counts expected keywords, not understanding
     with app.app_context():
@@ -261,9 +276,18 @@ try:
     })
     etoken, _ = login(EMPLOYEE_EMAIL)
     estart = data_of(api("POST", "/api/baseline/start", etoken))
-    employee_roles = [role_of.get(question.get("id")) for question in estart.get("questions") or []]
-    check("baseline: an Employee gets 5 questions, all written for employees",
-          len(employee_roles) == 5 and set(employee_roles) == {"Employee"}, employee_roles)
+    employee_homes = {home_of.get(question.get("id")) for question in estart.get("questions") or []}
+    check("baseline: an Employee gets Employee · Baseline assessment 1 (5 questions)",
+          len(estart.get("questions") or []) == 5 and employee_homes == {("Employee", "Baseline assessment 1")}, employee_homes)
+    r = api("POST", "/api/baseline/start", etoken, json={"template_id": first_template})
+    check("baseline: an Employee cannot take a Student assessment", r.status_code == 400, r.status_code)
+    one = (estart.get("questions") or [{}])[0]
+    api("POST", "/api/baseline/submit-response", etoken, json={
+        "assessment_id": estart.get("assessment_id"), "question_id": one.get("id"), "answer_text": BASELINE_ANSWER,
+    })
+    r = api("POST", "/api/baseline/complete", etoken, json={"assessment_id": estart.get("assessment_id")})
+    check("baseline: it cannot be finished with questions unanswered",
+          r.status_code == 400 and "Answer every question" in (body(r).get("message") or ""), f"{r.status_code} {body(r).get('message')}")
     check("consent: not agreeing on registration is the default",
           data_of(api("GET", "/api/auth/me", etoken)).get("campaign_consent") is False)
 
@@ -310,7 +334,7 @@ try:
     atoken, r = login(ADMIN_EMAIL)
     check("admin: log in", bool(atoken), f"{r.status_code} {body(r).get('message')}")
     for path in ("/api/analytics/admin", "/api/analytics/admin-dashboard", "/api/analytics/users",
-                 "/api/datasets", "/api/scenarios", "/api/baseline/questions", "/api/campaigns"):
+                 "/api/datasets", "/api/scenarios", "/api/baseline/templates", "/api/campaigns"):
         r = api("GET", path, atoken)
         check(f"admin: GET {path}", r.status_code == 200, f"{r.status_code} {body(r).get('message')}")
     r = api("GET", "/api/analytics/export/players.csv", atoken)
@@ -327,28 +351,74 @@ try:
     scenario_list = items(data_of(api("GET", "/api/scenarios", atoken)), "scenarios", "items")
     if scenario_list:
         check("admin: one scenario", api("GET", f"/api/scenarios/{scenario_list[0]['scenario_id']}", atoken).status_code == 200)
-    questions = items(data_of(api("GET", "/api/baseline/questions", atoken)), "questions")
-    if questions:
-        qid = questions[0].get("question_id") or questions[0].get("id")
+    bank = data_of(api("GET", "/api/baseline/templates", atoken))
+    templates = bank.get("templates") or []
+    qid = next((t["questions"][0]["id"] for t in templates if t.get("questions")), None)
+    if qid:
         check("admin: one baseline question", api("GET", f"/api/baseline/questions/{qid}", atoken).status_code == 200)
-    by_role = {}
-    for question in questions:
-        if question.get("isActive"):
-            by_role[question.get("occupation")] = by_role.get(question.get("occupation"), 0) + 1
-    check("bank: 5 questions switched on per role, spares and general questions off",
-          by_role == {"Student": 5, "Employee": 5, "Other": 5} and len(questions) > 15, {"active": by_role, "total": len(questions)})
-    spare = next((q for q in questions if q.get("occupation") == "Other" and not q.get("isActive")), None)
-    if spare:
-        r = api("POST", f"/api/baseline/questions/{spare['id']}/active", atoken, json={"active": True})
-        check("bank: admin switches a spare question on", r.status_code == 200 and data_of(r).get("isActive") is True,
-              f"{r.status_code} {body(r).get('message')}")
-        r = api("POST", f"/api/baseline/questions/{spare['id']}/active", atoken, json={"active": False})
-        check("bank: and off again", r.status_code == 200 and data_of(r).get("isActive") is False)
-    r = api("POST", f"/api/baseline/questions/{qid}/active", ptoken, json={"active": False})
-    check("bank: a player cannot switch questions", r.status_code == 403, r.status_code)
-    r = api("POST", "/api/baseline/questions/load-templates", atoken)
-    check("bank: loading templates again adds nothing (no duplicates)",
-          r.status_code == 200 and data_of(r).get("added") == 0, f"{r.status_code} {body(r).get('message')}")
+    layout = sorted((t["role"], t["name"], t["isActive"], t["questionCount"]) for t in templates)
+    check("bank: each role has Baseline assessment 1 (on) and 2 (off), 5 questions each",
+          layout == sorted((role, f"Baseline assessment {n}", n == 1, 5)
+                           for role in ("Student", "Employee", "Other") for n in (1, 2)), layout)
+    by_name = {(t["role"], t["name"]): t for t in templates}
+    student_2 = by_name.get(("Student", "Baseline assessment 2"), {})
+    student_1 = by_name.get(("Student", "Baseline assessment 1"), {})
+    check("bank: times taken and average score are counted per assessment",
+          student_1.get("timesTaken", 0) >= 2 and student_1.get("averageScore") is not None, student_1.get("timesTaken"))
+
+    r = api("POST", f"/api/baseline/templates/{student_2.get('id')}/active", ptoken, json={"active": True})
+    check("bank: a player cannot switch assessments on", r.status_code == 403, r.status_code)
+    r = api("POST", f"/api/baseline/templates/{student_2.get('id')}/active", atoken, json={"active": True})
+    check("bank: admin switches Student · Baseline assessment 2 on", r.status_code == 200 and data_of(r).get("isActive") is True,
+          f"{r.status_code} {body(r).get('message')}")
+    fresh = data_of(api("GET", "/api/baseline/available", ptoken))
+    check("baseline: the student now sees Baseline assessment 2 as new (and 1 as completed)",
+          fresh.get("newCount") == 1
+          and {(row["name"], row["status"]) for row in fresh.get("assessments") or []}
+          == {("Baseline assessment 1", "completed"), ("Baseline assessment 2", "new")}, fresh.get("assessments"))
+    check("dashboard: the new baseline shows on the student's home page",
+          data_of(api("GET", "/api/analytics/my-performance", ptoken)).get("new_baselines") == 1)
+    check("baseline: an employee is not offered the student assessment",
+          all(row["role"] != "Student" for row in data_of(api("GET", "/api/baseline/available", etoken)).get("assessments") or []))
+    second = data_of(api("POST", "/api/baseline/start", ptoken, json={"template_id": student_2.get("id")}))
+    for question in second.get("questions") or []:
+        api("POST", "/api/baseline/submit-response", ptoken, json={
+            "assessment_id": second.get("assessment_id"), "question_id": question["id"], "answer_text": BASELINE_ANSWER,
+        })
+    r = api("POST", "/api/baseline/complete", ptoken, json={"assessment_id": second.get("assessment_id")})
+    latest = data_of(api("GET", "/api/baseline/latest-result", ptoken))
+    check("baseline: the student takes the new one; it becomes their latest result",
+          r.status_code == 200 and latest.get("templateName") == "Baseline assessment 2", latest.get("templateName"))
+    r = api("POST", f"/api/baseline/templates/{student_2.get('id')}/active", atoken, json={"active": False})
+    kept = data_of(api("GET", "/api/baseline/available", ptoken))
+    check("bank: switched off again, the student's result is kept and still listed",
+          r.status_code == 200 and any(row["name"] == "Baseline assessment 2" and row["status"] == "completed"
+                                       for row in kept.get("assessments") or []), kept.get("assessments"))
+
+    r = api("POST", "/api/baseline/templates", atoken, json={"occupation": "Other", "description": "E2E draft"})
+    draft = data_of(r)
+    check("bank: admin creates an empty baseline; it gets the next number",
+          r.status_code == 201 and draft.get("name") == "Baseline assessment 3" and draft.get("isActive") is False,
+          f"{r.status_code} {draft.get('name')}")
+    r = api("POST", f"/api/baseline/templates/{draft.get('id')}/active", atoken, json={"active": True})
+    check("bank: a baseline with fewer than 5 questions cannot be switched on", r.status_code == 400, r.status_code)
+    r = api("POST", "/api/baseline/questions", atoken, json={
+        "templateId": draft.get("id"), "question": "E2E: is this a phishing question?", "instruction": "Answer it.",
+        "expectedKeywords": ["phishing"], "exampleAnswer": "It is about phishing.", "feedback": "Fine.", "confidenceThreshold": 1,
+    })
+    check("bank: admin adds a question to it", r.status_code == 201 and data_of(r).get("templateId") == draft.get("id"),
+          f"{r.status_code} {body(r).get('message')}")
+    r = api("DELETE", f"/api/baseline/templates/{draft.get('id')}", atoken)
+    check("bank: a baseline nobody has taken can be deleted", r.status_code == 200, f"{r.status_code} {body(r).get('message')}")
+    r = api("DELETE", f"/api/baseline/templates/{student_1.get('id')}", atoken)
+    check("bank: a baseline players have taken cannot be deleted", r.status_code == 400, r.status_code)
+    employee_1 = by_name.get(("Employee", "Baseline assessment 1"), {})
+    r = api("DELETE", f"/api/baseline/questions/{employee_1['questions'][0]['id']}", atoken)
+    check("bank: a switched-on baseline cannot drop below 5 questions", r.status_code == 400, r.status_code)
+    r = api("POST", "/api/baseline/templates/load-bank", atoken)
+    check("bank: loading the template bank again adds nothing (no duplicates)",
+          r.status_code == 200 and data_of(r).get("added") == 0 and data_of(r).get("addedTemplates") == 0,
+          f"{r.status_code} {body(r).get('message')}")
 
     # ================= EMAIL CAMPAIGNS =================
     context = data_of(api("GET", "/api/campaigns", atoken))

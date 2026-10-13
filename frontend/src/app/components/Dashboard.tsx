@@ -58,6 +58,7 @@ interface PlayerPerformance extends PlayerProgress {
   total_attempts: number;
   correct_attempts: number;
   baseline_score: number | null;
+  new_baselines?: number;
   difficulty: string;
   adaptive_reason: string;
   recent_attempts: Array<{

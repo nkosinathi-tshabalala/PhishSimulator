@@ -22,6 +22,8 @@ export interface Goal {
 export interface GoalInput extends Progress {
   total_attempts: number;
   baseline_score: number | null;
+  /** Switched-on baseline assessments for the player's role that they have not taken yet. */
+  new_baselines?: number;
 }
 
 // Open-ended ladders that take over once every streak or milestone badge is earned,
@@ -53,6 +55,13 @@ export function buildGoals(player: GoalInput): Goal[] {
     goals.push({
       id: "quiz", kind: "quiz", title: "Take the baseline quiz",
       detail: "5 minutes. Sets your starting level", progress: 0, target: 1, action: "quiz",
+    });
+  } else if ((player.new_baselines ?? 0) > 0) {
+    // The admin switched on another baseline assessment for this player's role
+    const count = player.new_baselines ?? 0;
+    goals.push({
+      id: "quiz", kind: "quiz", title: count === 1 ? "A new baseline assessment is ready" : `${count} new baseline assessments are ready`,
+      detail: "Written for your role. About 5 minutes each", progress: 0, target: count, action: "quiz",
     });
   }
 

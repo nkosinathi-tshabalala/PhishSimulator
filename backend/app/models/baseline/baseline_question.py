@@ -44,17 +44,16 @@ class BaselineQuestion(db.Model):
         default=2
     )
 
-    # The role this question is written for ("Student", "Employee", "Other"); None = any role
-    occupation = db.Column(
-        db.String(20),
+    # The baseline assessment this question belongs to (its role and on/off switch live there)
+    template_id = db.Column(
+        db.Integer,
+        db.ForeignKey("baseline_template.template_id"),
         nullable=True
     )
 
-    # Only active questions are given to players
-    is_active = db.Column(
-        db.Boolean,
-        nullable=False,
-        default=True
+    template = db.relationship(
+        "BaselineTemplate",
+        back_populates="questions"
     )
 
     responses = db.relationship(
