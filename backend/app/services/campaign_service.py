@@ -40,14 +40,15 @@ ATTACHMENT_PRESETS = [
 ]
 
 FINAL_OUTCOMES = ("CLICKED", "REPORTED", "IGNORED")
-# XP for each final outcome, by whether the email was phishing
+# XP for each final outcome, by whether the email was phishing. Like training, a mistake earns 0 XP:
+# XP measures effort and never goes down. Mistakes still count against skill (accuracy and rank).
 POINTS = {
     (True, "REPORTED"): 30,    # spotted the phish and warned IT
     (True, "IGNORED"): 10,     # did not fall for it
-    (True, "CLICKED"): -20,    # fell for it
+    (True, "CLICKED"): 0,      # fell for it: no XP, and it counts as missed phishing
     (False, "CLICKED"): 10,    # trusted a genuine email
     (False, "IGNORED"): 0,     # no harm done
-    (False, "REPORTED"): -10,  # false alarm
+    (False, "REPORTED"): 0,    # false alarm: no XP, and it counts as a wrong decision
 }
 # Each final result as a decision: (player_answer, correct). Ignoring is not a "report" or "safe" call,
 # so it gets its own answer; it counts as correct because nothing bad happened.

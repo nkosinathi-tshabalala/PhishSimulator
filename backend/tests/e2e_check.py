@@ -233,6 +233,8 @@ try:
     baseline_summary = data_of(r)
     check("player: baseline completes", r.status_code == 200, f"{r.status_code} {body(r).get('message')}")
     check("player: baseline result", api("GET", "/api/baseline/latest-result", ptoken).status_code == 200)
+    check("baseline: taken before any training, it sets the starting difficulty",
+          baseline_summary.get("setsDifficulty") is True, baseline_summary.get("setsDifficulty"))
     r = api("POST", "/api/baseline/start", ptoken, json={"template_id": first_template})
     check("baseline: the same assessment cannot be taken twice", r.status_code == 400 and "already taken" in (body(r).get("message") or ""),
           f"{r.status_code} {body(r).get('message')}")
@@ -388,15 +390,23 @@ try:
           data_of(api("GET", "/api/analytics/my-performance", ptoken)).get("new_baselines") == 1)
     check("baseline: an employee is not offered the student assessment",
           all(row["role"] != "Student" for row in data_of(api("GET", "/api/baseline/available", etoken)).get("assessments") or []))
+    trained = data_of(api("GET", "/api/analytics/my-performance", ptoken))
     second = data_of(api("POST", "/api/baseline/start", ptoken, json={"template_id": student_2.get("id")}))
     for question in second.get("questions") or []:
         api("POST", "/api/baseline/submit-response", ptoken, json={
-            "assessment_id": second.get("assessment_id"), "question_id": question["id"], "answer_text": BASELINE_ANSWER,
+            "assessment_id": second.get("assessment_id"), "question_id": question["id"], "answer_text": " ".join(keyword_lists[question["id"]]),  # 100%: would start on Medium
         })
     r = api("POST", "/api/baseline/complete", ptoken, json={"assessment_id": second.get("assessment_id")})
     latest = data_of(api("GET", "/api/baseline/latest-result", ptoken))
     check("baseline: the student takes the new one; it becomes their latest result",
           r.status_code == 200 and latest.get("templateName") == "Baseline assessment 2", latest.get("templateName"))
+    retrained = data_of(api("GET", "/api/analytics/my-performance", ptoken))
+    # (The unit test BaselineInEffectTests proves the rule on a history where the two rules differ.)
+    check("baseline: taken after 5+ training decisions, it is saved (100%) but marked as not setting the difficulty",
+          data_of(r).get("setsDifficulty") is False and data_of(r).get("overallScore") == 100
+          and trained.get("total_attempts", 0) >= 5
+          and retrained.get("difficulty") == trained.get("difficulty"),
+          (data_of(r).get("setsDifficulty"), trained.get("difficulty"), retrained.get("difficulty")))
     r = api("POST", f"/api/baseline/templates/{student_2.get('id')}/active", atoken, json={"active": False})
     kept = data_of(api("GET", "/api/baseline/available", ptoken))
     check("bank: switched off again, the student's result is kept and still listed",
@@ -645,8 +655,8 @@ try:
     _, c_gen2, gen2_token = launch_custom("E2E genuine reported", is_phishing=False)
     api("GET", f"/api/campaigns/report/{gen2_token}")
     details = data_of(api("GET", f"/api/campaigns/{c_gen2}", atoken))
-    check("genuine: reported -> false alarm, -10 XP",
-          details["recipient_details"][0]["outcome"] == "REPORTED" and details["recipient_details"][0]["xp_awarded"] == -10,
+    check("genuine: reported -> false alarm, 0 XP (no XP is ever taken away)",
+          details["recipient_details"][0]["outcome"] == "REPORTED" and details["recipient_details"][0]["xp_awarded"] == 0,
           details["recipient_details"])
 
     _, c_phish, _ = launch_custom("E2E custom phishing", is_phishing=True)
@@ -683,8 +693,8 @@ try:
     r = api("GET", "/api/campaigns/inbox", ptoken)
     inbox = data_of(r)
     outcomes = sorted((item["is_phishing"], item["outcome"], item["xp"]) for item in inbox.get("items", []))
-    expected = sorted([(True, "CLICKED", -20), (True, "REPORTED", 30), (True, "IGNORED", 10),
-                       (False, "CLICKED", 10), (False, "REPORTED", -10), (True, "REPORTED", 30), (True, "CLICKED", -20)])
+    expected = sorted([(True, "CLICKED", 0), (True, "REPORTED", 30), (True, "IGNORED", 10),
+                       (False, "CLICKED", 10), (False, "REPORTED", 0), (True, "REPORTED", 30), (True, "CLICKED", 0)])
     check("inbox: one notification per final result, with the right XP", outcomes == expected, outcomes)
     check("inbox: all unread at first", inbox.get("unseen") == len(expected), inbox.get("unseen"))
     first = inbox["items"][0]["id"] if inbox.get("items") else 0
@@ -693,8 +703,8 @@ try:
     check("inbox: a player cannot mark someone else's result", api("POST", f"/api/campaigns/inbox/{first}/seen", atoken).status_code == 404)
     perf_final = data_of(api("GET", "/api/analytics/my-performance", ptoken))
     campaign_total = sum(xp for _, _, xp in expected)
-    check("xp: campaign results add to (or take from) the player's XP",
-          perf_final.get("xp") == max(perf_after["xp"] + campaign_total, 0),
+    check("xp: campaign results only ever add XP; falling for a phish or a false alarm earns 0",
+          perf_final.get("xp") == perf_after["xp"] + campaign_total and min(xp for _, _, xp in expected) == 0,
           (perf_after.get("xp"), campaign_total, perf_final.get("xp")))
 
     # ---------- campaign results count as decisions everywhere ----------

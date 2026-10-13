@@ -1,7 +1,7 @@
 # Unit tests for the CATCH rules
 
 import unittest
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from types import SimpleNamespace
 
 from app.adaptive.adaptive_engine import AdaptiveEngine
@@ -92,6 +92,47 @@ class AdaptiveTests(unittest.TestCase):
     def test_campaign_results_do_not_move_difficulty(self):
         campaign = [SimpleNamespace(correct=True, campaign_recipient_id=1) for _ in range(5)]
         self.assertEqual(AdaptiveEngine.recommend_difficulty(campaign)[0], "Easy")
+
+
+class BaselineInEffectTests(unittest.TestCase):
+    """Only a baseline taken before the 5th training decision sets the start; later ones change nothing."""
+
+    start = datetime(2026, 10, 1, 9, 0)
+
+    def history(self, count):
+        """`count` training decisions, one per hour from 10:00."""
+        return [SimpleNamespace(correct=True, attempted_at=self.start + timedelta(hours=1 + n)) for n in range(count)]
+
+    def test_no_baseline_means_no_score(self):
+        self.assertIsNone(AdaptiveEngine.baseline_in_effect([], self.history(3)))
+
+    def test_new_player_uses_their_latest_baseline(self):
+        baselines = [(self.start, 40), (self.start + timedelta(minutes=30), 90)]
+        self.assertEqual(AdaptiveEngine.baseline_in_effect(baselines, self.history(2)), 90)
+
+    def test_a_baseline_after_the_fifth_decision_is_ignored(self):
+        later = self.start + timedelta(days=3)
+        baselines = [(self.start, 40), (later, 90)]
+        self.assertEqual(AdaptiveEngine.baseline_in_effect(baselines, self.history(10)), 40)
+
+    def test_a_later_baseline_cannot_jump_an_experienced_player(self):
+        # 10 answers: 80% (Easy -> Medium), then 60% (stay). Starting from Medium instead would end on Hard.
+        oldest_first = self.history(10)
+        for attempt, correct in zip(oldest_first, [True] * 4 + [False] + [True] * 3 + [False] * 2):
+            attempt.correct = correct
+        attempts = list(reversed(oldest_first))   # newest first, as the services load them
+        baselines = [(self.start, 40), (self.start + timedelta(days=3), 90)]   # 90% taken after 10 decisions
+        in_effect = AdaptiveEngine.baseline_in_effect(baselines, attempts)
+        self.assertEqual(in_effect, 40)
+        self.assertEqual(AdaptiveEngine.recommend_difficulty(attempts, in_effect)[0], "Medium")
+        # What using the latest baseline (90%) would have done: jumped the player to Hard
+        self.assertEqual(AdaptiveEngine.recommend_difficulty(attempts, 90)[0], "Hard")
+
+    def test_campaign_emails_do_not_count_towards_the_five(self):
+        campaign = [SimpleNamespace(correct=True, attempted_at=self.start + timedelta(hours=n), campaign_recipient_id=1)
+                    for n in range(1, 8)]
+        baselines = [(self.start + timedelta(days=1), 90)]
+        self.assertEqual(AdaptiveEngine.baseline_in_effect(baselines, campaign), 90)
 
 
 class TestStageTests(unittest.TestCase):

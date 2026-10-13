@@ -48,6 +48,8 @@ interface QuizSummary {
   questionsPassed: number;
   confidenceLevel: string;
   startingDifficulty: string;
+  /** False when taken after the player's first 5 training decisions: saved, but their answers set the difficulty. */
+  setsDifficulty?: boolean;
   results: QuestionResult[];
 }
 
@@ -287,7 +289,9 @@ function AssessmentList({ assessments, role, error, onStart, onView, onBack }: {
         <div className="flex items-start gap-3 rounded-xl border border-sky-500/25 bg-sky-500/10 p-4 text-sm text-sky-100/90">
           <Info className="w-4 h-4 mt-0.5 shrink-0 text-sky-300" />
           Short open questions about messages you might really receive. Answer in your own words: there are no
-          trick questions and no time limit. Your most recent result sets the level your training starts at.
+          trick questions and no time limit. A baseline taken before you start training sets your starting
+          level. After your first 5 training decisions your answers set the difficulty, and new baselines show
+          how you've improved.
         </div>
 
         {error && <p className="text-sm text-destructive" role="alert">{error}</p>}
@@ -363,14 +367,18 @@ function QuizResults({ summary, onBack, onList }: {
   const stats = [
     { label: "Questions passed", value: `${summary.questionsPassed}/${summary.results.length}`, tone: "text-green-400" },
     { label: "Confidence level", value: summary.confidenceLevel, tone: "text-foreground" },
-    { label: "Starting difficulty", value: summary.startingDifficulty, tone: "text-sky-400" },
+    summary.setsDifficulty === false
+      ? { label: "Difficulty", value: "Set by your answers", tone: "text-sky-400" }
+      : { label: "Starting difficulty", value: summary.startingDifficulty, tone: "text-sky-400" },
   ];
 
   return (
     <div className="h-full overflow-y-auto">
       <QuizHeader
         title={summary.templateName ? `${summary.role ? `${summary.role} · ` : ""}${summary.templateName}` : "Baseline result"}
-        subtitle="Your most recent result sets where your training starts"
+        subtitle={summary.setsDifficulty === false
+          ? "Saved to show your progress. Your training answers already set your difficulty"
+          : "This result sets the level your training starts at"}
         onBack={onList}
         backLabel="Back to your baseline assessments"
       />

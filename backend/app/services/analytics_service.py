@@ -312,7 +312,7 @@ class AnalyticsService:
         false_negative_rate = round((false_negatives / total_attempts) * 100) if total_attempts else 0
         difficulty, adaptive_reason = AdaptiveEngine.recommend_difficulty(
             all_attempts,
-            baseline.score if baseline else None,
+            BaselineService.starting_score(player.player_id, all_attempts),
         )
         progress = ProgressService.summary(all_attempts)
         # Private position among all players (only "#N of M", no one else's details)

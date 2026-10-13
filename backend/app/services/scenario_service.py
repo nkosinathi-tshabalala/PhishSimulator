@@ -8,7 +8,7 @@ from app.extensions import db
 from app.models.datasets import Dataset
 from app.models.scenario import Scenario
 from app.models.authentication import Player
-from app.models.baseline import BaselineAssessment
+from app.services.baseline_service import BaselineService
 from app.models.email import EmailCampaign
 from app.models.simulation import SimulationAttempt
 from app.adaptive.adaptive_engine import AdaptiveEngine
@@ -549,14 +549,10 @@ class ScenarioService:
         attempts = SimulationAttempt.query.filter_by(
             player_id=player.player_id
         ).order_by(SimulationAttempt.attempted_at.desc()).all()
-        baseline = BaselineAssessment.query.filter(
-            BaselineAssessment.player_id == player.player_id,
-            BaselineAssessment.completed_at.is_not(None),
-        ).order_by(BaselineAssessment.completed_at.desc()).first()
-
+        # The baseline taken before their 5th training decision sets the start; later ones change nothing
         difficulty, reason = AdaptiveEngine.recommend_difficulty(
             attempts,
-            baseline.score if baseline else None,
+            BaselineService.starting_score(player.player_id, attempts),
         )
         return player, attempts, difficulty, reason
 

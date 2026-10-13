@@ -374,8 +374,9 @@ export function BaselineManagementPage() {
             <CardTitle className="text-base text-foreground">Baseline assessments by role</CardTitle>
             <CardDescription>
               Each assessment holds at least {minQuestions} questions written for one role. Switch one on at any time:
-              every player of that role who hasn't taken it sees it as new and can take it once. Their most recent result
-              sets where their training starts. Results are kept when you switch an assessment off.
+              every player of that role who hasn't taken it sees it as new and can take it once. A baseline taken before
+              a player's first 5 training decisions sets their starting difficulty; after that their answers decide, and
+              later baselines are recorded to show progress. Results are kept when you switch an assessment off.
             </CardDescription>
             <FilterBar
               search={searchQuery}

@@ -303,10 +303,10 @@ export function RegisterPage({ onNavigate, onRegister }: RegisterPageProps) {
                 onChange={(event) => setFormData({ ...formData, campaignConsent: event.target.checked })}
               />
               <span className="text-sm">
-                <span className="font-medium">Send me simulated phishing emails (optional)</span>
+                <span className="font-medium">Training email campaigns (optional)</span>
                 <span className="block text-xs text-muted-foreground">
-                  I agree that the training admin may send safe test emails to this address to see whether I report
-                  them. Nothing harmful is ever sent, and I can withdraw this in my profile at any time.
+                  I agree to receive PhishSimulator training emails at this address at any time. I can change this in
+                  my profile whenever I like.
                 </span>
               </span>
             </label>

@@ -301,10 +301,9 @@ export function ProfilePage({
                     onChange={(event) => setProfileData({ ...profileData, campaignConsent: event.target.checked })}
                   />
                   <span className="text-sm">
-                    <span className="font-medium">Simulated phishing emails</span>
+                    <span className="font-medium">Training email campaigns</span>
                     <span className="block text-xs text-muted-foreground">
-                      I agree that the training admin may send safe test emails to my address to see whether I report
-                      them. Untick to withdraw; no further campaign emails will be sent to you.
+                      I agree to receive PhishSimulator training emails at my address at any time. Untick to stop them.
                     </span>
                     {user?.campaign_consent && user.campaign_consent_at && (
                       <span className="block text-xs text-green-300/90 mt-1">

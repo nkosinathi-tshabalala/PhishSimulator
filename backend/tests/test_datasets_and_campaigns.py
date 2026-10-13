@@ -3,7 +3,7 @@
 import unittest
 
 from app.datasets.scenario_parser import ScenarioParser
-from app.services.campaign_service import CampaignService
+from app.services.campaign_service import POINTS, CampaignService
 from app.services.dataset_service import DatasetService
 
 
@@ -99,3 +99,15 @@ class CampaignRecipientTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CampaignPointsTests(unittest.TestCase):
+    """Campaign results follow the training rule: XP measures effort and never goes down."""
+
+    def test_no_campaign_result_takes_xp_away(self):
+        self.assertTrue(all(xp >= 0 for xp in POINTS.values()), POINTS)
+
+    def test_mistakes_earn_nothing_and_good_calls_earn_xp(self):
+        self.assertEqual(POINTS[(True, "CLICKED")], 0)     # fell for the phish
+        self.assertEqual(POINTS[(False, "REPORTED")], 0)   # false alarm
+        self.assertGreater(POINTS[(True, "REPORTED")], POINTS[(True, "IGNORED")])

@@ -122,6 +122,9 @@ class BaselineService:
             "totalKeywordsMatched": sum(response.score for response in responses),
             "confidenceLevel": BaselineService._confidence_level(overall_percent),
             "startingDifficulty": AdaptiveEngine.starting_difficulty(overall_percent),
+            # False for a baseline taken after the player's first 5 training decisions: it is saved, but their
+            # answers already decide the difficulty
+            "setsDifficulty": BaselineService._sets_difficulty(assessment) if assessment.completed_at else False,
             "completedAt": (
                 assessment.completed_at.isoformat() if assessment.completed_at else None
             ),
@@ -169,6 +172,32 @@ class BaselineService:
         ).order_by(BaselineAssessment.completed_at.asc()):
             done[assessment.template_id] = assessment
         return done
+
+    @staticmethod
+    def starting_score(player_id, attempts):
+        """The baseline score that sets this player's starting difficulty: the latest one completed before
+        their 5th training decision (see AdaptiveEngine.baseline_in_effect), or None."""
+        baselines = db.session.query(BaselineAssessment.completed_at, BaselineAssessment.score).filter(
+            BaselineAssessment.player_id == player_id,
+            BaselineAssessment.completed_at.isnot(None),
+        ).all()
+        return AdaptiveEngine.baseline_in_effect(baselines, attempts)
+
+    @staticmethod
+    def _sets_difficulty(assessment):
+        """True when this completed assessment is the one that sets the player's starting difficulty."""
+        from app.models.simulation import SimulationAttempt
+        attempts = SimulationAttempt.query.filter_by(player_id=assessment.player_id).all()
+        in_effect = AdaptiveEngine.baseline_in_effect(
+            [(assessment.completed_at, assessment.assessment_id)]
+            + [(a.completed_at, a.assessment_id) for a in BaselineAssessment.query.filter(
+                BaselineAssessment.player_id == assessment.player_id,
+                BaselineAssessment.completed_at.isnot(None),
+                BaselineAssessment.assessment_id != assessment.assessment_id,
+            )],
+            attempts,
+        )
+        return in_effect == assessment.assessment_id
 
     @staticmethod
     def count_new_for(player):

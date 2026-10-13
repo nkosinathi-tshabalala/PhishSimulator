@@ -283,9 +283,8 @@ class ProgressService:
 
     @staticmethod
     def running_xp(facts):
-        """Total XP, added up in time order and never below 0 at any step.
-        A campaign penalty takes away only what the player has, so there is no hidden debt:
-        whatever they earn afterwards shows straight away."""
+        """Total XP, added up in time order. No decision takes XP away (mistakes earn 0), so this only
+        grows; the floor at 0 stays as a guard for any older record with a negative value."""
         xp = 0
         for fact in facts:
             xp = max(xp + fact["xp"], 0)

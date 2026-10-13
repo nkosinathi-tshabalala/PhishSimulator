@@ -27,6 +27,25 @@ class AdaptiveEngine:
         return "Easy"
 
     @staticmethod
+    def baseline_in_effect(baselines, attempts):
+        """The baseline score that sets the player's starting difficulty, or None.
+        `baselines` holds (completed_at, score) pairs; `attempts` is the player's history.
+        It is the latest baseline completed before the player's 5th training decision. From then on their
+        answers decide the difficulty, so a baseline taken later is saved and shown but changes nothing:
+        it can never jump an experienced player to another level."""
+        training = sorted(
+            attempt.attempted_at for attempt in attempts
+            if not getattr(attempt, "campaign_recipient_id", None) and attempt.attempted_at
+        )
+        window = AdaptiveEngine.RECENT_ATTEMPT_COUNT
+        cutoff = training[window - 1] if len(training) >= window else None
+        eligible = [
+            (completed_at, score) for completed_at, score in baselines
+            if completed_at and (cutoff is None or completed_at <= cutoff)
+        ]
+        return max(eligible, key=lambda item: item[0])[1] if eligible else None
+
+    @staticmethod
     def step(difficulty, recent_accuracy):
         """Move one level up, one level down, or stay, based on the last five answers."""
         levels = AdaptiveEngine.DIFFICULTY_LEVELS
