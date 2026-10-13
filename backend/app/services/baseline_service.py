@@ -26,9 +26,8 @@ class BaselineService:
     switches an assessment on for its role; every player of that role can then take it, once. The most
     recent completed assessment sets the starting difficulty."""
 
-    # A baseline assessment needs this many questions before it can be switched on
+    # A baseline assessment needs at least this many questions before it can be switched on (no upper limit)
     MIN_QUESTIONS = 5
-    MAX_QUESTIONS = 7
     ROLES = tuple(occupation.value for occupation in Occupation)
 
     # ---------- serialising ----------
@@ -70,7 +69,7 @@ class BaselineService:
             "isActive": template.is_active,
             "activatedAt": template.activated_at.isoformat() if template.activated_at else None,
             "questionCount": count,
-            "ready": BaselineService.MIN_QUESTIONS <= count <= BaselineService.MAX_QUESTIONS,
+            "ready": count >= BaselineService.MIN_QUESTIONS,
             "timesTaken": len(completed),
             "averageScore": round(sum(a.score for a in completed) / len(completed)) if completed else None,
         }
@@ -400,7 +399,6 @@ class BaselineService:
         return True, "Baseline assessments retrieved successfully.", {
             "templates": [BaselineService._serialize_template(t, include_questions=True) for t in templates],
             "minQuestions": BaselineService.MIN_QUESTIONS,
-            "maxQuestions": BaselineService.MAX_QUESTIONS,
             "roles": list(BaselineService.ROLES),
         }
 
@@ -429,8 +427,8 @@ class BaselineService:
                                     description=(data.get("description") or "").strip() or None, is_active=False)
         db.session.add(template)
         db.session.commit()
-        return True, f"Created {BaselineService._role_label(occupation)} · {name}. Add {BaselineService.MIN_QUESTIONS}-" \
-                     f"{BaselineService.MAX_QUESTIONS} questions, then switch it on.", \
+        return True, f"Created {BaselineService._role_label(occupation)} · {name}. Add at least " \
+                     f"{BaselineService.MIN_QUESTIONS} questions, then switch it on.", \
             BaselineService._serialize_template(template, include_questions=True)
 
     @staticmethod
@@ -465,17 +463,17 @@ class BaselineService:
 
     @staticmethod
     def set_template_active(template_id, data):
-        """Switch an assessment on or off for its role (admin). It needs 5-7 questions to be switched on."""
+        """Switch an assessment on or off for its role (admin). It needs at least 5 questions to be switched on."""
         template = db.session.get(BaselineTemplate, template_id)
         if not template:
             return False, "Baseline assessment not found.", None
         if not isinstance(data.get("active"), bool):
             return False, "Say whether the assessment should be active (true or false).", None
         count = len(template.questions)
-        if data["active"] and not BaselineService.MIN_QUESTIONS <= count <= BaselineService.MAX_QUESTIONS:
+        if data["active"] and count < BaselineService.MIN_QUESTIONS:
             return False, (
-                f"{template.name} has {count} question(s). A baseline needs "
-                f"{BaselineService.MIN_QUESTIONS} to {BaselineService.MAX_QUESTIONS} before it can be switched on."
+                f"{template.name} has {count} question(s). A baseline needs at least "
+                f"{BaselineService.MIN_QUESTIONS} before it can be switched on."
             ), None
         if data["active"] and not template.is_active:
             template.activated_at = datetime.utcnow()
@@ -526,13 +524,6 @@ class BaselineService:
         question.confidence_threshold = data["confidenceThreshold"]
 
     @staticmethod
-    def _room_in(template, adding=1):
-        """An error when adding questions would take an active assessment above the maximum, else None."""
-        if len(template.questions) + adding > BaselineService.MAX_QUESTIONS:
-            return f"{template.name} already has {BaselineService.MAX_QUESTIONS} questions, the most a baseline can have."
-        return None
-
-    @staticmethod
     def create_question(data):
         """Add a question to a baseline assessment (admin)."""
         is_valid, error = BaselineSchema.validate_question(data)
@@ -541,10 +532,6 @@ class BaselineService:
         template = db.session.get(BaselineTemplate, data.get("templateId"))
         if not template:
             return False, "Choose the baseline assessment this question belongs to.", None
-        error = BaselineService._room_in(template)
-        if error:
-            return False, error, None
-
         question = BaselineQuestion(template_id=template.template_id)
         BaselineService._apply_question_fields(question, data)
         db.session.add(question)
@@ -567,7 +554,7 @@ class BaselineService:
             target = db.session.get(BaselineTemplate, target_id)
             if not target:
                 return False, "Choose the baseline assessment this question belongs to.", None
-            error = BaselineService._room_in(target) or BaselineService._removal_problem(question)
+            error = BaselineService._removal_problem(question)
             if error:
                 return False, error, None
             question.template_id = target.template_id

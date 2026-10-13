@@ -74,6 +74,34 @@
     "exampleAnswer": "This looks like a rental scam: they want a deposit before I can view the room and use pressure by saying many students want it. I would not pay, I would insist on viewing it first and verify the landlord and the property, for example through the university's accredited housing list.",
     "feedback": "Never pay a deposit for a place you have not seen. Use accredited student housing lists.",
     "confidenceThreshold": 2
+   },
+   {
+    "question": "An email from 'Student Finance' says your registration is blocked because of unpaid fees. It asks you to pay R1,500 immediately into a bank account listed in the email. What do you do?",
+    "instruction": "Judge this fees email.",
+    "expectedKeywords": [
+     "registration",
+     "pay",
+     "bank account",
+     "official",
+     "verify"
+    ],
+    "exampleAnswer": "Blocking my registration to make me pay now is pressure, and the bank account in the email may not be the university's official one. I would not pay and would verify my fees on the student portal or at the finance office.",
+    "feedback": "Fee scams copy university names and change the bank account. Check your balance on the student portal before paying anything.",
+    "confidenceThreshold": 2
+   },
+   {
+    "question": "A TikTok account you don't follow messages you: you have won a new iPhone in a giveaway, and they need your cellphone number and ID number to deliver it. How do you respond?",
+    "instruction": "Judge this giveaway message.",
+    "expectedKeywords": [
+     "giveaway",
+     "never entered",
+     "id number",
+     "personal",
+     "scam"
+    ],
+    "exampleAnswer": "I never entered this giveaway, so it is a scam to collect personal details. I would not send my cellphone number or ID number and would block and report the account.",
+    "feedback": "Fake giveaways collect ID numbers for identity fraud. You can't win something you never entered.",
+    "confidenceThreshold": 2
    }
   ]
  },
@@ -151,6 +179,34 @@
     ],
     "exampleAnswer": "It could be a fake network set up to steal logins. The official campus Wi-Fi uses the university's own sign-in, so I would disconnect, not type my portal password, and check the network name with campus IT.",
     "feedback": "Fake Wi-Fi hotspots copy campus names to collect passwords. Use only the network your university publishes.",
+    "confidenceThreshold": 2
+   },
+   {
+    "question": "A classmate shares a Google Form in the class WhatsApp group asking for everyone's student number, ID number and banking details 'for the class bursary'. What do you do?",
+    "instruction": "Decide whether to fill in this form.",
+    "expectedKeywords": [
+     "personal",
+     "bank",
+     "id number",
+     "form",
+     "verify"
+    ],
+    "exampleAnswer": "A form that asks for my ID number and bank details is a big risk, even from a classmate whose account could be hacked. I would not share personal information and would verify with the class rep or the bursary office.",
+    "feedback": "Never put ID or bank details into a shared form. Bursaries are handled by the university's financial aid office.",
+    "confidenceThreshold": 2
+   },
+   {
+    "question": "A popular 'study notes' website says you must download a browser extension to unlock its free notes. What do you do?",
+    "instruction": "Judge this download.",
+    "expectedKeywords": [
+     "extension",
+     "download",
+     "malware",
+     "free",
+     "official"
+    ],
+    "exampleAnswer": "Free notes that need a browser extension are a trick: the download could be malware that reads my passwords. I would not install it and would use the official course material instead.",
+    "feedback": "Browser extensions can see everything you type. Install them only from trusted publishers.",
     "confidenceThreshold": 2
    }
   ]
@@ -230,6 +286,34 @@
     "exampleAnswer": "I did not request these prompts, so an attacker probably has my password and is trying to wear me down. I would deny every prompt, never approve one because a caller asks, change my password and report it to IT.",
     "feedback": "Repeated approval prompts mean someone has your password. Deny them, change your password and report it.",
     "confidenceThreshold": 2
+   },
+   {
+    "question": "Your manager sends a WhatsApp from a new number: they changed phones and need you to send the full client list urgently. What do you do?",
+    "instruction": "Respond to this request.",
+    "expectedKeywords": [
+     "new number",
+     "verify",
+     "urgent",
+     "data",
+     "call"
+    ],
+    "exampleAnswer": "A new number and an urgent request for client data are warning signs. I would verify by calling my manager on the number I already have before sending any data.",
+    "feedback": "Impersonation scams use a 'new number' story. Confirm through a number you already know.",
+    "confidenceThreshold": 2
+   },
+   {
+    "question": "While browsing a work website, a pop-up says your computer is infected and shows a 'Microsoft support' number to call immediately. What do you do?",
+    "instruction": "Judge this warning.",
+    "expectedKeywords": [
+     "pop-up",
+     "fake",
+     "call",
+     "support",
+     "close"
+    ],
+    "exampleAnswer": "The pop-up is fake: Microsoft does not show support numbers like that. I would not call the number, close the browser and report it to IT support.",
+    "feedback": "Scare pop-ups push you to call fake support lines. Close the window and tell IT.",
+    "confidenceThreshold": 2
    }
   ]
  },
@@ -307,6 +391,34 @@
     ],
     "exampleAnswer": "A .zip attachment from an unknown company can hide malware, and the 'overdue' pressure is a trick. I would not open the attachment and would report the email to IT.",
     "feedback": "Compressed attachments from unknown senders are a common way to deliver malware. Report rather than open.",
+    "confidenceThreshold": 2
+   },
+   {
+    "question": "An email that looks like it is from SARS eFiling asks the company to update its tax details through a link before a penalty is applied. What do you do?",
+    "instruction": "Check this tax email.",
+    "expectedKeywords": [
+     "penalty",
+     "link",
+     "efiling",
+     "official",
+     "finance"
+    ],
+    "exampleAnswer": "The penalty threat is pressure, and the link may lead to a fake eFiling page. I would not click it; our finance team would check the official SARS eFiling site directly.",
+    "feedback": "Tax-penalty emails are a common lure. Log in to eFiling yourself rather than using a link.",
+    "confidenceThreshold": 2
+   },
+   {
+    "question": "A delivery driver phones to say a parcel for your company is being held, and asks you to read out the one-time PIN just sent to your work phone so they can release it. What do you do?",
+    "instruction": "Respond to this call.",
+    "expectedKeywords": [
+     "pin",
+     "never share",
+     "account",
+     "hang up",
+     "verify"
+    ],
+    "exampleAnswer": "A one-time PIN could unlock a company account, so I would never share it. I would hang up and verify the delivery with the courier directly.",
+    "feedback": "One-time PINs approve logins and payments. No genuine courier needs yours.",
     "confidenceThreshold": 2
    }
   ]
@@ -386,6 +498,34 @@
     "exampleAnswer": "I am not expecting a parcel, the link is shortened, and a small fee is a trick to capture my card details. I would not pay and would track parcels only on the courier's official website or app.",
     "feedback": "Small 'redelivery fees' are used to steal card details. Track parcels only through the courier's own app or website.",
     "confidenceThreshold": 2
+   },
+   {
+    "question": "A WhatsApp from a new number says it is a family member who lost their phone and wallet, and asks you to send R2,000 urgently. What do you do?",
+    "instruction": "Respond to this message.",
+    "expectedKeywords": [
+     "new number",
+     "family",
+     "verify",
+     "urgent",
+     "call"
+    ],
+    "exampleAnswer": "An urgent money request from a new number is a common scam. I would verify by calling my family member on their usual number before sending anything.",
+    "feedback": "'Hi Mum, new number' scams rely on urgency. Call the person on the number you know.",
+    "confidenceThreshold": 2
+   },
+   {
+    "question": "An email says your Netflix payment failed and your account will be suspended unless you update your card details through the link. How do you check it?",
+    "instruction": "Judge this payment email.",
+    "expectedKeywords": [
+     "payment",
+     "link",
+     "card",
+     "suspend",
+     "app"
+    ],
+    "exampleAnswer": "Threatening to suspend my account is pressure, and the link may lead to a fake page that steals my card details. I would check my payment in the official app instead of using the link.",
+    "feedback": "Streaming 'payment failed' emails are a common way to steal card details. Check in the app.",
+    "confidenceThreshold": 2
    }
   ]
  },
@@ -463,6 +603,34 @@
     ],
     "exampleAnswer": "A job that pays for liking videos is too good to be true, and asking me to deposit money first shows it is a scam. Real employers pay you; you never pay them, so I would stop.",
     "feedback": "Task scams pay small amounts to win trust, then ask for deposits. Real jobs never ask you to pay to work.",
+    "confidenceThreshold": 2
+   },
+   {
+    "question": "Your caller ID shows your bank's number. The caller says there is a fraudulent payment and asks for your card number and CVV to stop it. What do you do?",
+    "instruction": "Respond to this call.",
+    "expectedKeywords": [
+     "caller id",
+     "card",
+     "cvv",
+     "never",
+     "call back"
+    ],
+    "exampleAnswer": "Caller ID can be faked, and my bank would never ask for my card number and CVV. I would hang up and call back on the number printed on my card.",
+    "feedback": "Criminals can fake caller ID. Your bank never needs your CVV over the phone.",
+    "confidenceThreshold": 2
+   },
+   {
+    "question": "An SMS says your traffic fine is overdue and you must pay through a link today to avoid a warrant of arrest. How do you handle it?",
+    "instruction": "Check this traffic fine SMS.",
+    "expectedKeywords": [
+     "fine",
+     "link",
+     "warrant",
+     "official",
+     "pay"
+    ],
+    "exampleAnswer": "Threatening a warrant over an SMS fine is a scare tactic, and the link is not official. I would not pay through it and would check my fines on the official AARTO or municipal website.",
+    "feedback": "Fake fine messages use arrest threats. Check fines only on official traffic or municipal sites.",
     "confidenceThreshold": 2
    }
   ]

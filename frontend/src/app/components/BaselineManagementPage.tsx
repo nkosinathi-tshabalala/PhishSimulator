@@ -103,7 +103,8 @@ const emptyQuestion = (templateId: number | null): QuestionForm => ({
 /** Admin page: baseline assessments by role. Switch one on and every player of that role can take it, once. */
 export function BaselineManagementPage() {
   const [templates, setTemplates] = useState<BaselineTemplate[]>([]);
-  const [limits, setLimits] = useState({ min: 5, max: 7 });
+  // Fewest questions an assessment needs before it can be switched on (there is no maximum)
+  const [minQuestions, setMinQuestions] = useState(5);
   const [searchQuery, setSearchQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
@@ -125,7 +126,7 @@ export function BaselineManagementPage() {
       const response = await BaselineService.getTemplates();
       if (response.ok && response.data.success) {
         setTemplates(response.data.data.templates);
-        setLimits({ min: response.data.data.minQuestions, max: response.data.data.maxQuestions });
+        setMinQuestions(response.data.data.minQuestions);
       } else {
         toast.error(response.data.message || "Could not load the baseline assessments.");
       }
@@ -372,7 +373,7 @@ export function BaselineManagementPage() {
           <CardHeader>
             <CardTitle className="text-base text-foreground">Baseline assessments by role</CardTitle>
             <CardDescription>
-              Each assessment holds {limits.min} to {limits.max} questions written for one role. Switch one on at any time:
+              Each assessment holds at least {minQuestions} questions written for one role. Switch one on at any time:
               every player of that role who hasn't taken it sees it as new and can take it once. Their most recent result
               sets where their training starts. Results are kept when you switch an assessment off.
             </CardDescription>
@@ -433,7 +434,7 @@ export function BaselineManagementPage() {
                             {!t.ready && (
                               <span className="flex items-center gap-1 text-xs text-amber-300">
                                 <AlertTriangle className="w-3.5 h-3.5" />
-                                needs {limits.min}-{limits.max} questions to switch on
+                                needs at least {minQuestions} questions to switch on
                               </span>
                             )}
                           </button>
@@ -515,11 +516,9 @@ export function BaselineManagementPage() {
                               variant="outline"
                               size="sm"
                               onClick={() => openAddQuestion(t.id)}
-                              disabled={t.questionCount >= limits.max}
-                              title={t.questionCount >= limits.max ? `A baseline can have at most ${limits.max} questions` : undefined}
                             >
                               <Plus className="w-4 h-4 mr-1" />
-                              Add question ({t.questionCount}/{limits.max})
+                              Add question
                             </Button>
                           </div>
                         )}
@@ -559,7 +558,7 @@ export function BaselineManagementPage() {
             <DialogDescription>
               {editingTemplateId !== null
                 ? "Rename it or change its description. The role can only change before anyone has taken it."
-                : `It starts switched off. Add ${limits.min}-${limits.max} questions, then switch it on for the role.`}
+                : `It starts switched off. Add at least ${minQuestions} questions, then switch it on for the role.`}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 pt-2">

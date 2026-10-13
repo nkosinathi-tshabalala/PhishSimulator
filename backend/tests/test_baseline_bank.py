@@ -21,10 +21,13 @@ class BaselineBankTests(unittest.TestCase):
             self.assertEqual(on[role], 1, role)
             self.assertGreaterEqual(off[role], 1, role)
 
-    def test_every_baseline_has_5_to_7_questions(self):
+    def test_every_baseline_has_enough_questions_to_switch_on(self):
         for t in BANK:
-            self.assertTrue(BaselineService.MIN_QUESTIONS <= len(t["questions"]) <= BaselineService.MAX_QUESTIONS,
-                            f'{t["occupation"]} {t["name"]}: {len(t["questions"])}')
+            self.assertGreaterEqual(len(t["questions"]), BaselineService.MIN_QUESTIONS, f'{t["occupation"]} {t["name"]}')
+
+    def test_the_demo_bank_loads_7_questions_per_baseline(self):
+        for t in BANK:
+            self.assertEqual(len(t["questions"]), 7, f'{t["occupation"]} {t["name"]}')
 
     def test_names_are_numbered_and_unique_per_role(self):
         names = [(t["occupation"], t["name"]) for t in BANK]

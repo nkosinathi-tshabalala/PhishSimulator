@@ -1,4 +1,4 @@
-# Database table: a named baseline assessment (a set of 5-7 questions) written for one role
+# Database table: a named baseline assessment (a set of at least 5 questions) written for one role
 
 from datetime import datetime
 
