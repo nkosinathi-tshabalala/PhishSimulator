@@ -1,17 +1,29 @@
 # Baseline quiz: marking answers and managing questions (CATCH "Check")
 
+import json
 from datetime import datetime
+from pathlib import Path
 from random import SystemRandom
 
 from app.extensions import db
 from app.adaptive.adaptive_engine import AdaptiveEngine
+from app.enums.occupation import Occupation
 from app.models.authentication import Player
 from app.models.baseline import BaselineAssessment, BaselineQuestion, BaselineResponse
 from app.schemas.baseline_schema import BaselineSchema
 
 
+# The question bank: ready-made questions for each role, which the admin can switch on or off
+TEMPLATE_FILE = Path(__file__).resolve().parent.parent / "seed" / "baseline_questions.json"
+
+
 class BaselineService:
     """CATCH "Check" stage: a keyword-scored quiz that sets the starting difficulty."""
+
+    # Questions in one baseline. A player gets this many active questions written for their role,
+    # topped up with active general questions when their role has too few.
+    QUESTIONS_PER_ASSESSMENT = 5
+    ROLES = tuple(occupation.value for occupation in Occupation)
 
     @staticmethod
     def _serialize_question(question, include_answers=False):
@@ -23,6 +35,8 @@ class BaselineService:
         }
         if include_answers:
             data.update({
+                "occupation": question.occupation,
+                "isActive": question.is_active,
                 "instruction": question.instruction,
                 "expectedKeywords": question.get_expected_keywords(),
                 "exampleAnswer": question.example_answer,
@@ -89,10 +103,26 @@ class BaselineService:
         return assessment
 
     @staticmethod
-    def _randomised_questions(player_id):
-        """Return a new question order, avoiding the player's last order."""
-        questions = BaselineQuestion.query.order_by(BaselineQuestion.question_id.asc()).all()
-        SystemRandom().shuffle(questions)
+    def questions_for_role(occupation, rng=None):
+        """Up to QUESTIONS_PER_ASSESSMENT active questions for a role: the role's own questions first
+        (a random choice when more are active), then active general questions to fill any gap."""
+        rng = rng or SystemRandom()
+        role = getattr(occupation, "value", occupation)
+        active = BaselineQuestion.query.filter(BaselineQuestion.is_active.is_(True)).order_by(
+            BaselineQuestion.question_id.asc()
+        ).all()
+        own = [question for question in active if question.occupation == role]
+        general = [question for question in active if not question.occupation]
+        rng.shuffle(own)
+        rng.shuffle(general)
+        return (own + general)[:BaselineService.QUESTIONS_PER_ASSESSMENT]
+
+    @staticmethod
+    def _randomised_questions(player):
+        """The player's role questions in a new order, avoiding the order of their last attempt."""
+        occupation = player.profile.occupation if player.profile else None
+        questions = BaselineService.questions_for_role(occupation)
+        player_id = player.player_id
         if len(questions) < 2:
             return questions
 
@@ -120,11 +150,13 @@ class BaselineService:
         if not player:
             return False, "Player profile not found.", None
 
+        questions = BaselineService._randomised_questions(player)
+        if not questions:
+            return False, "No baseline questions are switched on for your role yet. Please ask the admin.", None
+
         assessment = BaselineAssessment(player_id=player.player_id)
         db.session.add(assessment)
         db.session.commit()
-
-        questions = BaselineService._randomised_questions(player.player_id)
         return True, "Baseline assessment started successfully.", {
             "assessment_id": assessment.assessment_id,
             "questions": [BaselineService._serialize_question(question) for question in questions],
@@ -221,8 +253,10 @@ class BaselineService:
 
     @staticmethod
     def get_questions():
-        """All questions with their marking guides (admin)."""
-        questions = BaselineQuestion.query.order_by(BaselineQuestion.question_id.asc()).all()
+        """All questions with their marking guides (admin), grouped by role then id."""
+        questions = BaselineQuestion.query.order_by(
+            BaselineQuestion.occupation.asc().nullslast(), BaselineQuestion.question_id.asc(),
+        ).all()
         return True, "Baseline questions retrieved successfully.", [
             BaselineService._serialize_question(question, include_answers=True)
             for question in questions
@@ -247,6 +281,8 @@ class BaselineService:
         question.example_answer = data["exampleAnswer"]
         question.feedback = data["feedback"]
         question.confidence_threshold = data["confidenceThreshold"]
+        question.occupation = data.get("occupation") or None
+        question.is_active = bool(data.get("isActive", True))
 
     @staticmethod
     def create_question(data):
@@ -290,3 +326,33 @@ class BaselineService:
         db.session.delete(db.session.get(BaselineQuestion, question_id))
         db.session.commit()
         return True, "Question deleted successfully.", None
+
+    @staticmethod
+    def set_active(question_id, data):
+        """Switch one question on or off for players (admin)."""
+        question = db.session.get(BaselineQuestion, question_id)
+        if not question:
+            return False, "Question not found.", None
+        if not isinstance(data.get("active"), bool):
+            return False, "Say whether the question should be active (true or false).", None
+        question.is_active = data["active"]
+        db.session.commit()
+        state = "switched on" if question.is_active else "switched off"
+        return True, f"Question {state}.", BaselineService._serialize_question(question, include_answers=True)
+
+    @staticmethod
+    def load_templates():
+        """Add any question from the template bank that is not in the database yet (matched on its text).
+        Existing questions, including ones the admin edited or switched off, are left alone."""
+        existing = {text.strip().lower() for (text,) in db.session.query(BaselineQuestion.question_text)}
+        added = 0
+        for row in json.loads(TEMPLATE_FILE.read_text(encoding="utf-8")):
+            if row["question"].strip().lower() in existing:
+                continue
+            question = BaselineQuestion()
+            BaselineService._apply_question_fields(question, {**row, "isActive": row.get("active", True)})
+            db.session.add(question)
+            added += 1
+        db.session.commit()
+        message = f"Added {added} template question(s)." if added else "Every template question is already in the bank."
+        return True, message, {"added": added}

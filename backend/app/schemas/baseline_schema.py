@@ -1,5 +1,6 @@
 # Checks baseline quiz data before it is saved
 
+from app.enums.occupation import Occupation
 from app.models.baseline import (
     BaselineAssessment,
     BaselineQuestion,
@@ -97,6 +98,13 @@ class BaselineSchema:
                 "Confidence threshold cannot exceed the number "
                 "of expected keywords."
             )
+
+        occupation = data.get("occupation")
+        if occupation not in (None, "", *(role.value for role in Occupation)):
+            return False, "Role must be Student, Employee, Other, or empty for every role."
+
+        if "isActive" in data and not isinstance(data["isActive"], bool):
+            return False, "Active must be true or false."
 
         return True, None
     

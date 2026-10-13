@@ -45,6 +45,7 @@ export function RegisterPage({ onNavigate, onRegister }: RegisterPageProps) {
     age: "",
     itBackground: "no",
     role: "",
+    campaignConsent: false,
   });
 
   const [isLoading, setIsLoading] = useState(false);
@@ -67,6 +68,7 @@ export function RegisterPage({ onNavigate, onRegister }: RegisterPageProps) {
         age: Number(formData.age),
         it_background: formData.itBackground === "yes",
         occupation: formData.role.toUpperCase(),
+        campaign_consent: formData.campaignConsent,
       });
 
       if (!response.ok) {
@@ -292,6 +294,22 @@ export function RegisterPage({ onNavigate, onRegister }: RegisterPageProps) {
                 </SelectContent>
               </Select>
             </div>
+
+            <label className="flex items-start gap-3 rounded-md border border-border p-3 cursor-pointer">
+              <input
+                type="checkbox"
+                className="mt-0.5 w-4 h-4 accent-sky-500 shrink-0"
+                checked={formData.campaignConsent}
+                onChange={(event) => setFormData({ ...formData, campaignConsent: event.target.checked })}
+              />
+              <span className="text-sm">
+                <span className="font-medium">Send me simulated phishing emails (optional)</span>
+                <span className="block text-xs text-muted-foreground">
+                  I agree that the training admin may send safe test emails to this address to see whether I report
+                  them. Nothing harmful is ever sent, and I can withdraw this in my profile at any time.
+                </span>
+              </span>
+            </label>
 
             {successMessage && (
               <Alert className="border-green-500/30 bg-green-500/10">

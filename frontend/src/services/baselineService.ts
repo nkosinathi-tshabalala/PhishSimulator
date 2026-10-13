@@ -57,6 +57,32 @@ class BaselineService {
 
     }
 
+    /** Admin: switch a question on or off for players. */
+    async setActive(id: number, active: boolean) {
+        const token = getToken();
+
+        return await apiRequest(
+            `/baseline/questions/${id}/active`,
+            "POST",
+            { active },
+            token
+        );
+
+    }
+
+    /** Admin: add any template question from the role bank that is not in the database yet. */
+    async loadTemplates() {
+        const token = getToken();
+
+        return await apiRequest(
+            "/baseline/questions/load-templates",
+            "POST",
+            null,
+            token
+        );
+
+    }
+
     /** Admin: one question. */
     async getQuestion(id: number) {
         const token = getToken();

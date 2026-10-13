@@ -104,8 +104,14 @@ interface PlayerOption {
   full_name: string;
   email: string;
   occupation: string;
-  /** False when the address is not on the safety allow-list, so it cannot be picked. */
+  /** True when the player agreed to campaign emails (on registration or in their profile). */
+  consented: boolean;
+  /** True when the address is on the safety allow-list. */
+  allowed: boolean;
+  /** Only consenting, allow-listed players can be picked. */
   selectable: boolean;
+  /** Why a player cannot be picked, or null. */
+  blocked_reason: string | null;
 }
 
 interface Context {
@@ -361,7 +367,7 @@ function RecipientPicker({
     return player.full_name.toLowerCase().includes(term) || player.email.toLowerCase().includes(term);
   });
 
-  // "Select all" only ever picks the addresses the allow-list permits
+  // "Select all" only ever picks players who consented and whose address the allow-list permits
   const selectableHere = visible.filter((player) => player.selectable);
   const allChosen = selectableHere.length > 0 && selectableHere.every((player) => selected.includes(player.email));
 
@@ -378,7 +384,9 @@ function RecipientPicker({
     <div className="space-y-2 text-sm font-medium">
       <div className="flex items-center justify-between">
         <span>Recipients</span>
-        <span className="text-xs font-normal text-muted-foreground">{selected.length} selected</span>
+        <span className="text-xs font-normal text-muted-foreground">
+          {selected.length} selected · {players.filter((player) => player.consented).length} of {players.length} opted in
+        </span>
       </div>
 
       <div className="rounded-md border overflow-hidden">
@@ -424,7 +432,7 @@ function RecipientPicker({
             return (
               <label
                 key={player.player_id}
-                title={player.selectable ? player.email : "Not on the safety allow-list"}
+                title={player.blocked_reason ?? player.email}
                 className={`flex items-center gap-3 px-3 py-2 ${
                   player.selectable ? "cursor-pointer hover:bg-muted/40" : "opacity-45 cursor-not-allowed"
                 }`}
@@ -439,6 +447,7 @@ function RecipientPicker({
                 <div className="min-w-0 flex-1">
                   <p className="font-normal truncate">{player.full_name}</p>
                   <p className="text-xs text-muted-foreground truncate">{player.email}</p>
+                  {player.blocked_reason && <p className="text-xs text-amber-300/90 truncate">{player.blocked_reason}</p>}
                 </div>
                 <span className="text-xs text-muted-foreground shrink-0">{player.occupation}</span>
                 {!player.selectable && <Lock className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />}
@@ -454,7 +463,8 @@ function RecipientPicker({
       </div>
 
       <p className="text-xs font-normal text-muted-foreground">
-        Greyed-out players are registered but not on the safety allow-list, so this build cannot email them.
+        Only players who agreed to campaign emails, and whose address is on the safety allow-list, can be picked.
+        Players can give or withdraw consent in their profile at any time.
       </p>
     </div>
   );

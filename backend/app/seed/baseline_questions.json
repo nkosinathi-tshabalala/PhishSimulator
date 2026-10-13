@@ -1,5 +1,343 @@
 [
  {
+  "occupation": "Student",
+  "active": true,
+  "question": "You get an SMS: 'NSFAS: Your allowance is on hold. Confirm your banking details at nsfas-payments.info within 24 hours or lose your funding.' What makes this suspicious, and what would you do?",
+  "instruction": "Name the warning signs in this student-funding SMS and the safe action.",
+  "expectedKeywords": [
+   "urgent",
+   "link",
+   "banking details",
+   "official",
+   "report"
+  ],
+  "exampleAnswer": "It is urgent and threatens my funding, the link is not the official NSFAS website (nsfas.org.za), and NSFAS would not ask for my banking details by SMS. I would not click it, I would check my status on the official NSFAS site or app, and report the SMS.",
+  "feedback": "Funding scams use deadlines and fake links to steal banking details. Check NSFAS only through nsfas.org.za or the official app.",
+  "confidenceThreshold": 2
+ },
+ {
+  "occupation": "Student",
+  "active": true,
+  "question": "A friend's Instagram account sends you a DM: 'Is this you in this video?' with a link. When you open it, a page asks you to log in to Instagram again. What is happening, and what do you do?",
+  "instruction": "Explain the social media trick and how you would respond.",
+  "expectedKeywords": [
+   "hacked",
+   "link",
+   "log in",
+   "password",
+   "friend"
+  ],
+  "exampleAnswer": "My friend's account has probably been hacked. The link opens a fake page that asks me to log in so it can steal my password. I would close it without entering anything and warn my friend another way, for example by calling them.",
+  "feedback": "Hacked accounts send 'is this you?' links to everyone they follow. A login page you did not ask for is a password trap.",
+  "confidenceThreshold": 2
+ },
+ {
+  "occupation": "Student",
+  "active": true,
+  "question": "An email from 'Student ICT Services <it-helpdesk@varsity-mail-support.com>' says your student email will be deactivated today unless you verify your password through the link. How do you judge it?",
+  "instruction": "Check the sender and the request in this university email.",
+  "expectedKeywords": [
+   "sender",
+   "domain",
+   "password",
+   "urgent",
+   "helpdesk"
+  ],
+  "exampleAnswer": "The sender uses a domain that is not my university's real domain, the message is urgent, and the university never asks for my password by email. I would not use the link and would contact the real ICT helpdesk to check.",
+  "feedback": "University IT never asks for your password. Look at the sender's domain, not just the display name.",
+  "confidenceThreshold": 2
+ },
+ {
+  "occupation": "Student",
+  "active": true,
+  "question": "A WhatsApp message offers students a R5,000 bursary or a part-time job. To apply you must first pay a R200 'registration fee'. What do you think?",
+  "instruction": "Decide whether this offer is genuine and explain why.",
+  "expectedKeywords": [
+   "fee",
+   "too good to be true",
+   "pay",
+   "scam",
+   "verify"
+  ],
+  "exampleAnswer": "It is a scam: real bursaries and jobs do not ask you to pay a fee to apply, and the offer is too good to be true. I would not pay anything and would verify the bursary on the official website or with the university's financial aid office.",
+  "feedback": "Advance-fee scams target students. Genuine bursaries and employers never charge you to apply.",
+  "confidenceThreshold": 2
+ },
+ {
+  "occupation": "Student",
+  "active": true,
+  "question": "A Facebook post advertises cheap student accommodation near campus. The 'landlord' says many students want it and asks for a deposit by EFT before you can view the room. What would you do?",
+  "instruction": "Spot the rental-scam signs.",
+  "expectedKeywords": [
+   "deposit",
+   "view",
+   "scam",
+   "pressure",
+   "verify"
+  ],
+  "exampleAnswer": "This looks like a rental scam: they want a deposit before I can view the room and use pressure by saying many students want it. I would not pay, I would insist on viewing it first and verify the landlord and the property, for example through the university's accredited housing list.",
+  "feedback": "Never pay a deposit for a place you have not seen. Use accredited student housing lists.",
+  "confidenceThreshold": 2
+ },
+ {
+  "occupation": "Student",
+  "active": false,
+  "question": "You get an SMS: 'Your network has selected you for 10GB of free student data! Claim now and enter your ID number and cellphone PIN.' How do you respond?",
+  "instruction": "Judge this prize SMS.",
+  "expectedKeywords": [
+   "prize",
+   "link",
+   "personal",
+   "pin",
+   "claim"
+  ],
+  "exampleAnswer": "A surprise prize that asks for my ID number and PIN is a scam: no network needs my PIN to give me data. I would not open the link or claim anything, and I would never share personal details like that.",
+  "feedback": "No real promotion needs your PIN or ID number. Unexpected prizes are bait.",
+  "confidenceThreshold": 2
+ },
+ {
+  "occupation": "Student",
+  "active": false,
+  "question": "Someone in your class WhatsApp group shares 'leaked exam papers'. To get them you must download an .apk file or log in with your student portal password. What do you do?",
+  "instruction": "Judge this exam-paper offer.",
+  "expectedKeywords": [
+   "download",
+   "password",
+   "malware",
+   "portal",
+   "report"
+  ],
+  "exampleAnswer": "Leaked papers are bait: the file I must download could be malware, and the login page wants my student portal password. I would not download it or log in, and would report it to my lecturer or the university.",
+  "feedback": "'Leaked exam' offers spread malware and steal portal passwords. Only use your university's official portal.",
+  "confidenceThreshold": 2
+ },
+ {
+  "occupation": "Employee",
+  "active": true,
+  "question": "An email says 'Your Microsoft 365 password expires today. Click below to keep your current password.' The sender is 'Microsoft Office <no-reply@micros0ft-support.net>'. What warning signs do you see?",
+  "instruction": "Identify the phishing indicators in this work email.",
+  "expectedKeywords": [
+   "sender",
+   "domain",
+   "password",
+   "link",
+   "report"
+  ],
+  "exampleAnswer": "The sender's domain is a look-alike (micros0ft with a zero), it creates urgency about my password, and the link leads to a fake login page. I would not click it and would report it to IT using the report button.",
+  "feedback": "Look-alike domains and 'password expires today' are classic Microsoft 365 phishing. Report, don't click.",
+  "confidenceThreshold": 2
+ },
+ {
+  "occupation": "Employee",
+  "active": true,
+  "question": "Your CEO emails you from a personal Gmail address: 'I'm in a meeting. Please pay a new supplier R48,000 urgently. Don't call, just reply when it's done.' What do you do?",
+  "instruction": "Respond to this payment request.",
+  "expectedKeywords": [
+   "urgent",
+   "personal",
+   "verify",
+   "call",
+   "payment"
+  ],
+  "exampleAnswer": "It is urgent, comes from a personal address, and tells me not to call, which are signs of CEO fraud. I would not make the payment and would verify the request by calling the CEO on a number I already know and following the finance approval process.",
+  "feedback": "CEO fraud relies on urgency and secrecy. Always verify payment requests through a known channel.",
+  "confidenceThreshold": 2
+ },
+ {
+  "occupation": "Employee",
+  "active": true,
+  "question": "A regular supplier emails to say their bank account has changed and asks you to use the new banking details for this month's invoice. How do you handle it?",
+  "instruction": "Explain how you would check this change of banking details.",
+  "expectedKeywords": [
+   "bank",
+   "verify",
+   "phone",
+   "invoice",
+   "fraud"
+  ],
+  "exampleAnswer": "A change of bank details by email is a common invoice fraud trick, because the supplier's email may be hacked. I would verify it by phone using the number we already have on file, not the one in the email, before paying the invoice.",
+  "feedback": "Invoice fraud swaps bank details by email. Confirm any change by phone using a number you already trust.",
+  "confidenceThreshold": 2
+ },
+ {
+  "occupation": "Employee",
+  "active": true,
+  "question": "An email from 'HR Department' says 'Your updated payslip is attached' and has a file called Payslip_October.html. Your payslips normally come through the payroll portal. What do you do?",
+  "instruction": "Judge the email and its attachment.",
+  "expectedKeywords": [
+   "attachment",
+   "html",
+   "sender",
+   "open",
+   "report"
+  ],
+  "exampleAnswer": "The attachment is an .html file, which can open a fake login page, and payslips normally come from the portal, so the sender is suspicious. I would not open it and would report it to IT security.",
+  "feedback": "HTML and ZIP attachments are often used to deliver fake login pages or malware. Payslips come from the payroll portal.",
+  "confidenceThreshold": 2
+ },
+ {
+  "occupation": "Employee",
+  "active": true,
+  "question": "Your phone shows several Microsoft Authenticator sign-in approvals you did not request. Then someone calls, says they are from IT, and asks you to approve the next one. What is going on?",
+  "instruction": "Explain this sign-in prompt attack and your response.",
+  "expectedKeywords": [
+   "deny",
+   "approve",
+   "attacker",
+   "password",
+   "report"
+  ],
+  "exampleAnswer": "I did not request these prompts, so an attacker probably has my password and is trying to wear me down. I would deny every prompt, never approve one because a caller asks, change my password and report it to IT.",
+  "feedback": "Repeated approval prompts mean someone has your password. Deny them, change your password and report it.",
+  "confidenceThreshold": 2
+ },
+ {
+  "occupation": "Employee",
+  "active": false,
+  "question": "A colleague emails you a link to a shared document called 'Q3 Salary Review'. The page that opens asks you to sign in again before you can view it. What do you check?",
+  "instruction": "Check this shared-document email.",
+  "expectedKeywords": [
+   "sign in",
+   "link",
+   "colleague",
+   "verify",
+   "url"
+  ],
+  "exampleAnswer": "A shared file that asks me to sign in again could be a fake page, even if it seems to come from a colleague. I would check the URL of the link, not sign in, and verify with my colleague by phone or chat that they sent it.",
+  "feedback": "Fake 'shared document' pages steal work passwords. Check the address bar and confirm with the sender.",
+  "confidenceThreshold": 2
+ },
+ {
+  "occupation": "Employee",
+  "active": false,
+  "question": "An SMS to your work phone says: 'Your company parking access will be cancelled today. Update your details: bit.ly/park-acc'. What do you do?",
+  "instruction": "Judge this SMS.",
+  "expectedKeywords": [
+   "shortened",
+   "link",
+   "urgent",
+   "company",
+   "report"
+  ],
+  "exampleAnswer": "The link is shortened so I cannot see where it goes, and the message is urgent. My company would use its own systems for parking, so I would not click and would report the SMS to IT.",
+  "feedback": "Shortened links hide where they go. Urgent SMS messages about work access should be checked with the company directly.",
+  "confidenceThreshold": 2
+ },
+ {
+  "occupation": "Other",
+  "active": true,
+  "question": "An SMS says: 'SARS: You have a tax refund of R3,450. Claim it at sars-refund.co.za/claim before it expires.' How would you check it?",
+  "instruction": "Decide whether this SARS message is genuine.",
+  "expectedKeywords": [
+   "refund",
+   "link",
+   "official",
+   "efiling",
+   "personal details"
+  ],
+  "exampleAnswer": "SARS does not send refund links by SMS, and the link is not the official sars.gov.za site. I would not click or give personal details, and would check any refund by logging in to eFiling myself.",
+  "feedback": "SARS refund scams use fake links. Check refunds only by logging in to eFiling or the SARS app yourself.",
+  "confidenceThreshold": 2
+ },
+ {
+  "occupation": "Other",
+  "active": true,
+  "question": "Someone calls saying they are from your bank's fraud department. They say a suspicious payment was made and ask you to read back the OTP you have just received to cancel it. What do you do?",
+  "instruction": "Explain how you would respond to this call.",
+  "expectedKeywords": [
+   "otp",
+   "never",
+   "bank",
+   "hang up",
+   "call back"
+  ],
+  "exampleAnswer": "A bank will never ask me for an OTP, because the OTP approves a payment. I would hang up and call back on the number on the back of my card to check with the bank.",
+  "feedback": "OTPs approve transactions. Never share one; hang up and call your bank on its official number.",
+  "confidenceThreshold": 2
+ },
+ {
+  "occupation": "Other",
+  "active": true,
+  "question": "A WhatsApp message from an unknown number says: 'Hi, I sent you a 6-digit code by mistake, please send it back to me.' What is happening?",
+  "instruction": "Explain the risk in this WhatsApp message.",
+  "expectedKeywords": [
+   "code",
+   "account",
+   "never share",
+   "take over",
+   "verification"
+  ],
+  "exampleAnswer": "The code is a WhatsApp verification code for my own account. If I send it, they can take over my WhatsApp and message my contacts. I would never share it and would turn on two-step verification.",
+  "feedback": "Verification codes are the keys to your account. Never share them, even with people you know.",
+  "confidenceThreshold": 2
+ },
+ {
+  "occupation": "Other",
+  "active": true,
+  "question": "An email says you have won a R10,000 supermarket voucher in a competition you never entered. To receive it, you must pay a R99 delivery fee. How do you evaluate it?",
+  "instruction": "Judge this prize email.",
+  "expectedKeywords": [
+   "never entered",
+   "too good to be true",
+   "pay",
+   "scam",
+   "fee"
+  ],
+  "exampleAnswer": "I never entered a competition, so I cannot have won, and the prize is too good to be true. Asking me to pay a fee to receive a prize is a scam, so I would ignore and delete it.",
+  "feedback": "You can't win a competition you didn't enter. Prizes that cost money to receive are scams.",
+  "confidenceThreshold": 2
+ },
+ {
+  "occupation": "Other",
+  "active": true,
+  "question": "An SMS says: 'Your parcel is waiting at a PUDO locker. Pay the R25 redelivery fee here: bit.ly/pudo-pay'. You are not expecting a parcel. What do you do?",
+  "instruction": "Check this delivery SMS.",
+  "expectedKeywords": [
+   "fee",
+   "link",
+   "courier",
+   "official",
+   "card"
+  ],
+  "exampleAnswer": "I am not expecting a parcel, the link is shortened, and a small fee is a trick to capture my card details. I would not pay and would track parcels only on the courier's official website or app.",
+  "feedback": "Small 'redelivery fees' are used to steal card details. Track parcels only through the courier's own app or website.",
+  "confidenceThreshold": 2
+ },
+ {
+  "occupation": "Other",
+  "active": false,
+  "question": "An SMS says: 'SASSA: Your grant has been approved. Confirm your ID and bank details here: sassa-grant.info'. How would you check it?",
+  "instruction": "Decide whether this grant SMS is genuine.",
+  "expectedKeywords": [
+   "official",
+   "link",
+   "bank",
+   "personal",
+   "gov.za"
+  ],
+  "exampleAnswer": "The link is not an official government site, which would end in gov.za, and SASSA would not ask for bank and personal details through an SMS link. I would check on the official SASSA website or at an office.",
+  "feedback": "Government sites end in gov.za. Grant scams use look-alike links to collect ID and bank details.",
+  "confidenceThreshold": 2
+ },
+ {
+  "occupation": "Other",
+  "active": false,
+  "question": "A buyer on an online marketplace sends 'proof of payment' for more than your asking price and asks you to refund the difference straight away. What do you do?",
+  "instruction": "Spot the marketplace scam.",
+  "expectedKeywords": [
+   "proof of payment",
+   "fake",
+   "bank",
+   "refund",
+   "scam"
+  ],
+  "exampleAnswer": "Proof of payment can easily be fake. I would check my bank account to see if the money has really cleared, and I would not refund anything, because overpaying and asking for a refund is a known scam.",
+  "feedback": "A screenshot is not money. Wait until the payment clears in your own bank account.",
+  "confidenceThreshold": 2
+ },
+ {
+  "occupation": null,
+  "active": false,
   "question": "You receive an email from your bank saying your account will be closed unless you verify your details by clicking a link. What warning signs do you see?",
   "instruction": "Identify the phishing indicators in this email scenario.",
   "expectedKeywords": [
@@ -14,6 +352,8 @@
   "confidenceThreshold": 2
  },
  {
+  "occupation": null,
+  "active": false,
   "question": "You receive an SMS from an unknown number claiming you have won a R10,000 voucher. You must click a link to claim it. How would you evaluate this?",
   "instruction": "Analyse the SMS for smishing indicators.",
   "expectedKeywords": [
@@ -24,11 +364,13 @@
    "claim",
    "suspicious"
   ],
-  "exampleAnswer": "This is likely smishing. The unsolicited prize from an unknown number, the 'too good to be true' offer, and the link to claim it are all red flags.",
+  "exampleAnswer": "This is likely smishing. The unsolicited prize from an unknown number, the 'too good to be true' offer, and the link to claim it are all red flags, so it is suspicious.",
   "feedback": "Unsolicited prize notifications, especially from unknown numbers with links, are almost always scams. Legitimate competitions require prior entry.",
   "confidenceThreshold": 2
  },
  {
+  "occupation": null,
+  "active": false,
   "question": "An email from your manager asks you to urgently purchase gift cards and send the codes. The email address looks slightly different from usual. What do you do?",
   "instruction": "Respond to this business email compromise scenario.",
   "expectedKeywords": [
@@ -40,7 +382,7 @@
    "phone",
    "different"
   ],
-  "exampleAnswer": "This is a classic business email compromise / gift card scam. I would not purchase any gift cards. I would verify the request by calling or messaging my manager directly.",
+  "exampleAnswer": "This is a classic business email compromise gift card scam, and the email address is different from usual. I would not buy any gift card and would verify the request by phone with my manager directly.",
   "feedback": "Gift card requests via email are a well-known scam. Always verify unusual requests from superiors through a different communication channel.",
   "confidenceThreshold": 2
  }

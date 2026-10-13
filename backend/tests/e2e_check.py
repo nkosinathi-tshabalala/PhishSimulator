@@ -132,6 +132,7 @@ try:
 
     import seed_demo
     seed_demo.OWNER_EMAIL = ""  # the demo data never needs a real inbox
+    seed_demo.DEMO_EMAIL = ""   # test players keep fake @phishsimulator.test addresses
     seed_demo.main()
 
     with app.app_context():
@@ -181,11 +182,16 @@ try:
     r = api("POST", "/api/auth/register", json={
         "full_name": "E2E Player", "email": PLAYER_EMAIL, "password": PASSWORD,
         "confirm_password": PASSWORD, "age": 22, "occupation": "STUDENT", "it_background": False,
+        "campaign_consent": True,
     })
     check("player: register", r.status_code in (200, 201), f"{r.status_code} {body(r).get('message')}")
     ptoken, r = login(PLAYER_EMAIL)
     check("player: log in", bool(ptoken), f"{r.status_code} {body(r).get('message')}")
-    check("player: /auth/me", api("GET", "/api/auth/me", ptoken).status_code == 200)
+    me = data_of(api("GET", "/api/auth/me", ptoken))
+    check("player: /auth/me", bool(me.get("email")))
+    check("consent: agreeing on registration is recorded with a time",
+          me.get("campaign_consent") is True and bool(me.get("campaign_consent_at")),
+          {k: me.get(k) for k in ("campaign_consent", "campaign_consent_at")})
 
     r = api("GET", "/api/analytics/my-performance", ptoken)
     perf_new = data_of(r)
@@ -198,6 +204,12 @@ try:
     start = data_of(r)
     questions = start.get("questions") or []
     check("player: baseline quiz starts", r.status_code == 200 and questions, f"{r.status_code} {body(r).get('message')}")
+    with app.app_context():
+        from app.models.baseline.baseline_question import BaselineQuestion
+        role_of = {question.question_id: question.occupation for question in BaselineQuestion.query.all()}
+    given_roles = [role_of.get(question.get("id")) for question in questions]
+    check("baseline: a Student gets 5 questions, all written for students",
+          len(questions) == 5 and set(given_roles) == {"Student"}, given_roles)
     assessment_id = start.get("assessment_id") or (start.get("assessment") or {}).get("assessment_id")
     answered = 0
     for question in questions:
@@ -215,11 +227,10 @@ try:
 
     # The Check rule, and its known weakness: it counts expected keywords, not understanding
     with app.app_context():
-        from app.models.baseline.baseline_question import BaselineQuestion
         keyword_lists = {question.question_id: question.get_expected_keywords() for question in BaselineQuestion.query.all()}
-    keywords_total = sum(len(keywords) for keywords in keyword_lists.values())
-    keywords_found = sum(keyword.lower() in BASELINE_ANSWER.lower()
-                         for keywords in keyword_lists.values() for keyword in keywords)
+    given = [keyword_lists[question.get("id")] for question in questions]
+    keywords_total = sum(len(keywords) for keywords in given)
+    keywords_found = sum(keyword.lower() in BASELINE_ANSWER.lower() for keywords in given for keyword in keywords)
     expected_score = round(keywords_found / keywords_total * 100)
     check(f"baseline: score = expected keywords found / expected keywords ({keywords_found} of {keywords_total})",
           baseline_summary.get("overallScore") == expected_score
@@ -242,6 +253,19 @@ try:
     check("baseline: a bare list of the expected keywords scores 100% and starts on Medium (known limitation)",
           ksummary.get("overallScore") == 100 and ksummary.get("startingDifficulty") == "Medium",
           {key: ksummary.get(key) for key in ("overallScore", "startingDifficulty")})
+
+    EMPLOYEE_EMAIL = "e2e.employee@example.test"
+    api("POST", "/api/auth/register", json={
+        "full_name": "E2E Employee", "email": EMPLOYEE_EMAIL, "password": PASSWORD,
+        "confirm_password": PASSWORD, "age": 35, "occupation": "EMPLOYEE", "it_background": False,
+    })
+    etoken, _ = login(EMPLOYEE_EMAIL)
+    estart = data_of(api("POST", "/api/baseline/start", etoken))
+    employee_roles = [role_of.get(question.get("id")) for question in estart.get("questions") or []]
+    check("baseline: an Employee gets 5 questions, all written for employees",
+          len(employee_roles) == 5 and set(employee_roles) == {"Employee"}, employee_roles)
+    check("consent: not agreeing on registration is the default",
+          data_of(api("GET", "/api/auth/me", etoken)).get("campaign_consent") is False)
 
     leaked, attempt_codes, last_attempt = [], [], {}
     for channel in ("EMAIL", "SMS", "EMAIL", "SMS", "EMAIL", "EMAIL"):
@@ -307,6 +331,24 @@ try:
     if questions:
         qid = questions[0].get("question_id") or questions[0].get("id")
         check("admin: one baseline question", api("GET", f"/api/baseline/questions/{qid}", atoken).status_code == 200)
+    by_role = {}
+    for question in questions:
+        if question.get("isActive"):
+            by_role[question.get("occupation")] = by_role.get(question.get("occupation"), 0) + 1
+    check("bank: 5 questions switched on per role, spares and general questions off",
+          by_role == {"Student": 5, "Employee": 5, "Other": 5} and len(questions) > 15, {"active": by_role, "total": len(questions)})
+    spare = next((q for q in questions if q.get("occupation") == "Other" and not q.get("isActive")), None)
+    if spare:
+        r = api("POST", f"/api/baseline/questions/{spare['id']}/active", atoken, json={"active": True})
+        check("bank: admin switches a spare question on", r.status_code == 200 and data_of(r).get("isActive") is True,
+              f"{r.status_code} {body(r).get('message')}")
+        r = api("POST", f"/api/baseline/questions/{spare['id']}/active", atoken, json={"active": False})
+        check("bank: and off again", r.status_code == 200 and data_of(r).get("isActive") is False)
+    r = api("POST", f"/api/baseline/questions/{qid}/active", ptoken, json={"active": False})
+    check("bank: a player cannot switch questions", r.status_code == 403, r.status_code)
+    r = api("POST", "/api/baseline/questions/load-templates", atoken)
+    check("bank: loading templates again adds nothing (no duplicates)",
+          r.status_code == 200 and data_of(r).get("added") == 0, f"{r.status_code} {body(r).get('message')}")
 
     # ================= EMAIL CAMPAIGNS =================
     context = data_of(api("GET", "/api/campaigns", atoken))
@@ -314,6 +356,13 @@ try:
     mine = next((p for p in players if p["email"] == PLAYER_EMAIL), None)
     check("picker: the allow-listed player is selectable", bool(mine and mine["selectable"]))
     check("picker: every other player is locked", all(not p["selectable"] for p in players if p["email"] != PLAYER_EMAIL))
+    demo = [p for p in players if p["email"].endswith("@phishsimulator.test")]
+    agreed = sum(p["consented"] for p in demo)
+    check("consent: most demo players agreed to campaign emails, some did not (30 of 40)",
+          len(demo) == 40 and agreed == 30, f"{agreed} of {len(demo)}")
+    check("picker: each locked player says why (no consent, or off the allow-list)",
+          all(p["blocked_reason"] == ("Not on the safety allow-list" if p["consented"] else "Has not agreed to campaign emails")
+              for p in players if not p["selectable"]))
     check("picker: occupations are Student/Employee/Other",
           {p["occupation"] for p in players} <= {"Student", "Employee", "Other"}, {p["occupation"] for p in players})
     check("campaign: scenario list offers phishing and genuine emails",
@@ -323,6 +372,33 @@ try:
 
     r = api("POST", "/api/campaigns", atoken, json={"scenario_id": scenario_id, "name": "E2E blocked", "recipients": [locked]})
     check("campaign: address off the allow-list is refused", r.status_code == 400, r.status_code)
+
+    def set_consent(agree):
+        return api("PUT", "/api/auth/update-profile", ptoken, json={
+            "full_name": "E2E Player", "age": 22, "occupation": "Student", "it_background": False,
+            "campaign_consent": agree,
+        })
+
+    r = set_consent(False)
+    check("consent: a player can withdraw it in their profile",
+          r.status_code == 200 and data_of(r).get("campaign_consent") is False and not data_of(r).get("campaign_consent_at"),
+          f"{r.status_code} {body(r).get('message')}")
+    r = api("POST", "/api/campaigns", atoken, json={"scenario_id": scenario_id, "name": "E2E no consent", "recipients": [PLAYER_EMAIL]})
+    check("consent: a campaign to a player who withdrew is refused, even when allow-listed",
+          r.status_code == 400 and "not agreed" in (body(r).get("message") or ""), f"{r.status_code} {body(r).get('message')}")
+    set_consent(True)
+    r = api("POST", "/api/campaigns", atoken, json={"scenario_id": scenario_id, "name": "E2E withdraw", "recipients": [PLAYER_EMAIL]})
+    c_withdraw = data_of(r).get("campaign_id")
+    set_consent(False)
+    r = api("POST", f"/api/campaigns/{c_withdraw}/launch", atoken)
+    with app.app_context():
+        from app.models.email import EmailCampaignRecipient
+        withdrawn = EmailCampaignRecipient.query.filter_by(campaign_id=c_withdraw).first()
+        withdrawn_status = withdrawn.delivery_status if withdrawn else None
+    check("consent: withdrawn after the draft was made -> nothing is sent at launch",
+          not SENT and withdrawn_status == "NO_CONSENT" and data_of(r).get("sent") == 0, f"{withdrawn_status} {body(r).get('message')}")
+    api("DELETE", f"/api/campaigns/{c_withdraw}", atoken)
+    set_consent(True)
 
     r = api("POST", "/api/campaigns", atoken, json={"scenario_id": scenario_id, "name": "E2E fail", "recipients": [PLAYER_EMAIL]})
     c_fail = data_of(r).get("campaign_id")

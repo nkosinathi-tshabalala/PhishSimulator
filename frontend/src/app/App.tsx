@@ -42,6 +42,8 @@ export default function App() {
     occupation: string | null;
     it_background: boolean | null;
     role: string;
+    campaign_consent?: boolean | null;
+    campaign_consent_at?: string | null;
   }
 
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);

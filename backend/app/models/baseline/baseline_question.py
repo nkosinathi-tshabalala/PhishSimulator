@@ -44,6 +44,19 @@ class BaselineQuestion(db.Model):
         default=2
     )
 
+    # The role this question is written for ("Student", "Employee", "Other"); None = any role
+    occupation = db.Column(
+        db.String(20),
+        nullable=True
+    )
+
+    # Only active questions are given to players
+    is_active = db.Column(
+        db.Boolean,
+        nullable=False,
+        default=True
+    )
+
     responses = db.relationship(
         "BaselineResponse",
         back_populates="question",

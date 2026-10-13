@@ -13,9 +13,11 @@ import {
   X,
   ClipboardList,
   AlertTriangle,
-  Gauge,
-  KeyRound,
-  Tags,
+  GraduationCap,
+  Briefcase,
+  Users,
+  Library,
+  Download,
   type LucideIcon,
 } from "lucide-react";
 import { StatCard, type StatTone } from "./StatCard";
@@ -58,7 +60,10 @@ interface BaselineQuestion {
   exampleAnswer: string;
   feedback: string;
   confidenceThreshold: number;
-  lastUpdated: string;
+  /** The role the question is written for, or null for a general question any role can get. */
+  occupation: string | null;
+  /** Only active questions are given to players. */
+  isActive: boolean;
 }
 
 interface FormState {
@@ -69,7 +74,18 @@ interface FormState {
   exampleAnswer: string;
   feedback: string;
   confidenceThreshold: number;
+  occupation: string;
+  isActive: boolean;
 }
+
+/** Each player answers this many active questions written for their role. */
+const QUESTIONS_PER_ASSESSMENT = 5;
+const ROLES = ["Student", "Employee", "Other"] as const;
+const GENERAL = "General";
+const ROLE_ICONS: Record<string, LucideIcon> = { Student: GraduationCap, Employee: Briefcase, Other: Users };
+const ROLE_TONES: Record<string, StatTone> = { Student: "sky", Employee: "violet", Other: "amber" };
+
+const roleOf = (q: BaselineQuestion) => q.occupation ?? GENERAL;
 
 const emptyForm: FormState = {
   question: "",
@@ -79,6 +95,8 @@ const emptyForm: FormState = {
   exampleAnswer: "",
   feedback: "",
   confidenceThreshold: 2,
+  occupation: "Student",
+  isActive: true,
 };
 
 /** Admin page to add, edit and delete baseline quiz questions. */
@@ -104,7 +122,8 @@ export function BaselineManagementPage() {
   }, []);
 
   const [searchQuery, setSearchQuery] = useState("");
-  const [thresholdFilter, setThresholdFilter] = useState("");
+  const [roleFilter, setRoleFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [viewModalOpen, setViewModalOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -118,25 +137,65 @@ export function BaselineManagementPage() {
   const filtered = questions.filter((q) =>
     (q.question.toLowerCase().includes(search)
       || q.expectedKeywords.some((keyword) => keyword.toLowerCase().includes(search)))
-    && (!thresholdFilter || String(q.confidenceThreshold) === thresholdFilter),
+    && (!roleFilter || roleOf(q) === roleFilter)
+    && (!statusFilter || (statusFilter === "On") === q.isActive),
   );
   const table = useSort(filtered, {
     id: (q) => q.id,
+    role: (q) => [...ROLES, GENERAL].indexOf(roleOf(q)),
     question: (q) => q.question,
     keywords: (q) => q.expectedKeywords.length,
     threshold: (q) => q.confidenceThreshold,
-  }, { key: "id", direction: "asc" });
-  const isFiltered = Boolean(searchQuery || thresholdFilter);
+    active: (q) => Number(q.isActive),
+  }, { key: "role", direction: "asc" });
+  const isFiltered = Boolean(searchQuery || roleFilter || statusFilter);
 
-  const totalKeywords = questions.reduce((total, q) => total + q.expectedKeywords.length, 0);
-  const totalThreshold = questions.reduce((total, q) => total + q.confidenceThreshold, 0);
-  const average = (total: number) => (questions.length ? total / questions.length : 0);
-  const stats: Array<{ label: string; value: string; icon: LucideIcon; tone: StatTone }> = [
-    { label: "Total Questions", value: String(questions.length), icon: ClipboardList, tone: "amber" },
-    { label: "Avg. Keywords", value: String(Math.round(average(totalKeywords))), icon: KeyRound, tone: "sky" },
-    { label: "Avg. Threshold", value: average(totalThreshold).toFixed(1), icon: Gauge, tone: "violet" },
-    { label: "Total Keywords", value: String(totalKeywords), icon: Tags, tone: "green" },
+  // How many questions are switched on for each role: players get QUESTIONS_PER_ASSESSMENT of them
+  const activeFor = (role: string) => questions.filter((q) => q.isActive && q.occupation === role).length;
+  const activeGeneral = questions.filter((q) => q.isActive && !q.occupation).length;
+  const stats: Array<{ label: string; value: string; icon: LucideIcon; tone: StatTone; hint: string }> = [
+    ...ROLES.map((role) => {
+      const active = activeFor(role);
+      const short = Math.max(QUESTIONS_PER_ASSESSMENT - active - activeGeneral, 0);
+      return {
+        label: `${role} questions on`,
+        value: `${active}`,
+        icon: ROLE_ICONS[role],
+        tone: ROLE_TONES[role],
+        hint: short
+          ? `${short} short of ${QUESTIONS_PER_ASSESSMENT}: switch more on`
+          : active > QUESTIONS_PER_ASSESSMENT
+            ? `Players get a random ${QUESTIONS_PER_ASSESSMENT}`
+            : `Players get these ${Math.min(active + activeGeneral, QUESTIONS_PER_ASSESSMENT)}`,
+      };
+    }),
+    {
+      label: "Questions in the bank",
+      value: String(questions.length),
+      icon: Library,
+      tone: "green",
+      hint: `${questions.filter((q) => q.isActive).length} switched on`,
+    },
   ];
+
+  const toggleActive = async (q: BaselineQuestion) => {
+    const response = await BaselineService.setActive(q.id, !q.isActive);
+    if (response.ok && response.data.success) {
+      setQuestions((current) => current.map((item) => (item.id === q.id ? response.data.data : item)));
+    } else {
+      toast.error(response.data.message || "Could not change the question.");
+    }
+  };
+
+  const loadTemplates = async () => {
+    const response = await BaselineService.loadTemplates();
+    if (response.ok && response.data.success) {
+      toast.success(response.data.message);
+      await loadQuestions();
+    } else {
+      toast.error(response.data.message || "Could not load the templates.");
+    }
+  };
 
   const openAdd = () => {
     setEditingId(null);
@@ -154,6 +213,8 @@ export function BaselineManagementPage() {
       exampleAnswer: q.exampleAnswer,
       feedback: q.feedback,
       confidenceThreshold: q.confidenceThreshold,
+      occupation: q.occupation ?? "",
+      isActive: q.isActive,
     });
     setModalOpen(true);
   };
@@ -214,6 +275,8 @@ export function BaselineManagementPage() {
         exampleAnswer: form.exampleAnswer,
         feedback: form.feedback,
         confidenceThreshold: form.confidenceThreshold,
+        occupation: form.occupation || null,
+        isActive: form.isActive,
       };
 
       let response;
@@ -270,42 +333,61 @@ export function BaselineManagementPage() {
     <div className="h-full flex flex-col">
       <PageHeader
         title="Baseline Assessment Management"
-        description="Create and manage the questions players answer before phishing training"
+        description="A question bank for each role. Switch questions on or off; each player answers 5 written for their role"
         icon={ClipboardList}
         tone="bg-amber-500/15 text-amber-300"
         actions={(
-          <Button onClick={openAdd}>
-            <Plus className="w-4 h-4 mr-2" />
-            Add Question
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={loadTemplates} title="Add any template question that is not in the bank yet">
+              <Download className="w-4 h-4 mr-2" />
+              Load templates
+            </Button>
+            <Button onClick={openAdd}>
+              <Plus className="w-4 h-4 mr-2" />
+              Add Question
+            </Button>
+          </div>
         )}
       />
 
       <div className="flex-1 overflow-y-auto p-6 space-y-6">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {stats.map((stat) => (
-            <StatCard key={stat.label} label={stat.label} value={stat.value} icon={stat.icon} tone={stat.tone} />
+            <StatCard key={stat.label} label={stat.label} value={stat.value} hint={stat.hint} icon={stat.icon} tone={stat.tone} />
           ))}
         </div>
 
         <Card>
           <CardHeader>
             <CardTitle className="text-base text-foreground">Assessment Questions</CardTitle>
-            <CardDescription>Questions are presented to players in order during the baseline assessment.</CardDescription>
+            <CardDescription>
+              A player gets {QUESTIONS_PER_ASSESSMENT} switched-on questions for their role, in a random order. If their role has
+              fewer, switched-on general questions fill the gap. Switched-off questions stay in the bank as templates.
+            </CardDescription>
             <FilterBar
               search={searchQuery}
               onSearchChange={setSearchQuery}
               searchPlaceholder="Search questions or keywords"
-              filters={[{
-                key: "threshold",
-                label: "Thresholds",
-                value: thresholdFilter,
-                options: toOptions([...new Set(questions.map((q) => String(q.confidenceThreshold)))].sort()),
-                onChange: setThresholdFilter,
-              }]}
+              filters={[
+                {
+                  key: "role",
+                  label: "Roles",
+                  value: roleFilter,
+                  options: toOptions([...ROLES, GENERAL]),
+                  onChange: setRoleFilter,
+                },
+                {
+                  key: "status",
+                  label: "Any status",
+                  value: statusFilter,
+                  options: [{ value: "On", label: "Switched on" }, { value: "Off", label: "Switched off" }],
+                  onChange: setStatusFilter,
+                },
+              ]}
               onClear={() => {
                 setSearchQuery("");
-                setThresholdFilter("");
+                setRoleFilter("");
+                setStatusFilter("");
               }}
               resultText={`${filtered.length} question(s)`}
             />
@@ -344,9 +426,11 @@ export function BaselineManagementPage() {
                 <TableHeader>
                   <TableRow>
                     <TableHead className="text-xs pl-6"><SortButton label="ID" column="id" sort={table.sort} onSort={table.toggle} /></TableHead>
+                    <TableHead className="text-xs"><SortButton label="Role" column="role" sort={table.sort} onSort={table.toggle} /></TableHead>
                     <TableHead className="text-xs"><SortButton label="Question Preview" column="question" sort={table.sort} onSort={table.toggle} /></TableHead>
                     <TableHead className="text-xs"><SortButton label="Expected Keywords" column="keywords" sort={table.sort} onSort={table.toggle} /></TableHead>
                     <TableHead className="text-xs text-center"><SortButton label="Threshold" column="threshold" sort={table.sort} onSort={table.toggle} /></TableHead>
+                    <TableHead className="text-xs text-center"><SortButton label="For players" column="active" sort={table.sort} onSort={table.toggle} /></TableHead>
                     <TableHead
                       className="text-xs font-medium text-right pr-6"
                     >
@@ -356,11 +440,14 @@ export function BaselineManagementPage() {
                 </TableHeader>
                 <TableBody>
                   {table.sorted.map((q) => (
-                    <TableRow key={q.id} className="cursor-pointer hover:bg-sky-500/5" onClick={() => openView(q)}>
+                    <TableRow key={q.id} className={`cursor-pointer hover:bg-sky-500/5 ${q.isActive ? "" : "opacity-60"}`} onClick={() => openView(q)}>
                       <TableCell className="pl-6">
                         <span className="rounded bg-blue-500/15 px-2 py-1 font-mono text-xs font-semibold text-blue-400">
                           Q{String(q.id).padStart(2, "0")}
                         </span>
+                      </TableCell>
+                      <TableCell>
+                        <RoleBadge role={roleOf(q)} />
                       </TableCell>
                       <TableCell className="max-w-xs whitespace-normal">
                         <p className="line-clamp-2 text-sm font-medium text-foreground">{q.question}</p>
@@ -381,6 +468,9 @@ export function BaselineManagementPage() {
                         <Badge className={`border-0 text-xs font-semibold ${thresholdTone(q.confidenceThreshold)}`}>
                           {q.confidenceThreshold}
                         </Badge>
+                      </TableCell>
+                      <TableCell className="text-center" onClick={(event) => event.stopPropagation()}>
+                        <ActiveToggle active={q.isActive} onToggle={() => toggleActive(q)} />
                       </TableCell>
                       <TableCell className="pr-6">
                         {/* stopPropagation: the buttons do their own thing instead of opening the row */}
@@ -424,6 +514,32 @@ export function BaselineManagementPage() {
                 className="resize-none text-sm"
                 rows={3}
               />
+            </div>
+
+            <div className="grid sm:grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <Label className="text-sm font-medium" htmlFor="question-role">Role</Label>
+                <select
+                  id="question-role"
+                  value={form.occupation}
+                  onChange={(e) => setForm({ ...form, occupation: e.target.value })}
+                  className="h-9 w-full rounded-md border px-3 text-sm bg-input-background"
+                >
+                  {ROLES.map((role) => (
+                    <option key={role} value={role}>{role}</option>
+                  ))}
+                  <option value="">General (any role, fills gaps)</option>
+                </select>
+              </div>
+              <label className="flex items-center gap-2 text-sm font-medium sm:pt-6 cursor-pointer">
+                <input
+                  type="checkbox"
+                  className="w-4 h-4 accent-sky-500"
+                  checked={form.isActive}
+                  onChange={(e) => setForm({ ...form, isActive: e.target.checked })}
+                />
+                Switched on for players
+              </label>
             </div>
 
             <div className="space-y-1.5">
@@ -586,6 +702,12 @@ export function BaselineManagementPage() {
 
           {viewingQuestion && (
             <div className="space-y-4 pt-2">
+              <div className="flex items-center gap-2">
+                <RoleBadge role={roleOf(viewingQuestion)} />
+                <span className={`text-xs ${viewingQuestion.isActive ? "text-green-300" : "text-muted-foreground"}`}>
+                  {viewingQuestion.isActive ? "Switched on for players" : "Switched off (template only)"}
+                </span>
+              </div>
               <div className="p-4 rounded-xl bg-muted">
                 <p className="text-sm font-medium text-foreground">
                   {viewingQuestion.question}
@@ -753,6 +875,40 @@ function thresholdTone(threshold: number) {
   if (threshold >= 4) return "bg-red-500/15 text-red-400";
   if (threshold === 3) return "bg-amber-400/15 text-amber-300";
   return "bg-green-500/15 text-green-400";
+}
+
+/** The role a question is written for. */
+function RoleBadge({ role }: { role: string }) {
+  const Icon = ROLE_ICONS[role] ?? Library;
+  const tone: Record<string, string> = {
+    Student: "bg-sky-400/15 text-sky-300",
+    Employee: "bg-violet-400/15 text-violet-300",
+    Other: "bg-amber-400/15 text-amber-300",
+  };
+  return (
+    <span className={`inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs font-medium ${tone[role] ?? "bg-white/10 text-muted-foreground"}`}>
+      <Icon className="w-3 h-3" />
+      {role}
+    </span>
+  );
+}
+
+/** On/off switch for whether players are given a question. */
+function ActiveToggle({ active, onToggle }: { active: boolean; onToggle: () => void }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={active}
+      title={active ? "Switched on: click to switch off" : "Switched off: click to switch on"}
+      onClick={onToggle}
+      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+        active ? "bg-sky-500" : "bg-white/15"
+      }`}
+    >
+      <span className={`inline-block h-4 w-4 rounded-full bg-white transition-transform ${active ? "translate-x-4" : "translate-x-0.5"}`} />
+    </button>
+  );
 }
 
 /** A small icon button in a table row. */

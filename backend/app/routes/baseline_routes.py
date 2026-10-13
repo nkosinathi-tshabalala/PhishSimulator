@@ -103,3 +103,23 @@ def delete_question(question_id):
     """Admin: delete a quiz question."""
     success, message, result = BaselineService.delete_question(question_id)
     return respond(success, message, result)
+
+
+# POST /api/baseline/questions/<id>/active - admin only: takes {"active": true|false}
+@baseline_bp.route("/questions/<int:question_id>/active", methods=["POST"])
+@jwt_required()
+@require_admin
+def set_question_active(question_id):
+    """Admin: switch a question on or off for players."""
+    success, message, result = BaselineService.set_active(question_id, request.get_json(silent=True) or {})
+    return respond(success, message, result)
+
+
+# POST /api/baseline/questions/load-templates - admin only: adds missing questions from the role bank
+@baseline_bp.route("/questions/load-templates", methods=["POST"])
+@jwt_required()
+@require_admin
+def load_question_templates():
+    """Admin: add the template questions that are not in the bank yet."""
+    success, message, result = BaselineService.load_templates()
+    return respond(success, message, result)

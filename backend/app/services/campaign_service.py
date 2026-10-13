@@ -15,7 +15,7 @@ from sqlalchemy import func, text, update
 from app.email.mailer import Mailer
 from app.email.templates import result_email
 from app.extensions import db
-from app.models.authentication import User
+from app.models.authentication import User, UserProfile
 from app.models.authentication.player import Player
 from app.models.analytics import PerformanceTracker
 from app.models.email import EmailCampaign, EmailCampaignRecipient
@@ -103,16 +103,39 @@ class CampaignService:
 
     @staticmethod
     def list_players():
-        """Every registered player, with whether the allow-list lets us email them."""
+        """Every registered player, with whether they can be emailed: they must have agreed to campaign
+        emails, and their address must be on the safety allow-list."""
         players = Player.query.order_by(Player.full_name).all()
-        return [{
-            "player_id": player.player_id,
-            "full_name": player.full_name,
-            "email": player.user.email,
-            "occupation": player.profile.occupation.value if player.profile else "Other",
-            # Everyone is listed, but only allow-listed addresses can be picked
-            "selectable": Mailer.is_allowed(player.user.email),
-        } for player in players]
+        listed = []
+        for player in players:
+            consented = bool(player.profile and player.profile.campaign_consent)
+            allowed = Mailer.is_allowed(player.user.email)
+            listed.append({
+                "player_id": player.player_id,
+                "full_name": player.full_name,
+                "email": player.user.email,
+                "occupation": player.profile.occupation.value if player.profile else "Other",
+                "consented": consented,
+                "allowed": allowed,
+                # Everyone is listed, but only consenting, allow-listed players can be picked
+                "selectable": consented and allowed,
+                "blocked_reason": None if consented and allowed else (
+                    "Has not agreed to campaign emails" if not consented else "Not on the safety allow-list"
+                ),
+            })
+        return listed
+
+    @staticmethod
+    def _without_consent(addresses):
+        """The addresses that may not receive a campaign: no player account, or no consent given."""
+        consenting = {
+            email.lower() for (email,) in db.session.query(User.email)
+            .join(Player, Player.user_id == User.user_id)
+            .join(UserProfile, UserProfile.player_id == Player.player_id)
+            .filter(func.lower(User.email).in_([address.lower() for address in addresses]),
+                    UserProfile.campaign_consent.is_(True))
+        }
+        return [address for address in addresses if address.lower() not in consenting]
 
     @staticmethod
     def create_campaign(data, created_by_user_id):
@@ -152,6 +175,13 @@ class CampaignService:
             return False, (
                 f"These addresses are not on the safety allow-list: {', '.join(blocked)}. "
                 "Campaigns can only be sent to your own approved inboxes."
+            ), None
+
+        no_consent = CampaignService._without_consent(recipients)
+        if no_consent:
+            return False, (
+                f"These recipients have not agreed to campaign emails: {', '.join(no_consent)}. "
+                "Only registered players who opted in (on registration or in their profile) can be added."
             ), None
 
         campaign = EmailCampaign(created_by_user_id=created_by_user_id, name=name, **email)
@@ -250,6 +280,11 @@ class CampaignService:
     @staticmethod
     def _send_to(campaign, recipient):
         """Send one recipient their tracking email and record the outcome. Returns a failure reason or None."""
+        # Consent is checked again at send time: a player may have withdrawn it after the draft was made
+        if CampaignService._without_consent([recipient.recipient_email]):
+            recipient.delivery_status = "NO_CONSENT"
+            return f"{recipient.recipient_email} withdrew consent to campaign emails, so nothing was sent to them."
+
         base = f"{_public_backend_url()}/api/campaigns"
         token = recipient.tracking_token
         urls = {
