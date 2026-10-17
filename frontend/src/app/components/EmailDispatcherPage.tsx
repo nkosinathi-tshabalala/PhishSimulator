@@ -48,6 +48,8 @@ interface Scenario {
   is_phishing: boolean;
   cues: string[];
   attachment: string | null;
+  /** Has a link or an attachment. Without one there is nothing to click or track, so it can't be sent. */
+  clickable: boolean;
 }
 
 interface Campaign {
@@ -150,7 +152,7 @@ export function EmailDispatcherPage({ onBack }: EmailDispatcherPageProps) {
     if (response.ok && response.data.success) {
       const data = response.data.data as Context;
       setContext(data);
-      setScenarioId((current) => current ?? data.scenarios[0]?.scenario_id ?? null);
+      setScenarioId((current) => current ?? data.scenarios.find((item) => item.clickable)?.scenario_id ?? null);
     } else {
       toast.error(response.data.message || "Unable to load campaigns.");
     }
@@ -163,7 +165,8 @@ export function EmailDispatcherPage({ onBack }: EmailDispatcherPageProps) {
   const scenario = context?.scenarios.find((item) => item.scenario_id === scenarioId);
   const customEmail = toCustomEmail(custom);
   const customReady = Boolean(custom.senderName.trim() && custom.senderAddress.trim() && custom.subject.trim() && custom.message.trim());
-  const emailReady = source === "scenario" ? Boolean(scenarioId) : customReady;
+  const emailReady = source === "scenario" ? Boolean(scenario?.clickable) : customReady;
+  const unclickable = context?.scenarios.filter((item) => !item.clickable).length ?? 0;
 
   // What the preview shows: the chosen scenario, or the custom email as it is being written
   const preview: EmailPreviewData | null = source === "scenario"
@@ -293,11 +296,18 @@ export function EmailDispatcherPage({ onBack }: EmailDispatcherPageProps) {
                         >
                           {!context.scenarios.length && <option value="">No active email scenarios</option>}
                           {context.scenarios.map((item) => (
-                            <option key={item.scenario_id} value={item.scenario_id}>
+                            <option key={item.scenario_id} value={item.scenario_id} disabled={!item.clickable}>
                               {item.is_phishing ? "Phishing" : "Genuine"} · {item.title} · {item.category}
+                              {item.clickable ? "" : " · nothing to click"}
                             </option>
                           ))}
                         </select>
+                        {unclickable > 0 && (
+                          <span className="block text-xs font-normal text-muted-foreground">
+                            {unclickable} email(s) are greyed out: they have no link and no attachment, so a click
+                            could not be tracked. Write a custom email to test clicking on one of them.
+                          </span>
+                        )}
                       </label>
                     ) : (
                       <CustomEmailForm value={custom} presets={context.attachment_presets} onChange={setCustom} />

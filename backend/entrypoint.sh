@@ -32,15 +32,16 @@ MODE="${SEED_DEMO:-auto}"
 if [ "$MODE" = "reset" ]; then
   echo "Resetting database and loading demo data..."
   python reset_database.py --confirm-reset
-  python seed_demo.py
+  python seed_demo.py || echo "Demo data was not loaded (see the message above). The app starts without it."
 elif [ "$MODE" = "auto" ]; then
   if python -c "import sys; from app import create_app; from app.models.authentication import User; app=create_app(); app.app_context().push(); sys.exit(0 if User.query.first() else 1)"; then
     echo "Database already has data; leaving it as is."
   else
     echo "Empty database: loading demo data once..."
-    python seed_demo.py
+    python seed_demo.py || echo "Demo data was not loaded (see the message above). The app starts without it."
   fi
 fi
 
 echo "Starting Gunicorn..."
-exec gunicorn --bind 0.0.0.0:5000 --workers 3 --timeout 120 "run:app"
+# REQUEST_TIMEOUT_SECONDS (from .env) gives big dataset imports time to finish
+exec gunicorn --bind 0.0.0.0:5000 --workers 3 --timeout "${REQUEST_TIMEOUT_SECONDS:-120}" "run:app"

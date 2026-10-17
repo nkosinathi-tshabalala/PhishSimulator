@@ -175,6 +175,9 @@ def quality_review(channel, sender, subject, message, is_phishing, cues):
         lose(20, "big gaps between words (copied from a web page layout): re-process or edit the text")
     if RAW_TEXT_PATTERN.search(message):
         lose(20, "leftover HTML or email code in the text")
+    # Some published files already hold "�" where a character was lost, so players would see broken text
+    if "�" in message:
+        lose(20, "broken characters (�) from the original file: fix the text or skip it")
     if ScenarioParser.drop_repeated_text(" ".join(plain.split())) != " ".join(plain.split()):
         lose(20, "the same text appears twice")
     if sum(phrase in lowered for phrase in FOOTER_PHRASES) >= 2:

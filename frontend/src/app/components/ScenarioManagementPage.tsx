@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 import {
+  AlertTriangle,
   CheckCircle2,
   ChevronDown,
   ChevronRight,
@@ -93,6 +94,16 @@ interface DatasetGroup {
   by_status: Record<ScenarioStatus, number>;
 }
 
+/** A live category or difficulty where one answer is missing or rare (from the server's balance report). */
+interface BalanceFlag {
+  channel: Channel;
+  group: "category" | "difficulty";
+  name: string;
+  phishing: number;
+  genuine: number;
+  status: "one_sided" | "uneven";
+}
+
 interface ScenarioForm {
   title: string;
   simulation_type: Channel;
@@ -109,7 +120,7 @@ interface ScenarioForm {
 
 const CATEGORIES = [
   "Banking", "Delivery", "Government", "Employment",
-  "University", "Password Reset", "Microsoft 365", "Social Media",
+  "University", "Password Reset", "Microsoft 365", "Social Media", "General",
 ];
 
 const QA_ITEMS = [
@@ -208,6 +219,7 @@ export function ScenarioManagementPage({ onBack }: ScenarioManagementPageProps) 
   const [channelCounts, setChannelCounts] = useState({ email: 0, sms: 0 });
   const [categories, setCategories] = useState<string[]>(CATEGORIES);
   const [groups, setGroups] = useState<DatasetGroup[]>([]);
+  const [balance, setBalance] = useState<BalanceFlag[]>([]);
   const [pagination, setPagination] = useState({ page: 1, pages: 0, total: 0 });
 
   const [reviewing, setReviewing] = useState<ScenarioDetail | null>(null);
@@ -241,6 +253,7 @@ export function ScenarioManagementPage({ onBack }: ScenarioManagementPageProps) 
     if (data.categories.length) setCategories(data.categories);
     setPagination(data.pagination);
     setGroups(data.groups ?? []);
+    setBalance(data.balance ?? []);
   };
 
   useEffect(() => {
@@ -531,6 +544,38 @@ export function ScenarioManagementPage({ onBack }: ScenarioManagementPageProps) 
             )}
           </CardContent>
         </Card>
+
+        {balance.length > 0 && (
+          <Card className="border-amber-500/40">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-amber-400" /> Live answer balance
+              </CardTitle>
+              <CardDescription>
+                In these groups of active scenarios, phishing or genuine is missing or rare. Training picks phishing or
+                genuine first, so everyday practice stays mixed, but a player who focuses on one of these categories
+                sees mostly one answer. Switch on scenarios of the missing kind, or correct a category or difficulty
+                while reviewing.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-wrap gap-2">
+              {balance.map((flag) => (
+                <span
+                  key={`${flag.channel}-${flag.group}-${flag.name}`}
+                  className={`rounded-md border px-2 py-1 text-xs ${
+                    flag.status === "one_sided"
+                      ? "border-amber-500/50 bg-amber-500/10 text-amber-200"
+                      : "border-border text-muted-foreground"
+                  }`}
+                  title={flag.status === "one_sided" ? "Only one answer is live" : "One answer is under a quarter"}
+                >
+                  {flag.channel === "EMAIL" ? "Email" : "SMS"} · {flag.name}
+                  {flag.group === "difficulty" ? " (difficulty)" : ""}: {flag.phishing} phishing, {flag.genuine} genuine
+                </span>
+              ))}
+            </CardContent>
+          </Card>
+        )}
 
         <Card>
           <CardHeader>

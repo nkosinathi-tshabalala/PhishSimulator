@@ -326,6 +326,28 @@ try:
     messages = data_of(r).get("messages") or []
     check("player: Inbox Rush batch", r.status_code == 200 and len(messages) >= 2
           and not any("correct_answer" in m for m in messages), r.status_code)
+    with app.app_context():
+        from app.models.scenario import Scenario
+        mix = []
+        for _ in range(5):
+            batch = data_of(api("GET", "/api/scenarios/triage/EMAIL", ptoken)).get("messages") or []
+            ids = [m["scenario_id"] for m in batch]
+            mix.append(Scenario.query.filter(Scenario.scenario_id.in_(ids), Scenario.correct_answer == "REPORT").count())
+    check("Inbox Rush: every batch of 6 mixes 2 to 4 phishing messages with genuine ones",
+          all(2 <= count <= 4 for count in mix), mix)
+    picker = data_of(api("GET", "/api/scenarios/random/EMAIL", ptoken)).get("practice_categories") or []
+    with app.app_context():
+        from app.models.scenario import Scenario
+        expected = {}
+        for row in picker:
+            answers = [a for (a,) in db.session.query(Scenario.correct_answer).filter(
+                Scenario.status == "ACTIVE", Scenario.simulation_type == "EMAIL", Scenario.category == row["name"])]
+            phishing = answers.count("REPORT")
+            expected[row["name"]] = bool(answers) and min(phishing, len(answers) - phishing) / len(answers) >= 0.25
+    check("practice picker: only categories with both answers (neither under a quarter) can be practised on their own",
+          picker and all(row["focusable"] == expected[row["name"]] for row in picker)
+          and {row["focusable"] for row in picker} == {True, False},
+          [(row["name"], row["focusable"]) for row in picker])
     r = api("GET", "/api/scenarios/review/EMAIL", ptoken)
     check("player: mistake review (a scenario, or 'no mistakes')",
           r.status_code == 200 or data_of(r).get("no_mistakes"), f"{r.status_code} {body(r).get('message')}")
@@ -464,11 +486,45 @@ try:
     check("picker: each locked player says why (no consent, or off the allow-list)",
           all(p["blocked_reason"] == ("Not on the safety allow-list" if p["consented"] else "Has not agreed to campaign emails")
               for p in players if not p["selectable"]))
+    unclickable = next((s for s in context["scenarios"] if not s["clickable"]), None)
+    check("campaign: dataset emails with no link and no attachment are marked as having nothing to click",
+          unclickable is not None and all(
+              s["clickable"] == bool(s["attachment"] or re.search(r"https?://|www\.", s["message"] or ""))
+              for s in context["scenarios"]))
+    if unclickable:
+        r = api("POST", "/api/campaigns", atoken, json={
+            "scenario_id": unclickable["scenario_id"], "name": "E2E nothing to click", "recipients": [PLAYER_EMAIL]})
+        check("campaign: a dataset email with nothing to click is refused, like a custom one",
+              r.status_code == 400 and "nothing to click" in (body(r).get("message") or ""),
+              f"{r.status_code} {body(r).get('message')}")
     check("picker: occupations are Student/Employee/Other",
           {p["occupation"] for p in players} <= {"Student", "Employee", "Other"}, {p["occupation"] for p in players})
     check("campaign: scenario list offers phishing and genuine emails",
           {s["is_phishing"] for s in context["scenarios"]} == {True, False}, {s["is_phishing"] for s in context["scenarios"]})
-    scenario_id = next(s["scenario_id"] for s in context["scenarios"] if s["is_phishing"])
+    with app.app_context():
+        from app.models.scenario import Scenario
+        demo_sources = {(dataset_id is not None) for (dataset_id,) in db.session.query(Scenario.dataset_id).filter(
+            Scenario.status != Scenario.CAMPAIGN_STATUS).distinct()}
+    check("demo: every training scenario, and so every email offered for campaigns, comes from an uploaded dataset",
+          bool(context["scenarios"]) and demo_sources == {True}, demo_sources)
+    # The demo emails come from a generated dataset with no links, so the link-tracking checks use a phishing
+    # email the admin adds by hand and switches on (create -> approve with the full checklist -> activate)
+    r = api("POST", "/api/scenarios", atoken, json={
+        "title": "E2E campaign email", "simulation_type": "EMAIL", "category": "Banking", "difficulty": "Medium",
+        "sender": "Standard Bank <alerts@standardbank-verify.co>", "subject": "Unusual sign-in on your account",
+        "correct_answer": "REPORT", "phishing_cues": ["Suspicious link", "Urgency"],
+        "message": "We noticed an unusual sign-in. Confirm your details within 24 hours at "
+                   "http://standardbank-verify.co/secure or your account will be locked.",
+    })
+    scenario_id = data_of(r).get("scenario_id")
+    every_item = {key: True for key in (
+        "label_correct", "clues_accurate", "category_difficulty_fit", "text_complete", "no_personal_data", "links_safe",
+    )}
+    approved = api("POST", f"/api/scenarios/{scenario_id}/review", atoken, json={"action": "approve", "checklist": every_item})
+    activated = api("POST", f"/api/scenarios/{scenario_id}/review", atoken, json={"action": "activate"})
+    check("campaign: an admin-added email with a link is switched on for the campaign checks",
+          r.status_code == 201 and approved.status_code == 200 and activated.status_code == 200,
+          (r.status_code, approved.status_code, activated.status_code))
     locked = next(p["email"] for p in players if not p["selectable"])
 
     r = api("POST", "/api/campaigns", atoken, json={"scenario_id": scenario_id, "name": "E2E blocked", "recipients": [locked]})
@@ -787,13 +843,14 @@ try:
         check("datasets: uploaded rows become drafts awaiting review, not live scenarios",
               drafts and all(scenario.get("status") == "DRAFT" for scenario in drafts),
               [scenario.get("status") for scenario in drafts])
-        listing = data_of(api("GET", "/api/scenarios?simulation_type=SMS&status=", atoken))
+        # Every channel: the demo scenarios are all from datasets, and the hand-added campaign email is the rest
+        listing = data_of(api("GET", "/api/scenarios?status=", atoken))
         groups = {str(group["dataset_id"]): group for group in listing.get("groups", [])}
         check("datasets: scenario review groups scenarios under their dataset, plus one group for the rest",
               str(new_dataset) in groups and groups[str(new_dataset)]["name"] == "e2e.csv"
               and groups[str(new_dataset)]["by_status"]["DRAFT"] == len(drafts) and "none" in groups,
               {key: (group["name"], group["count"]) for key, group in groups.items()})
-        only_hand_made = items(data_of(api("GET", "/api/scenarios?simulation_type=SMS&status=&dataset_id=none", atoken)),
+        only_hand_made = items(data_of(api("GET", "/api/scenarios?status=&dataset_id=none", atoken)),
                                "scenarios", "items")
         check("datasets: the 'none' group lists only scenarios that are not from a dataset",
               only_hand_made and all(row["dataset_id"] is None for row in only_hand_made))
@@ -954,12 +1011,23 @@ try:
           f"{email_only.get('total_simulations')} vs {by_type}")
     check("filters: a player cannot open the admin analytics", api("GET", "/api/analytics/admin", ptoken).status_code == 403)
 
+    balance = data_of(api("GET", "/api/scenarios", atoken)).get("balance") or []
+    check("review: the live answer balance flags categories or difficulties with one answer missing or rare",
+          bool(balance) and all(f["status"] in ("one_sided", "uneven") and min(f["phishing"], f["genuine"])
+                                < 0.25 * (f["phishing"] + f["genuine"]) for f in balance), balance[:3])
     rows = items(data_of(api("GET", "/api/scenarios?sort=uses&order=desc", atoken)), "scenarios")
     uses = [row["uses"] for row in rows]
     check("sorting: scenarios sort by a column on the server", bool(uses) and uses == sorted(uses, reverse=True), uses[:10])
     rows = items(data_of(api("GET", "/api/scenarios?sort=title&order=asc", atoken)), "scenarios")
-    titles = [row["title"].lower() for row in rows]
-    check("sorting: ascending by title", titles == sorted(titles), titles[:5])
+    # Compared with the database's own text order: PostgreSQL's collation skips punctuation such as a leading
+    # "!" or quote (common in SMS datasets), so Python's sorted() is not the right yardstick
+    with app.app_context():
+        from app.models.scenario import Scenario
+        expected_ids = [scenario_id for (scenario_id,) in db.session.query(Scenario.scenario_id).filter(
+            db.func.upper(Scenario.status) != Scenario.CAMPAIGN_STATUS,
+        ).order_by(Scenario.title.asc().nulls_last(), Scenario.scenario_id).limit(len(rows)).all()]
+    check("sorting: ascending by title", bool(rows) and [row["scenario_id"] for row in rows] == expected_ids,
+          [row["title"] for row in rows[:5]])
 
     for _ in range(5):
         api("POST", "/api/auth/login", json={"email": PLAYER_EMAIL, "password": "wrong-password-1"})

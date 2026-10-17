@@ -98,6 +98,7 @@ class CampaignService:
                 "difficulty": scenario.difficulty,
                 "is_phishing": (scenario.correct_answer or "").upper() == "REPORT",
                 "cues": scenario.get_phishing_cues(),
+                "clickable": CampaignService.is_clickable(scenario.message, scenario.attachment),
             } for scenario in scenarios],
             "campaigns": [CampaignService._summary(campaign) for campaign in campaigns],
         }
@@ -151,16 +152,12 @@ class CampaignService:
             ).first()
             if not scenario:
                 return False, "Choose an active email scenario, or write a custom email.", None
-            email = {
-                "scenario_id": scenario.scenario_id,
-                "sender": scenario.sender,
-                # A real inbox must never see the admin's title (it may say "training")
-                "subject": scenario.subject or message_label(None, scenario.message),
-                "message": scenario.message,
-                "is_phishing": (scenario.correct_answer or "").upper() == "REPORT",
-                "phishing_cues": scenario.phishing_cues,
-                "attachment": scenario.attachment,
-            }
+            if not CampaignService.is_clickable(scenario.message, scenario.attachment):
+                return False, (
+                    "This email has no link and no attachment, so there is nothing to click or track. "
+                    "Choose another email, or write a custom one."
+                ), None
+            email = CampaignService.scenario_email(scenario)
 
         default_name = f"{email['subject']} campaign"
         name = str(data.get("name") or default_name).strip()[:150]
@@ -198,6 +195,26 @@ class CampaignService:
         return True, f"Draft created for {len(recipients)} recipient(s).", CampaignService._summary(campaign)
 
     @staticmethod
+    def scenario_email(scenario):
+        """The campaign fields for an active email scenario."""
+        return {
+            "scenario_id": scenario.scenario_id,
+            "sender": scenario.sender,
+            # A real inbox must never see the admin's title (it may say "training")
+            "subject": scenario.subject or message_label(None, scenario.message),
+            "message": scenario.message,
+            "is_phishing": (scenario.correct_answer or "").upper() == "REPORT",
+            "phishing_cues": scenario.phishing_cues,
+            "attachment": scenario.attachment,
+        }
+
+    @staticmethod
+    def is_clickable(message, attachment):
+        """A campaign email needs something to click (a link in the body, or an attachment), or the test
+        can only measure reporting. The same rule applies to dataset emails and custom ones."""
+        return bool(attachment) or bool(LINK_PATTERN.search(message or ""))
+
+    @staticmethod
     def _custom_email(custom):
         """Check an admin-written email. Returns (valid, message, email fields)."""
         if not isinstance(custom, dict):
@@ -224,7 +241,7 @@ class CampaignService:
             return False, "The attachment name must look like a file, e.g. Invoice_2026.pdf.", None
 
         # The email must have something to click: a link in the body, or an attachment
-        if not attachment and not LINK_PATTERN.search(message):
+        if not CampaignService.is_clickable(message, attachment):
             return False, "Add a link in the body (e.g. [Verify](https://...)) or an attachment to track.", None
 
         return True, "", {
@@ -831,12 +848,14 @@ def start_sweeper(app):
     def loop():
         while True:
             time.sleep(60)
-            try:
-                with app.app_context():
+            # The session clean-up must happen inside the app context: outside it, it raises and the error
+            # would end this thread after its first sweep
+            with app.app_context():
+                try:
                     CampaignService.sweep()
-            except Exception:
-                logger.exception("Campaign sweep failed")
-            finally:
-                db.session.remove()
+                except Exception:
+                    logger.exception("Campaign sweep failed")
+                finally:
+                    db.session.remove()
 
     threading.Thread(target=loop, name="campaign-sweeper", daemon=True).start()

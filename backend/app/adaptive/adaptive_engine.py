@@ -18,6 +18,10 @@ class AdaptiveEngine:
     BASELINE_PASS_SCORE = 70
     STEP_UP_ACCURACY = 80
     STEP_DOWN_ACCURACY = 60
+    # Phishing or genuine: balanced over the last 10 training messages, never more certain than 25%/75%
+    ANSWER_WINDOW = 10
+    MIN_PHISHING_CHANCE = 0.25
+    MAX_PHISHING_CHANCE = 0.75
 
     @staticmethod
     def starting_difficulty(baseline_score=None):
@@ -100,8 +104,33 @@ class AdaptiveEngine:
         return difficulty, reason
 
     @staticmethod
-    def recommend_category(category_attempts, occupation=None):
-        """Choose a varied, useful practice category without exposing a queue."""
+    def answer_of(attempt):
+        """The right answer of a past decision ("REPORT" for phishing, "SAFE" for genuine)."""
+        answer = (attempt.player_answer or "").upper()
+        return answer if attempt.correct else ("SAFE" if answer == "REPORT" else "REPORT")
+
+    @staticmethod
+    def recommend_answer(attempts, rng=None):
+        """Whether the next message is phishing ("REPORT") or genuine ("SAFE"), chosen before anything else so
+        that its difficulty or category can never give the answer away. A weighted coin: the more phishing
+        among the player's last 10 training messages, the likelier a genuine one next, but never certain
+        either way (25% to 75%), so the order cannot be predicted. `attempts` are newest first."""
+        rng = rng or SystemRandom()
+        recent = [
+            attempt for attempt in attempts if not getattr(attempt, "campaign_recipient_id", None)
+        ][:AdaptiveEngine.ANSWER_WINDOW]
+        if recent:
+            phishing_share = sum(AdaptiveEngine.answer_of(a) == "REPORT" for a in recent) / len(recent)
+            chance = min(max(1 - phishing_share, AdaptiveEngine.MIN_PHISHING_CHANCE), AdaptiveEngine.MAX_PHISHING_CHANCE)
+        else:
+            chance = 0.5
+        return "REPORT" if rng.random() < chance else "SAFE"
+
+    @staticmethod
+    def recommend_category(category_attempts, occupation=None, rng=None):
+        """Choose a varied, useful practice category without exposing a queue.
+        `rng` makes the random pick repeatable (the demo seed passes one); the app uses SystemRandom."""
+        rng = rng or SystemRandom()
 
         if not category_attempts:
             return None, "No category-specific scenarios are available"
@@ -144,7 +173,7 @@ class AdaptiveEngine:
             ]
             if unpractised:
                 return (
-                    SystemRandom().choice(unpractised),
+                    rng.choice(unpractised),
                     f"Tailored for {occupation_name}: exploring a relevant category",
                 )
             chosen = min(occupation_eligible, key=category_priority)
@@ -155,7 +184,7 @@ class AdaptiveEngine:
             if not category_attempts[category]
         ]
         if unpractised:
-            return SystemRandom().choice(unpractised), "Exploring a new phishing category"
+            return rng.choice(unpractised), "Exploring a new phishing category"
 
         chosen = min(eligible, key=category_priority)
         return chosen, "Targeting a category that needs more practice"

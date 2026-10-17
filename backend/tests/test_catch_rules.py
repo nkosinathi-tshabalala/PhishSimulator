@@ -18,11 +18,13 @@ from app.utils.clues import (
 )
 
 
-def make_scenario(answer="REPORT", cues="Suspicious link,Urgency,Fake sender", scenario_id=1):
+def make_scenario(answer="REPORT", cues="Suspicious link,Urgency,Fake sender", scenario_id=1,
+                  sender="Capitec <alerts@capitecbank.co.za>"):
     """A fake scenario with only the fields the rules read."""
     return SimpleNamespace(
         scenario_id=scenario_id,
         correct_answer=answer,
+        sender=sender,
         get_phishing_cues=lambda: [cue for cue in cues.split(",") if cue],
     )
 
@@ -166,6 +168,11 @@ class TestStageTests(unittest.TestCase):
     def test_safe_messages_use_trust_signals(self):
         clues = real_clues(make_scenario(answer="SAFE", cues=""))
         self.assertIn("Known sender", clues)
+        self.assertIn("No personal info requested", clues)
+
+    def test_a_message_without_a_sender_has_no_known_sender(self):
+        clues = real_clues(make_scenario(answer="SAFE", cues="", sender=""))
+        self.assertNotIn("Known sender", clues)
         self.assertIn("No personal info requested", clues)
 
     def test_options_mix_real_clues_with_decoys_and_are_stable(self):

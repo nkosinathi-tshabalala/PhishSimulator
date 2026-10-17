@@ -1,5 +1,5 @@
 # Serves the built React app and forwards /api to the backend container.
-# The nginx image fills in ${MAX_UPLOAD_MB} from the environment when the container starts.
+# The nginx image fills in ${MAX_UPLOAD_MB} and ${REQUEST_TIMEOUT_SECONDS} from the environment when the container starts.
 server {
     listen 80;
     server_name _;
@@ -18,6 +18,9 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+        # Large dataset imports can take minutes; wait as long as the API is allowed to work
+        proxy_read_timeout ${REQUEST_TIMEOUT_SECONDS}s;
+        proxy_send_timeout ${REQUEST_TIMEOUT_SECONDS}s;
     }
 
     # Built JavaScript and CSS have a content hash in their names, so a new build always gets new

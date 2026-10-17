@@ -116,6 +116,11 @@ def normalise_clue(name):
 
 def contains_word(text, phrase):
     """True when `phrase` appears in `text` as whole words."""
+    # A plain substring check first: most keywords are absent, and skipping the regex for them makes
+    # large dataset imports many times faster. The result is the same, since a whole-word match needs
+    # the substring to be there.
+    if phrase not in text:
+        return False
     return re.search(rf"(?<!\w){re.escape(phrase)}(?!\w)", text) is not None
 
 
@@ -135,7 +140,9 @@ def real_clues(scenario):
     if scenario.correct_answer.upper() == "REPORT":
         return [cue for cue in dict.fromkeys(stored) if cue in WARNING_SIGNS]
 
-    signals = ["Known sender"]
+    # "Known sender" only when the message shows one: many datasets have no sender, and the player then
+    # sees "Unknown sender" or "Unknown number", which is no reason to trust it
+    signals = ["Known sender"] if (getattr(scenario, "sender", "") or "").strip() else []
     if "Credential request" not in stored:
         signals.append("No personal info requested")
     if "Urgency" not in stored and "Threat or penalty" not in stored:

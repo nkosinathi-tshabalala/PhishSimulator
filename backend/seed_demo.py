@@ -6,35 +6,56 @@
 # To update an existing database without wiping it (new demo emails, consent, question bank):
 #   .venv\Scripts\python.exe seed_demo.py --refresh-players
 #
-# It creates an admin, a cohort of test players, the active scenarios and baseline questions,
-# baseline assessments, and about four months of practice. Each player has a habit (from never to
-# daily), so trends, streaks, badges and the activity calendar look real. Only when OWNER_EMAIL is
-# set does it also create a player for your own address, with a couple of finished email campaigns.
+# It creates an admin, a cohort of test players, the baseline questions and assessments, and about four
+# months of practice. Each player has a habit (from never to daily), so trends, streaks, badges and the
+# activity calendar look real. Only when OWNER_EMAIL is set does it also create a player for your own
+# address, with a couple of finished email campaigns.
+#
+# Every scenario comes from two real dataset files, one email and one SMS (DEMO_EMAIL_DATASET and
+# DEMO_SMS_DATASET in DEMO_DATASET_DIR, by default backend/uploads/datasets). They are imported exactly as
+# the Datasets page does it, so the quality check, cleaning and draft scenarios are the real ones. An admin
+# review is then replayed: a balanced set of drafts that pass every automatic check is approved and
+# switched on, a few are left approved, a few broken ones are rejected, and the rest wait in review.
+# Players only ever practise on those active dataset scenarios, and each decision is chosen and scored
+# by the app's own rules (adaptive difficulty and category, clue checking, XP with the level multiplier).
 #
 # Test players get Gmail plus-aliases of DEMO_EMAIL (you+lerato.mokoena@gmail.com), which all arrive in
 # your own inbox, so campaigns can be demonstrated end to end. Without DEMO_EMAIL they get clearly fake
 # @phishsimulator.test addresses. Most test players have agreed to campaign emails; some have not.
 
-import json
 import os
 import random
+import re
+import shutil
 import sys
 from datetime import datetime, time, timedelta
 from pathlib import Path
+from uuid import uuid4
+
+from werkzeug.utils import secure_filename
 
 from app import create_app
-from app.extensions import bcrypt, db
+from app.adaptive.adaptive_engine import AdaptiveEngine
+from app.analytics import FeedbackGenerator
+from app.datasets.scenario_parser import ScenarioParser
+from app.extensions import db, bcrypt
 from app.enums.occupation import Occupation
-from app.models.analytics import PerformanceTracker
-from app.models.authentication import Player, User, UserProfile, UserSession
+from app.models.analytics import FeedbackReport, PerformanceTracker
+from app.models.authentication import PasswordResetToken, Player, User, UserProfile, UserSession
 from app.models.baseline import BaselineAssessment, BaselineQuestion, BaselineResponse, BaselineTemplate
+from app.models.datasets import Dataset, DatasetRecord
 from app.models.email import EmailCampaign, EmailCampaignRecipient
 from app.models.scenario import Scenario
 from app.models.simulation import SimulationAttempt, SimulationSession, UserAction
+from app.services import dataset_service
 from app.services.baseline_service import BaselineService
+from app.services.dataset_service import DatasetService
 from app.services.progress_service import ProgressService
+from app.services.scenario_service import ScenarioService
+from app.services.simulation_service import SimulationService
+from app.utils.clues import TRUST_SIGNALS, WARNING_SIGNS, clue_options, evaluate_justification, real_clues
+from app.utils.links import find_urls
 
-SEED_DIR = Path(__file__).parent / "app" / "seed"
 RANDOM_SEED = 2026
 # About four months of history, so streaks, badges and the yearly activity calendar have data
 DAYS = 120
@@ -66,6 +87,32 @@ SECOND_BASELINE_DAYS = 21
 SECOND_BASELINE_SHARE = 0.5
 # Every fourth test player has not agreed to campaign emails (30 of 40 have)
 NO_CONSENT_EVERY = 4
+
+# The two dataset files every demo scenario comes from (paths inside DEMO_DATASET_DIR). In Docker,
+# DEMO_DATASET_DIR is the read-only folder docker-compose mounts from DEMO_DATASETS_HOST_DIR.
+DEMO_DATASET_DIR = Path(os.getenv("DEMO_DATASET_DIR") or Path(__file__).parent / "uploads" / "datasets")
+DEMO_DATASETS = (
+    ("EMAIL", os.getenv("DEMO_EMAIL_DATASET") or "email/phishing_legit_dataset_KD_10000.csv"),
+    ("SMS", os.getenv("DEMO_SMS_DATASET") or "sms/Dataset_5971.csv"),
+)
+# The datasets were uploaded and reviewed just before the first players joined
+UPLOADED_DAYS_AGO = DAYS + 6
+# The replayed admin review, per dataset and category: where a category has both answers, the same number of
+# phishing and genuine drafts are switched on (at most this many of each). Categories with only one answer
+# get at least a few, then are topped up in turn until the channel has as many phishing as genuine live
+# (Scenario Review flags them, and they are not offered for focused practice). A few more are approved but
+# not yet live, and a few broken ones are rejected. Everything else stays a draft in Scenario Review.
+ACTIVE_PER_CATEGORY = 40
+ONE_SIDED_PER_CATEGORY = 4
+APPROVED_PER_ANSWER = 2
+REJECTED_PER_DATASET = 10
+
+# How the simulated players behave inside a decision
+SMS_SHARE = 0.4                 # share of decisions made in SMS training (the rest is email)
+MISTAKE_REVIEW_SHARE = 0.1      # chance a decision is a "review my mistakes" retake, when there are mistakes
+TRAP_SHARE = 0.5                # a player who trusts a message with a link or file opens it this often
+GENUINE_CLICK_SHARE = 0.25      # ...and opens the link or file of a genuine message they trust this often
+WRONG_PICK_SHARE = 0.15         # chance a correct answer also ticks one clue that is not in the message
 
 # Realistic South-African cohort: (full name, age, occupation, has IT background)
 PLAYERS = [
@@ -114,37 +161,176 @@ def demo_consent(index):
     return index % NO_CONSENT_EVERY != NO_CONSENT_EVERY - 1
 
 
-def load_fixture(name):
-    return json.loads((SEED_DIR / name).read_text(encoding="utf-8"))
+def demo_dataset_files():
+    """The email and SMS files the demo scenarios come from. Checked before anything is wiped, so a missing
+    file leaves the database as it was."""
+    files = [(channel, DEMO_DATASET_DIR / name) for channel, name in DEMO_DATASETS]
+    missing = [str(path) for _, path in files if not path.is_file()]
+    if missing:
+        raise SystemExit(
+            "Demo data not loaded: these dataset files are missing:\n  " + "\n  ".join(missing)
+            + "\nPut them there, or point DEMO_DATASET_DIR, DEMO_EMAIL_DATASET and DEMO_SMS_DATASET at the files."
+        )
+    return files
 
 
 def wipe_dynamic_data():
-    """Clear everything the seed creates, so it can be re-run without a full reset."""
-    for model in (UserAction, SimulationAttempt, SimulationSession, BaselineResponse, BaselineAssessment,
-                  PerformanceTracker, EmailCampaignRecipient, EmailCampaign, UserProfile, Player,
-                  UserSession, BaselineQuestion, BaselineTemplate, Scenario):
+    """Clear everything the seed creates, so it can be re-run without a full reset. Uploaded dataset files
+    of the datasets being removed are deleted too, as deleting a dataset in the app does."""
+    stored_files = [name for (name,) in db.session.query(Dataset.filename).all()]
+    for model in (FeedbackReport, UserAction, SimulationAttempt, SimulationSession, BaselineResponse,
+                  BaselineAssessment, PerformanceTracker, EmailCampaignRecipient, EmailCampaign, UserProfile,
+                  Player, UserSession, PasswordResetToken, BaselineQuestion, BaselineTemplate, Scenario,
+                  DatasetRecord, Dataset):
         db.session.query(model).delete()
     db.session.query(User).delete()
     db.session.commit()
+    for name in stored_files:
+        path = Path(dataset_service.UPLOAD_FOLDER) / name
+        if path.is_file():
+            path.unlink()
 
 
-def seed_scenarios():
-    from app.datasets.scenario_realism import quality_score
-    created = []
-    for row in load_fixture("scenarios.json"):
-        is_phishing = row["correct_answer"] == "REPORT"
-        cues = [cue.strip() for cue in (row.get("phishing_cues") or "").split(",") if cue.strip()]
-        scenario = Scenario(
-            title=row["title"], simulation_type=row["simulation_type"], category=row["category"],
-            difficulty=row["difficulty"], sender=row["sender"], subject=row["subject"], message=row["message"],
-            correct_answer=row["correct_answer"], phishing_cues=row.get("phishing_cues"),
-            attachment=row.get("attachment"), status="ACTIVE", approved_at=datetime.utcnow(),
-            quality_score=quality_score(row["simulation_type"], row["sender"], row["subject"], row["message"], is_phishing, cues),
-        )
-        db.session.add(scenario)
-        created.append(scenario)
+def import_demo_dataset(channel, source, uploaded_at):
+    """Upload one dataset file exactly as the Datasets page does: store a copy in the upload folder, run the
+    quality check and turn every labelled row into a draft scenario. Then date it to when it was uploaded."""
+    name = secure_filename(source.name)
+    os.makedirs(dataset_service.UPLOAD_FOLDER, exist_ok=True)
+    stored = Path(dataset_service.UPLOAD_FOLDER) / f"{uuid4().hex}_{name}"
+    shutil.copyfile(source, stored)
+    ok, message, result = DatasetService.import_file(str(stored), name, channel)
+    if not ok:
+        raise SystemExit(f"Demo data not loaded: the {channel} dataset {source} was rejected. {message}")
+
+    dataset = db.session.get(Dataset, result["dataset_id"])
+    dataset.uploaded_at = uploaded_at
+    Scenario.query.filter_by(dataset_id=dataset.dataset_id).update(
+        {Scenario.created_at: uploaded_at, Scenario.updated_at: uploaded_at}, synchronize_session=False,
+    )
     db.session.commit()
-    return created
+    return dataset
+
+
+def _core_text(message):
+    """A message without its greeting and sign-off, to spot near-copies: generated datasets repeat one body
+    with only the name above or below it changed."""
+    lines = [line.strip() for line in (message or "").strip().split("\n") if line.strip()]
+    if len(lines) > 2 and len(lines[-1].split()) <= 4:
+        lines = lines[:-2] if len(lines[-2].split()) <= 3 else lines[:-1]
+    text = ScenarioParser.GREETING.sub("", " ".join(lines))
+    return re.sub(r"\W+", " ", text).strip().lower()
+
+
+def _varied(scenarios, rng):
+    """Scenarios in the order a careful reviewer would pick them: taking turns between categories and
+    difficulties, and skipping near-copies of ones already picked (a repeated subject only as a last resort)."""
+    buckets = {}
+    for scenario in scenarios:
+        buckets.setdefault((scenario.category, scenario.difficulty), []).append(scenario)
+    queues = []
+    for key in sorted(buckets):
+        rng.shuffle(buckets[key])
+        queues.append(buckets[key])
+    order = []
+    while any(queues):
+        for queue in queues:
+            if queue:
+                order.append(queue.pop())
+
+    chosen, chosen_ids, texts, subjects = [], set(), set(), set()
+    for allow_repeated_subject in (False, True):
+        for scenario in order:
+            text = _core_text(scenario.message)
+            if scenario.scenario_id in chosen_ids or text in texts:
+                continue
+            if not allow_repeated_subject and scenario.subject and scenario.subject in subjects:
+                continue
+            chosen.append(scenario)
+            chosen_ids.add(scenario.scenario_id)
+            texts.add(text)
+            subjects.add(scenario.subject)
+    return chosen
+
+
+def review_demo_dataset(dataset, rng, reviewed_at):
+    """Replay the admin's review in Scenario Review. Only drafts that pass every automatic check (the same
+    checks the review screen shows) can go live. Per category, an equal number of phishing and genuine ones
+    are switched on where the category has both; a one-sided category gets only a few. Then a few more are
+    left approved, and a few of the worst failing ones are rejected."""
+    drafts = Scenario.query.filter_by(dataset_id=dataset.dataset_id).order_by(Scenario.scenario_id).all()
+    passing = {"REPORT": [], "SAFE": []}
+    failing = []
+    for scenario in drafts:
+        if all(check["passed"] for check in ScenarioService.quality_checks(scenario)):
+            passing[scenario.correct_answer.upper()].append(scenario)
+        else:
+            failing.append(scenario)
+
+    by_category = {}
+    for answer, group in passing.items():
+        for scenario in _varied(group, rng):
+            by_category.setdefault(scenario.category, {"REPORT": [], "SAFE": []})[answer].append(scenario)
+    live, taken = [], {}
+    one_sided = {"REPORT": [], "SAFE": []}
+    for category in sorted(by_category):
+        lists = by_category[category]
+        both = min(len(lists["REPORT"]), len(lists["SAFE"]))
+        count = min(both, ACTIVE_PER_CATEGORY) if both else ONE_SIDED_PER_CATEGORY
+        for answer, group in lists.items():
+            live += group[:count]
+            taken[(category, answer)] = min(count, len(group))
+            if group and not both:
+                one_sided[answer].append(category)
+
+    # Top up the one-sided categories, taking turns, until both answers have the same number live
+    def total(answer):
+        return sum(1 for scenario in live if scenario.correct_answer.upper() == answer)
+
+    def next_category(answer):
+        """The one-sided category of this answer with the fewest live so far that can still take one."""
+        open_ones = [c for c in one_sided[answer]
+                     if taken[(c, answer)] < min(len(by_category[c][answer]), ACTIVE_PER_CATEGORY)]
+        return min(open_ones, key=lambda c: (taken[(c, answer)], c)) if open_ones else None
+
+    def add_one(answer):
+        category = next_category(answer)
+        live.append(by_category[category][answer][taken[(category, answer)]])
+        taken[(category, answer)] += 1
+
+    # The smaller side first; once level, one of each while both can still grow
+    while True:
+        phishing, genuine = total("REPORT"), total("SAFE")
+        if phishing != genuine:
+            smaller = "REPORT" if phishing < genuine else "SAFE"
+            if not next_category(smaller):
+                break
+            add_one(smaller)
+        elif next_category("REPORT") and next_category("SAFE"):
+            add_one("REPORT")
+            add_one("SAFE")
+        else:
+            break
+    spare = {"REPORT": [], "SAFE": []}
+    for (category, answer), count in taken.items():
+        spare[answer] += by_category[category][answer][count:]
+    if not any(s.correct_answer == "REPORT" for s in live) or not any(s.correct_answer == "SAFE" for s in live):
+        raise SystemExit(f"Demo data not loaded: {dataset.name} has no phishing or no genuine drafts that pass "
+                         "every automatic check, so a mixed set cannot be switched on.")
+
+    def mark(scenario, status, when):
+        scenario.status = status
+        scenario.approved_at = when if status in {"APPROVED", "ACTIVE"} else None
+        scenario.updated_at = when + (timedelta(minutes=30) if status == "ACTIVE" else timedelta())
+
+    for index, scenario in enumerate(live):
+        mark(scenario, "ACTIVE", reviewed_at + timedelta(minutes=2 * index))
+    for group in spare.values():
+        for index, scenario in enumerate(group[:APPROVED_PER_ANSWER]):
+            mark(scenario, "APPROVED", reviewed_at + timedelta(hours=3, minutes=2 * index))
+    failing.sort(key=lambda scenario: (scenario.quality_score or 0, scenario.scenario_id))
+    for index, scenario in enumerate(failing[:REJECTED_PER_DATASET]):
+        mark(scenario, "REJECTED", reviewed_at + timedelta(minutes=index))
+    db.session.commit()
 
 
 def seed_baseline_questions():
@@ -229,24 +415,170 @@ def seed_baseline(player, template, rng, joined_at):
     return assessment.score
 
 
-def seed_attempts(player, scenarios, rng, joined_at, ability, habit):
+class ScenarioPool:
+    """The live dataset scenarios of each channel, looked up the way ScenarioService does for a player."""
+
+    def __init__(self, scenarios):
+        self.by_id = {scenario.scenario_id: scenario for scenario in scenarios}
+        # Per channel, the (id, category, difficulty, answer) rows ScenarioService.pick chooses from
+        self.channels = {}
+        for scenario in sorted(scenarios, key=lambda s: s.scenario_id):
+            self.channels.setdefault(scenario.simulation_type.upper(), []).append(
+                (scenario.scenario_id, scenario.category, scenario.difficulty, scenario.correct_answer))
+
+    def categories(self, channel):
+        return sorted({row[1] for row in self.channels.get(channel, [])})
+
+
+class PlayerHistory:
+    """One player's decisions so far, oldest first, kept in the shapes the app's own rules expect."""
+
+    def __init__(self, player, occupation, baselines, campaign_attempts, scenarios_by_id):
+        self.player = player
+        self.occupation = occupation
+        self.baselines = baselines                    # (completed_at, score) of every baseline they took
+        self.pending_campaign = list(campaign_attempts)  # campaign results, recorded once their time comes
+        self.scenarios_by_id = scenarios_by_id
+        self.attempts = []                            # every decision, oldest first
+        self.facts = []                               # ProgressService facts for the same decisions
+        self.tiers = []                               # skill tier after each decision (for the multiplier)
+
+    def record(self, attempt):
+        """Add one decision, so the next choice and XP see it, as they would in the app."""
+        self.attempts.append(attempt)
+        # A custom campaign email's result points at its hidden scenario, which is not in the live pool
+        scenario = self.scenarios_by_id.get(attempt.scenario_id) or db.session.get(Scenario, attempt.scenario_id)
+        self.facts += ProgressService.attempt_facts([attempt], {attempt.scenario_id: scenario})
+        self.tiers.append(ProgressService.skill_rating(self.facts)["tier_index"])
+
+    def catch_up(self, when):
+        """Campaign results count as decisions from the moment they happened (the app syncs them first)."""
+        while self.pending_campaign and self.pending_campaign[0].attempted_at <= when:
+            self.record(self.pending_campaign.pop(0))
+
+    def multiplier(self):
+        """The level multiplier for the next decision: ProgressService.summary_from_facts(facts)["multiplier"],
+        worked out from the running tier list so that a long history stays quick to replay."""
+        level = ProgressService.level_for_xp(ProgressService.running_xp(self.facts))["level"]
+        rank_dropped = bool(self.tiers) and self.tiers[-1] < max(self.tiers)
+        return ProgressService.multiplier(max(level - 1, 1) if rank_dropped else level)
+
+
+def _next_scenario(history, pool, channel, when, rng):
+    """The scenario the app would serve next (ScenarioService.get_random_scenario): phishing or genuine first,
+    then the adaptive category and the difficulty from the baseline in effect and recent answers, nothing
+    done before while unseen ones remain; when all are done, the player retakes one, avoiding the last few.
+    Now and then the player opens "review my mistakes" instead (ScenarioService.get_review_scenario)."""
+    newest_first = list(reversed(history.attempts))
+    channel_attempts = [a for a in newest_first if a.simulation_type.upper() == channel]
+
+    mistakes = [i for i in ScenarioService.mistakes_to_review(channel_attempts) if i in pool.by_id
+                and pool.by_id[i].simulation_type.upper() == channel]
+    if mistakes and rng.random() < MISTAKE_REVIEW_SHARE:
+        return pool.by_id[rng.choice(sorted(mistakes))]
+
+    in_effect = AdaptiveEngine.baseline_in_effect(
+        [baseline for baseline in history.baselines if baseline[0] <= when], newest_first,
+    )
+    difficulty, _ = AdaptiveEngine.recommend_difficulty(newest_first, in_effect)
+    category_attempts = {category: [] for category in pool.categories(channel)}
+    for attempt in channel_attempts:
+        scenario = history.scenarios_by_id.get(attempt.scenario_id)
+        if scenario and scenario.category in category_attempts:
+            category_attempts[scenario.category].append(attempt)
+    category, _ = AdaptiveEngine.recommend_category(category_attempts, history.occupation, rng=rng)
+
+    candidates = pool.channels[channel]
+    completed = {a.scenario_id for a in channel_attempts}
+    recent = {a.scenario_id for a in channel_attempts[:ScenarioService.COOLDOWN_ATTEMPTS]}
+    answer = AdaptiveEngine.recommend_answer(channel_attempts, rng=rng)
+    scenario_id = ScenarioService.pick(candidates, answer, category, difficulty, [completed], rng=rng)
+    if scenario_id is None:
+        # "You have completed every available scenario": the player asks for a retake (a new request)
+        answer = AdaptiveEngine.recommend_answer(channel_attempts, rng=rng)
+        scenario_id = ScenarioService.pick(candidates, answer, category, difficulty, [recent, set()], rng=rng)
+    return pool.by_id.get(scenario_id)
+
+
+def _decide(history, scenario, rng, when, skill):
+    """One decision, made and scored the way SimulationService.save_attempt does. Whether the player is right
+    depends on their skill and the difficulty; the clues they tick follow from what they believed."""
+    difficulty_penalty = {"Easy": 0.08, "Medium": 0.0, "Hard": -0.12}.get(scenario.difficulty, 0.0)
+    correct = rng.random() < min(0.98, skill + difficulty_penalty)
+    is_phishing = scenario.correct_answer.upper() == "REPORT"
+
+    # Clicking a link or opening the file counts as trusting the message (answer Safe), as on the page
+    trap = None
+    if (is_phishing and not correct) or (not is_phishing and correct):
+        share = TRAP_SHARE if is_phishing else GENUINE_CLICK_SHARE
+        if find_urls(scenario.message or "") and rng.random() < share:
+            trap = "LINK"
+        elif scenario.attachment and rng.random() < share:
+            trap = "ATTACHMENT"
+    answer = "SAFE" if trap else (scenario.correct_answer.upper() if correct else ("SAFE" if is_phishing else "REPORT"))
+
+    offered = clue_options(scenario)
+    if correct:
+        real = real_clues(scenario)
+        spot_chance = min(0.9, 0.35 + skill * 0.55)
+        picks = [clue for clue in offered if clue in real and rng.random() < spot_chance]
+        others = [clue for clue in offered if clue not in real]
+        if others and rng.random() < WRONG_PICK_SHARE:
+            picks.append(rng.choice(others))
+    else:
+        # They believed the opposite, so the signs they ticked point the wrong way
+        believed = TRUST_SIGNALS if is_phishing else WARNING_SIGNS
+        options = [clue for clue in offered if clue in believed]
+        picks = rng.sample(options, min(len(options), rng.randint(1, 2)))
+    if not picks:
+        picks = [rng.choice(offered)]   # the page asks for at least one clue or a reason
+    clue_result = evaluate_justification(scenario, picks, "")
+
+    xp = ProgressService.calculate_xp(correct, scenario.difficulty, clue_result["net_found"], history.multiplier())
+    attempt = SimulationAttempt(
+        player_id=history.player.player_id, scenario_id=scenario.scenario_id,
+        simulation_type=scenario.simulation_type, player_answer=answer, correct=correct, score=xp,
+        difficulty=scenario.difficulty, selected_clues=",".join(picks), justification="",
+        clue_score=clue_result["score"], attempted_at=when,
+    )
+    db.session.add(attempt)
+    db.session.flush()
+    db.session.add(UserAction(attempt_id=attempt.attempt_id, action=SimulationService.TRAP_ACTIONS.get(trap, answer)))
+    db.session.add(FeedbackReport(
+        attempt_id=attempt.attempt_id, created_at=when,
+        feedback=FeedbackGenerator.build(scenario, correct, clue_result, trap)["summary"],
+        phishing_cues=",".join(clue_result["real"]),
+    ))
+    history.record(attempt)
+
+
+def seed_attempts(player, occupation, pool, rng, joined_at, ability, habit):
     """Decisions day by day since joining: the habit decides how often and how much the player practises.
-    Accuracy climbs a little as they learn, and harder scenarios are answered correctly less often."""
+    Accuracy climbs a little as they learn, and harder scenarios are answered correctly less often.
+    Campaign results already recorded for the player are counted in at the time they happened."""
     _, chance, (fewest, most) = habit
-    pools = {
-        "EMAIL": [s for s in scenarios if s.simulation_type == "EMAIL"],
-        "SMS": [s for s in scenarios if s.simulation_type == "SMS"],
-    }
+    baselines = db.session.query(BaselineAssessment.completed_at, BaselineAssessment.score).filter(
+        BaselineAssessment.player_id == player.player_id, BaselineAssessment.completed_at.isnot(None),
+    ).all()
+    campaign_attempts = SimulationAttempt.query.filter(
+        SimulationAttempt.player_id == player.player_id, SimulationAttempt.campaign_recipient_id.isnot(None),
+    ).order_by(SimulationAttempt.attempted_at, SimulationAttempt.attempt_id).all()
+    history = PlayerHistory(player, occupation, baselines, campaign_attempts, pool.by_id)
+
     now = datetime.utcnow()
     day, index = joined_at.date(), 0
     while day <= now.date():
         if rng.random() < chance:
+            times = []
             for _ in range(rng.randint(fewest, most)):
                 when = datetime.combine(day, time(rng.randint(7, 21), rng.randint(0, 59)))
-                when = min(max(when, joined_at + timedelta(minutes=10)), now - timedelta(minutes=rng.randint(5, 90)))
-                pool = pools["EMAIL"] if rng.random() < 0.55 else pools["SMS"]
-                if pool:
-                    _add_attempt(player, rng.choice(pool), rng, when, ability + min(index / 100, 1) * 0.15)
+                times.append(min(max(when, joined_at + timedelta(minutes=10)), now - timedelta(minutes=rng.randint(5, 90))))
+            for when in sorted(times):
+                history.catch_up(when)
+                channel = "SMS" if rng.random() < SMS_SHARE else "EMAIL"
+                scenario = _next_scenario(history, pool, channel, when, rng) if channel in pool.channels else None
+                if scenario:
+                    _decide(history, scenario, rng, when, ability + min(index / 100, 1) * 0.15)
                     index += 1
         day += timedelta(days=1)
 
@@ -255,30 +587,12 @@ def seed_attempts(player, scenarios, rng, joined_at, ability, habit):
     _refresh_tracker(player.player_id)
 
 
-def _add_attempt(player, scenario, rng, when, skill):
-    """One decision on a scenario, right or wrong depending on the player's skill."""
-    difficulty_penalty = {"Easy": 0.08, "Medium": 0.0, "Hard": -0.12}.get(scenario.difficulty, 0.0)
-    correct = rng.random() < min(0.98, skill + difficulty_penalty)
-    answer = scenario.correct_answer if correct else ("SAFE" if scenario.correct_answer == "REPORT" else "REPORT")
-    clues = rng.randint(2, 3) if correct else rng.randint(0, 1)
-    clue_score = rng.choice([80, 100]) if correct else rng.choice([0, 33, 50])
-    trap = None
-    if not correct and scenario.correct_answer == "REPORT":
-        trap = rng.choice([None, "CLICKED_LINK", "OPENED_ATTACHMENT"])
-    attempt = SimulationAttempt(
-        player_id=player.player_id, scenario_id=scenario.scenario_id, simulation_type=scenario.simulation_type,
-        player_answer=answer, correct=correct, score=ProgressService.calculate_xp(correct, scenario.difficulty, clues, 1.0),
-        difficulty=scenario.difficulty, selected_clues="", justification="", clue_score=clue_score, attempted_at=when,
-    )
-    db.session.add(attempt)
-    db.session.flush()
-    db.session.add(UserAction(attempt_id=attempt.attempt_id, action=trap or answer))
-
-
 def _seed_sessions(player, rng):
-    """Login sessions (for active-user counts) and one training session per active day."""
-    attempts = SimulationAttempt.query.filter_by(player_id=player.player_id).order_by(
-        SimulationAttempt.attempted_at).all()
+    """Login sessions (for active-user counts) and one training session per active day. Campaign results
+    happen in the player's own inbox, so they are not part of a training session."""
+    attempts = SimulationAttempt.query.filter(
+        SimulationAttempt.player_id == player.player_id, SimulationAttempt.campaign_recipient_id.is_(None),
+    ).order_by(SimulationAttempt.attempted_at).all()
     if not attempts:
         return
     by_day = {}
@@ -305,53 +619,101 @@ def _seed_sessions(player, rng):
 
 
 def _refresh_tracker(player_id):
+    """The stored totals for every decision (campaign results may already have created the row)."""
     attempts = SimulationAttempt.query.filter_by(player_id=player_id).all()
-    tracker = PerformanceTracker(
-        player_id=player_id, total_attempts=len(attempts),
-        correct_attempts=sum(a.correct for a in attempts), total_score=sum(a.score or 0 for a in attempts),
-        last_attempt_at=max((a.attempted_at for a in attempts), default=None),
+    tracker = PerformanceTracker.query.filter_by(player_id=player_id).first()
+    if not tracker:
+        tracker = PerformanceTracker(player_id=player_id)
+        db.session.add(tracker)
+    tracker.total_attempts = len(attempts)
+    tracker.correct_attempts = sum(a.correct for a in attempts)
+    tracker.total_score = sum(a.score or 0 for a in attempts)
+    tracker.last_attempt_at = max((a.attempted_at for a in attempts), default=None)
+
+
+# The phishing email an admin writes for campaigns when no live dataset phishing email has a link or a file
+# (the KD emails have none). Checked by the app's own custom-email rules, like one written on the page.
+CUSTOM_PHISHING_EMAIL = {
+    "sender": "IT Service Desk <servicedesk@it-helpdesk-portal.co>",
+    "subject": "Action required: your mailbox is full",
+    "message": (
+        "Your mailbox has reached its storage limit. From today, new email will be held and not delivered.\n\n"
+        "To keep receiving email, sign in and confirm your account within 24 hours:\n\n"
+        "[Restore my mailbox](https://it-helpdesk-portal.co/mailbox/restore)\n\n"
+        "IT Service Desk"
+    ),
+    "is_phishing": True,
+    "cues": ["Sender domain is not your organisation's", "24-hour deadline", "Asks you to sign in through a link"],
+}
+
+
+def _clicked_kind(email):
+    """What a recipient can click in a campaign email: its link, else its attachment card (None if neither)."""
+    from app.services.campaign_service import LINK_PATTERN
+    if LINK_PATTERN.search(email["message"] or ""):
+        return "LINK"
+    return "ATTACHMENT" if email["attachment"] else None
+
+
+def _campaign_email(scenarios, is_phishing):
+    """The email for a campaign, as CampaignService.create_campaign would accept it: a live dataset email of
+    the right kind with something to click (best quality score first, lowest id on ties), else, for phishing,
+    the admin's custom email. None when there is no clickable genuine email."""
+    from app.services.campaign_service import CampaignService
+    candidates = [s for s in scenarios if s.simulation_type.upper() == "EMAIL"
+                  and (s.correct_answer.upper() == "REPORT") == is_phishing
+                  and CampaignService.is_clickable(s.message, s.attachment)]
+    candidates.sort(key=lambda s: (-(s.quality_score or 0), s.difficulty != "Medium", s.scenario_id))
+    if candidates:
+        return CampaignService.scenario_email(candidates[0])
+    if is_phishing:
+        valid, message, email = CampaignService._custom_email(CUSTOM_PHISHING_EMAIL)
+        if not valid:
+            raise SystemExit(f"Demo data not loaded: the custom campaign email is refused: {message}")
+        return email
+    return None
+
+
+def _launch(admin, email, name, when):
+    campaign = EmailCampaign(created_by_user_id=admin.user_id, name=name, status="LAUNCHED",
+                             created_at=when - timedelta(hours=1), launched_at=when, **email)
+    db.session.add(campaign)
+    db.session.flush()
+    return campaign
+
+
+def _recipient(campaign, email, address, outcome, sent, acted, seen):
+    """One settled result, already marked as notified, so seeding sends no email."""
+    from app.services.campaign_service import POINTS
+    kind = _clicked_kind(email) if outcome == "CLICKED" else None
+    return EmailCampaignRecipient(
+        campaign_id=campaign.campaign_id, recipient_email=address, tracking_token=os.urandom(24).hex(),
+        delivery_status="SENT", sent_at=sent,
+        opened_at=acted if outcome != "IGNORED" else None, open_count=0 if outcome == "IGNORED" else 1,
+        clicked_at=acted if outcome == "CLICKED" else None, click_count=1 if outcome == "CLICKED" else 0,
+        clicked_kind=kind, reported_at=acted if outcome == "REPORTED" else None,
+        settled_outcome=outcome, xp_awarded=POINTS[(campaign.is_phishing, outcome)],
+        notified_at=acted, feedback_seen_at=seen,
     )
-    db.session.add(tracker)
 
 
 def seed_campaigns(admin, owner_player, scenarios):
-    """A couple of finished campaigns to the owner's own inbox, so the campaign metrics show data.
-    Results are pre-settled and marked as already notified, so seeding sends no email."""
+    """A couple of finished campaigns to the owner's own inbox, so the campaign metrics show data."""
     if not owner_player:
         return 0
-    from app.services.campaign_service import CampaignService, POINTS
+    from app.services.campaign_service import CampaignService
 
-    email_phish = next((s for s in scenarios if s.simulation_type == "EMAIL" and s.correct_answer == "REPORT"), None)
-    email_safe = next((s for s in scenarios if s.simulation_type == "EMAIL" and s.correct_answer == "SAFE"), None)
     now = datetime.utcnow()
     plans = []
-    if email_phish:
-        plans.append((email_phish, "REPORTED", now - timedelta(days=4)))
-    if email_safe:
-        plans.append((email_safe, "CLICKED", now - timedelta(days=1)))
+    for is_phishing, outcome, days_ago in ((True, "REPORTED", 4), (False, "CLICKED", 1)):
+        email = _campaign_email(scenarios, is_phishing)
+        if email:
+            plans.append((email, outcome, now - timedelta(days=days_ago)))
 
-    for scenario, outcome, when in plans:
-        is_phishing = scenario.correct_answer == "REPORT"
-        campaign = EmailCampaign(
-            scenario_id=scenario.scenario_id, created_by_user_id=admin.user_id,
-            name=f"{scenario.title} campaign", status="LAUNCHED", created_at=when - timedelta(minutes=5),
-            launched_at=when - timedelta(minutes=5), sender=scenario.sender, subject=scenario.subject,
-            message=scenario.message, is_phishing=is_phishing, phishing_cues=scenario.phishing_cues,
-            attachment=scenario.attachment,
-        )
-        db.session.add(campaign)
-        db.session.flush()
-        recipient = EmailCampaignRecipient(
-            campaign_id=campaign.campaign_id, recipient_email=owner_player.user.email,
-            tracking_token=os.urandom(24).hex(), delivery_status="SENT", sent_at=when - timedelta(minutes=4),
-            opened_at=when - timedelta(minutes=3), open_count=1,
-            clicked_at=when if outcome == "CLICKED" else None, click_count=1 if outcome == "CLICKED" else 0,
-            clicked_kind="LINK" if outcome == "CLICKED" else None,
-            reported_at=when if outcome == "REPORTED" else None,
-            settled_outcome=outcome, xp_awarded=POINTS[(is_phishing, outcome)],
-            notified_at=when, feedback_seen_at=None,
-        )
-        db.session.add(recipient)
+    for email, outcome, when in plans:
+        campaign = _launch(admin, email, f"{email['subject']} campaign", when - timedelta(minutes=5))
+        db.session.add(_recipient(campaign, email, owner_player.user.email, outcome,
+                                  when - timedelta(minutes=4), when, None))
     db.session.commit()
     # Turn those results into the owner's decisions, exactly as the live app does
     CampaignService.sync_player(owner_player)
@@ -359,44 +721,43 @@ def seed_campaigns(admin, owner_player, scenarios):
     return len(plans)
 
 
-def seed_cohort_campaign(admin, scenarios, rng):
-    """One finished phishing campaign to some consenting test players, with mixed results, so the campaign
-    pages and analytics show a realistic spread. Results are pre-settled and marked as notified: no email is sent."""
-    from app.services.campaign_service import CampaignService, POINTS
+# The cohort campaigns: (name, phishing?, days ago, outcome weights). Every campaign email has something to
+# click (the app refuses one without), so clicking, reporting and ignoring can all happen.
+COHORT_CAMPAIGNS = (
+    ("Quarterly phishing check", True, 18, {"REPORTED": 5, "IGNORED": 4, "CLICKED": 3}),
+    ("Shared document notice", False, 9, {"CLICKED": 6, "IGNORED": 3, "REPORTED": 2}),
+)
+COHORT_SIZE = 12
 
-    phish = next((s for s in scenarios if s.simulation_type == "EMAIL" and s.correct_answer == "REPORT"
-                  and s.difficulty == "Medium"), None)
-    consenting = Player.query.join(UserProfile).filter(UserProfile.campaign_consent.is_(True)).all()
-    consenting = [player for player in consenting if player.user.email != OWNER_EMAIL]
-    if not phish or not consenting:
-        return 0
-    chosen = rng.sample(consenting, min(12, len(consenting)))
-    when = datetime.utcnow() - timedelta(days=18)
-    campaign = EmailCampaign(
-        scenario_id=phish.scenario_id, created_by_user_id=admin.user_id, name="Quarterly phishing check",
-        status="LAUNCHED", created_at=when - timedelta(hours=1), launched_at=when, sender=phish.sender,
-        subject=phish.subject, message=phish.message, is_phishing=True, phishing_cues=phish.phishing_cues,
-        attachment=phish.attachment,
-    )
-    db.session.add(campaign)
-    db.session.flush()
-    for player in chosen:
-        outcome = rng.choices(["REPORTED", "IGNORED", "CLICKED"], weights=[5, 4, 3])[0]
-        acted = when + timedelta(minutes=rng.randint(1, 9))
-        db.session.add(EmailCampaignRecipient(
-            campaign_id=campaign.campaign_id, recipient_email=player.user.email,
-            tracking_token=os.urandom(24).hex(), delivery_status="SENT", sent_at=when,
-            opened_at=acted if outcome != "IGNORED" else None, open_count=0 if outcome == "IGNORED" else 1,
-            clicked_at=acted if outcome == "CLICKED" else None, click_count=1 if outcome == "CLICKED" else 0,
-            clicked_kind="LINK" if outcome == "CLICKED" else None,
-            reported_at=acted if outcome == "REPORTED" else None,
-            settled_outcome=outcome, xp_awarded=POINTS[(True, outcome)], notified_at=acted, feedback_seen_at=acted,
-        ))
-    db.session.commit()
-    for player in chosen:
-        CampaignService.sync_player(player)
-    db.session.commit()
-    return 1
+
+def seed_cohort_campaign(admin, scenarios, rng):
+    """Finished campaigns to some consenting test players who had joined by then, with mixed results, so
+    the campaign pages and analytics show a realistic spread: one phishing email and one genuine email
+    (opening its document is the right call, reporting it is a false alarm)."""
+    from app.services.campaign_service import CampaignService
+
+    launched = 0
+    for name, is_phishing, days_ago, weights in COHORT_CAMPAIGNS:
+        email = _campaign_email(scenarios, is_phishing)
+        when = datetime.utcnow() - timedelta(days=days_ago)
+        consenting = Player.query.join(UserProfile).filter(
+            UserProfile.campaign_consent.is_(True), Player.joined_at < when - timedelta(hours=1),
+        ).order_by(Player.player_id).all()
+        consenting = [player for player in consenting if player.user.email != OWNER_EMAIL]
+        if not email or not consenting:
+            continue
+        chosen = rng.sample(consenting, min(COHORT_SIZE, len(consenting)))
+        campaign = _launch(admin, email, name, when)
+        for player in chosen:
+            outcome = rng.choices(list(weights), weights=list(weights.values()))[0]
+            acted = when + timedelta(minutes=rng.randint(1, 9))
+            db.session.add(_recipient(campaign, email, player.user.email, outcome, when, acted, acted))
+        db.session.commit()
+        for player in chosen:
+            CampaignService.sync_player(player)
+        db.session.commit()
+        launched += 1
+    return launched
 
 
 def refresh_players():
@@ -430,45 +791,59 @@ def refresh_players():
 
 def main():
     rng = random.Random(RANDOM_SEED)
+    sources = demo_dataset_files()
     app = create_app()
     with app.app_context():
         print("Clearing existing data...")
         wipe_dynamic_data()
 
-        print("Loading scenarios and baseline questions...")
-        scenarios = seed_scenarios()
+        now = datetime.utcnow()
+        for offset, (channel, source) in enumerate(sources):
+            uploaded = now - timedelta(days=UPLOADED_DAYS_AGO - offset, hours=rng.randint(1, 6))
+            print(f"Importing the {channel} dataset {source.name} (the same check and drafts as an upload)...")
+            dataset = import_demo_dataset(channel, source, uploaded)
+            review_demo_dataset(dataset, rng, uploaded + timedelta(days=1))
+        # Loaded again here: each import clears the session as it goes, which detaches earlier objects
+        live = Scenario.query.filter(Scenario.status == "ACTIVE").order_by(Scenario.scenario_id).all()
+        pool = ScenarioPool(live)
+
+        print("Loading baseline questions...")
         questions = seed_baseline_questions()
 
-        admin, _ = make_user(ADMIN_EMAIL, ADMIN_PASSWORD, "ADMIN")
+        admin, _ = make_user(ADMIN_EMAIL, ADMIN_PASSWORD, "ADMIN", joined_at=now - timedelta(days=UPLOADED_DAYS_AGO + 1))
 
         owner = None
         if OWNER_EMAIL:
             _, owner = make_user(
                 OWNER_EMAIL, DEMO_PASSWORD, "PLAYER", full_name="Nkosinathi Tshabalala",
-                profile=(24, Occupation.STUDENT, True), joined_at=datetime.utcnow() - timedelta(days=DAYS),
+                profile=(24, Occupation.STUDENT, True), joined_at=now - timedelta(days=DAYS),
                 consent=True,
             )
 
-        print(f"Creating {len(PLAYERS)} test players with history...")
+        print(f"Creating {len(PLAYERS)} test players and their baseline assessments...")
+        learners = []
         for index, (name, age, occupation, it_background) in enumerate(PLAYERS):
-            joined = datetime.utcnow() - timedelta(days=rng.randint(7, DAYS))
+            joined = now - timedelta(days=rng.randint(7, DAYS))
             _, player = make_user(demo_email(name), DEMO_PASSWORD, "PLAYER", full_name=name,
                                   profile=(age, occupation, it_background), joined_at=joined,
                                   consent=demo_consent(index))
             ability = seed_baseline(player, role_template(occupation), rng, joined) / 100
             habit = rng.choices(HABITS, weights=HABIT_WEIGHTS)[0]
-            seed_attempts(player, scenarios, rng, joined, max(0.3, ability - 0.1), habit)
+            learners.append((player, occupation, joined, max(0.3, ability - 0.1), habit))
+        if owner:
+            ability = seed_baseline(owner, role_template(Occupation.STUDENT), rng, owner.joined_at) / 100
+            # The account you demo with, so give it a solid history to look at
+            learners.append((owner, Occupation.STUDENT, owner.joined_at, max(0.55, ability), HABITS[3]))
         db.session.commit()
         second_baseline = seed_second_baseline(rng)
 
-        if owner:
-            joined = owner.joined_at
-            ability = seed_baseline(owner, role_template(Occupation.STUDENT), rng, joined) / 100
-            # The account you demo with, so give it a solid history to look at
-            seed_attempts(owner, scenarios, rng, joined, max(0.55, ability), HABITS[3])
-            db.session.commit()
+        # Campaign results first: in the app they count as decisions from the moment they happen
+        campaigns = seed_campaigns(admin, owner, live) + seed_cohort_campaign(admin, live, rng)
 
-        campaigns = seed_campaigns(admin, owner, scenarios) + seed_cohort_campaign(admin, scenarios, rng)
+        print("Replaying four months of practice on the live dataset scenarios...")
+        for player, occupation, joined, skill, habit in learners:
+            seed_attempts(player, occupation, pool, rng, joined, skill, habit)
+            db.session.commit()
 
         players = Player.query.count()
         attempts = SimulationAttempt.query.count()
@@ -478,7 +853,14 @@ def main():
             print(f"  you:   {OWNER_EMAIL} / {DEMO_PASSWORD}  (campaigns can be sent here)")
         consenting = UserProfile.query.filter(UserProfile.campaign_consent.is_(True)).count()
         print(f"  test players: {demo_email(PLAYERS[0][0])} ... / {DEMO_PASSWORD}  ({consenting} of {players} consented)")
-        print(f"  {players} players, {len(scenarios)} scenarios, {BaselineTemplate.query.count()} baseline assessments ({len(questions)} questions), "
+        for dataset in Dataset.query.order_by(Dataset.uploaded_at).all():
+            counts = dict(db.session.query(Scenario.status, db.func.count()).filter(
+                Scenario.dataset_id == dataset.dataset_id).group_by(Scenario.status).all())
+            phishing = Scenario.query.filter_by(dataset_id=dataset.dataset_id, status="ACTIVE", correct_answer="REPORT").count()
+            print(f"  {dataset.dataset_type} dataset {dataset.name}: {counts.get('ACTIVE', 0)} active "
+                  f"({phishing} phishing), {counts.get('APPROVED', 0)} approved, {counts.get('REJECTED', 0)} rejected, "
+                  f"{counts.get('DRAFT', 0)} drafts waiting for review")
+        print(f"  {players} players, {BaselineTemplate.query.count()} baseline assessments ({len(questions)} questions), "
               f"{attempts} decisions, {campaigns} campaigns")
         print(f"  baselines: assessment 1 on for every role; Student assessment 2 on ({second_baseline} students took it); "
               "Employee and Other assessment 2 off (switch one on live)")

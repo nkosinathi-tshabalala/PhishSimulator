@@ -2,6 +2,7 @@
 # Having a link is not a warning sign on its own: genuine messages link to the sender's real website too.
 
 import re
+from functools import lru_cache
 from urllib.parse import urlsplit
 
 # A brand name and the domains it really uses. A link that uses the name anywhere else is impersonating it.
@@ -72,10 +73,21 @@ def find_urls(text):
     return found
 
 
+def _split(url):
+    """The parts of a URL, or None when it is too broken to read (e.g. an unclosed "[" in old mail)."""
+    try:
+        return urlsplit(url if "://" in url else f"http://{url}")
+    except ValueError:
+        return None
+
+
 def host_of(url):
-    """The host name of a URL, lower case and without "www."."""
-    parts = urlsplit(url if "://" in url else f"http://{url}")
-    host = (parts.hostname or "").lower()
+    """The host name of a URL, lower case and without "www."; empty when the URL cannot be read."""
+    parts = _split(url)
+    try:
+        host = ((parts.hostname if parts else "") or "").lower()
+    except ValueError:  # a malformed port or bracket only surfaces when the host is read
+        return ""
     return host[4:] if host.startswith("www.") else host
 
 
@@ -86,8 +98,10 @@ def site_of(host):
     return ".".join(labels[-size:])
 
 
+@lru_cache(maxsize=8192)
 def _brand_in(host):
-    """The brand a host name mentions, either written plainly or with numbers for letters."""
+    """The brand a host name mentions, either written plainly or with numbers for letters.
+    Cached: mail corpora repeat the same few hosts thousands of times, and the answer depends only on the host."""
     words = re.split(r"[.\-]", host)
     plain = " ".join(words)
     swapped = [plain.translate(swap) for swap in DIGIT_SWAPS]
@@ -116,7 +130,7 @@ def link_problems(url):
     site = site_of(host)
     problems = []
 
-    if "@" in urlsplit(url if "://" in url else f"http://{url}").netloc:
+    if "@" in (_split(url).netloc if _split(url) else ""):
         problems.append(f"the real address is the part after the '@' ({host})")
     if re.fullmatch(r"\d{1,3}(\.\d{1,3}){3}", host):
         problems.append("it uses a number (IP address) instead of a website name")

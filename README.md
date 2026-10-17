@@ -12,7 +12,7 @@ PhishSimulator is a scenario-based, gamified phishing-awareness trainer built on
 | **C · Correct** | Instant feedback: clues spotted vs missed, a threat explanation, and a safe-behaviour tip. | `analytics/feedback_generator.py`, `simulation/FeedbackPanel.tsx` |
 | **H · Help** | XP = (Easy 10 / Medium 20 / Hard 30 + 5 per real clue, max 15) × 1.29^(level−1). Each level needs ×1.5 more XP (max level 10). Private skill rank from weighted accuracy on the last 20 attempts (Easy ×1, Medium ×1.5, Hard ×2): Recruit, Spotter (50), Analyst (65), Defender (80), Guardian (90+ and ≤5% missed phishing). 15 badges in three groups (streaks, milestones, skills; see "Gamification" below), a daily goal, current and best practice-day streaks, a yearly activity calendar, a private position among all players, and **Review mistakes** to retry scenarios answered wrong. | `services/progress_service.py`, `progress/ProgressWidgets.tsx` |
 
-**Adaptive loop:** under 5 attempts the baseline sets the level. After that, every 5 answers at a level step the difficulty one level up (80%+), one level down (under 60%), or keep it; after a change the new level gets 5 fresh answers before the next check. Campaign emails don't move the difficulty. Scenario choice skips the last 2 categories, prefers the player's job group, prefers unseen scenarios, and never repeats within 5.
+**Adaptive loop:** under 5 attempts the baseline sets the level. After that, every 5 answers at a level step the difficulty one level up (80%+), one level down (under 60%), or keep it; after a change the new level gets 5 fresh answers before the next check. Campaign emails don't move the difficulty. Each message is first chosen to be phishing or genuine (balanced over the last 10, never certain), so neither its difficulty nor its category gives the answer away. Scenario choice then skips the last 2 categories, prefers the player's job group, prefers unseen scenarios, and never repeats within 5.
 
 ## Main capabilities
 
@@ -79,12 +79,12 @@ Nothing is hard-coded in `docker-compose.yml`; every setting comes from one of t
 
 | File | Holds |
 | --- | --- |
-| `.env` (next to `docker-compose.yml`) | Database name, user and password (shared by the `db` and `backend` containers), `FLASK_ENV`, `HOST_IP` (`127.0.0.1` = only this computer), ports, the URLs the browser uses, the frontend's API path and `MAX_UPLOAD_MB` |
-| `backend/.env` | Secrets, Gmail, the campaign allow-list, and the demo data settings (`SEED_DEMO`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `DEMO_PASSWORD`, `OWNER_EMAIL`) |
+| `.env` (next to `docker-compose.yml`) | Database name, user and password (shared by the `db` and `backend` containers), `FLASK_ENV`, `HOST_IP` (`127.0.0.1` = only this computer), ports, the URLs the browser uses, the frontend's API path, `MAX_UPLOAD_MB`, `REQUEST_TIMEOUT_SECONDS` and `DEMO_DATASETS_HOST_DIR` (the folder holding the demo's dataset files) |
+| `backend/.env` | Secrets, Gmail, the campaign allow-list, and the demo data settings (`SEED_DEMO`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `DEMO_PASSWORD`, `DEMO_EMAIL`, `OWNER_EMAIL`, `DEMO_EMAIL_DATASET`, `DEMO_SMS_DATASET`) |
 
 Both are ignored by git, and neither is copied into an image.
 
-With `SEED_DEMO=auto` (the default), the demo data is loaded **once**, the first time the database is empty. After that it is kept across restarts, rebuilds and `docker compose down`, and so are the datasets you upload (they live in their own `uploads_data` volume). No uploaded datasets are baked into the image — the demo scenarios come from the built-in seed, and you upload your own datasets from the Datasets page once running. Set `SEED_DEMO=reset` to reload the demo data on every start, or `off` to never seed.
+With `SEED_DEMO=auto` (the default), the demo data is loaded **once**, the first time the database is empty. After that it is kept across restarts, rebuilds and `docker compose down`, and so are the datasets you upload (they live in their own `uploads_data` volume). No datasets are baked into the image: the demo scenarios are imported from the two dataset files in `DEMO_DATASETS_HOST_DIR` (by default `backend/uploads/datasets`), which compose mounts read-only into the backend, and you can upload more from the Datasets page once running. If a demo file is missing, the seed stops before deleting anything and the app starts without demo data. Set `SEED_DEMO=reset` to reload the demo data on every start, or `off` to never seed.
 
 Sign in as the admin the seed creates (`ADMIN_EMAIL` / `ADMIN_PASSWORD` in `backend/.env`, by default **admin@phishsimulator.com** / **Admin#2026**). Every test player uses `DEMO_PASSWORD` (by default `Player#2026`, e.g. `lerato.mokoena@phishsimulator.test`). The seed does not create an account for you: register your own player in the app. Campaigns can still reach it as long as your address is on `CAMPAIGN_ALLOWED_RECIPIENTS`.
 
@@ -178,15 +178,16 @@ cd backend
 .\.venv\Scripts\python.exe seed_demo.py
 ```
 
-`seed_demo.py` loads a fixed, reproducible dataset (random seed 2026). The scenario and baseline-question content lives in `backend/app/seed/*.json`; players, history and campaigns are generated. It creates:
+`seed_demo.py` builds a fixed, reproducible demo (random seed 2026). Every scenario players train on comes from two real dataset files, one email and one SMS, and the history is replayed with the app's own rules. It creates:
 
-- **41 active scenarios**: South African email and SMS messages, 23 phishing and 18 legitimate, across all 8 categories and 3 difficulties, with catalogue clue names. Four carry a look-alike attachment. (Uploaded datasets are **not** part of the seed; you add your own from the Datasets page.)
-- **3 baseline questions** (kept short for demos; add more on the Baseline page) and an admin from `ADMIN_EMAIL` / `ADMIN_PASSWORD` in `backend/.env` (default **admin@phishsimulator.com** / **Admin#2026**).
-- An **owner player** for your own address only if `OWNER_EMAIL` is set. Leave it blank to register yourself in the app instead.
-- **40 test players** with realistic South African names and `@phishsimulator.test` emails, each with a profile, a keyword-marked baseline, login and training sessions, and about four months of practice. Each player has a habit, from never trained through occasional and weekly to daily, so streaks, badges, the activity calendar and the trends look real (a few dedicated players hold month-long streaks). Accuracy falls with difficulty (Easy > Medium > Hard) and improves slightly over time.
-- **Two finished campaigns** to the owner's address (one reported phishing, one clicked genuine), when an owner player is created, so the campaign metrics and the player Inbox show data.
+- **Two uploaded datasets**, imported exactly as the Datasets page does it (quality check, cleaning, a draft scenario per labelled row): `DEMO_EMAIL_DATASET` (default `email/phishing_legit_dataset_KD_10000.csv`, a generated phishing and legitimate email set: 8,948 usable rows) and `DEMO_SMS_DATASET` (default `sms/Dataset_5971.csv`, the Mendeley SMS phishing dataset: 5,288 usable rows). Both are read from `DEMO_DATASET_DIR` (default `backend/uploads/datasets`, which git ignores; in Docker the folder in `DEMO_DATASETS_HOST_DIR`). Their stored copies and drafts behave like any upload: reprocess or delete them from the Datasets page.
+- **A replayed admin review** in Scenario Review: only drafts that pass every automatic check go live, skipping near-copies. Per category, an equal number of phishing and genuine ones go live where the category has both (at most 40 each). Categories with only one answer get at least 4, then are topped up in turn until the channel has as many phishing as genuine live where the data allows (134 email with 67 phishing, 110 SMS with 49 phishing, with the default files); Scenario Review flags them. Two per answer stay approved but not live, the 10 lowest-scoring failing drafts are rejected, and the rest (about 14,000) wait for review.
+- **The baseline bank**: two assessments of 7 questions per role. Assessment 1 is on for every role; the students' assessment 2 was switched on three weeks ago and some of the students have taken it.
+- An admin from `ADMIN_EMAIL` / `ADMIN_PASSWORD` in `backend/.env` (default **admin@phishsimulator.com** / **Admin#2026**), and an **owner player** for your own address only if `OWNER_EMAIL` is set. Leave it blank to register yourself in the app instead.
+- **40 test players** with South African names (Gmail plus-aliases of `DEMO_EMAIL`, or `@phishsimulator.test` without it; 30 of 40 agreed to campaign emails), each with a profile, a baseline, login and training sessions, and about four months of practice. Each player has a habit, from never trained through occasional and weekly to daily, so streaks, badges, the activity calendar and the trends look real. Every decision is on a live dataset scenario and follows the app, using the same selection function: phishing or genuine first, then the adaptive difficulty (set by the baseline in effect, then by the last five answers) and the adaptive category, unseen ones first; the clues ticked are scored by the real clue check; XP uses the level multiplier at that moment; each decision has its feedback; and a risky click is only recorded on a message that has a link or a file.
+- **Two finished cohort campaigns** to consenting players who had joined by then, with mixed results that count as decisions: a phishing email (18 days ago) and a genuine email with a document (9 days ago). A campaign email must have a link or an attachment, for dataset and custom emails alike; no KD email has a link, so the phishing campaign is a custom email the admin wrote (a full mailbox, with a sign-in link). Two more go to the owner's address when an owner player is created.
 
-Every player uses the password `Player#2026`. Override defaults with the `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `DEMO_PASSWORD` and `OWNER_EMAIL` environment variables.
+Every player uses `DEMO_PASSWORD` (default `Player#2026`).
 
 Re-running `seed_demo.py` clears the seeded data and rebuilds it; it leaves the schema in place, so no migration is needed between runs.
 
@@ -238,13 +239,17 @@ Difficulty moves one step at a time:
 - After a change, the window starts again: the new level is judged on 5 answers given at that level, so a player can't jump from Easy to Hard in two answers.
 - Real-inbox campaign results don't count, because those emails are not chosen at the player's difficulty.
 
+For a genuine message, "Known sender" only counts as a real clue when the message shows a sender; many datasets have none, and the player then sees "Unknown sender" or "Unknown number".
+
 Category selection avoids the two most recent categories when possible, prefers unpractised relevant categories, and then reinforces the weakest relevant area. Occupation priorities are:
 
 - Student: University, Social Media, Password Reset, Delivery.
 - Employee: Microsoft 365, Employment, Banking, Password Reset.
 - Other: Government, Banking, Delivery, Social Media.
 
-Players can select a category manually for focused practice. Otherwise, the system prefers unseen scenarios, applies a short repeat cooldown, and then falls back to random eligible content. This prevents large dataset uploads from becoming a long fixed queue.
+Phishing or genuine is decided before category and difficulty. Datasets are rarely balanced (in the demo email set, every genuine message is Easy and every Government email is phishing), so choosing by category and difficulty alone would let a player guess the answer from them. The chance of phishing leans away from the last 10 training messages (more phishing recently makes genuine likelier) but stays between 25% and 75%, so the order can't be predicted. Within that answer the app looks for the practice category at the player's difficulty, then the nearest difficulty, then any category; only when no scenario with that answer is left does it use the other one. The badge on the message shows the player's level, not the message's own difficulty, since a message borrowed from a nearby level would otherwise hint at its answer. Inbox Rush batches hold 2 to 4 phishing messages out of 6. Scenario Review shows a "Live answer balance" card listing live categories and difficulties where one answer is missing or under a quarter.
+
+Players can select a category manually for focused practice, but only one whose live scenarios hold both answers, neither under a quarter (the same rule as the admin's balance card): in a one-sided category the player would soon see only one answer. Other categories show greyed out and still come up in the adaptive mix. Messages that match no category's keywords go to "General" (an everyday message, not a phishing type), which the All-Rounder badge does not require. Otherwise, the system prefers unseen scenarios, applies a short repeat cooldown, and then falls back to random eligible content. This prevents large dataset uploads from becoming a long fixed queue.
 
 ## Gamification and progress
 

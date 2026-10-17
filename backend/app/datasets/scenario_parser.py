@@ -16,6 +16,10 @@ class ScenarioParser:
 
     SENDER_BAIT_WORDS = ("secure", "verify", "support", "account", "update", "login")
 
+    # Where a message goes when no category's keywords match. Not a phishing type, so the All-Rounder badge
+    # (a correct answer in every CATEGORY_KEYWORDS category) does not ask for it
+    GENERAL_CATEGORY = "General"
+
     CATEGORY_KEYWORDS = {
         "Banking": ("bank", "payment", "invoice", "card", "transaction", "statement", "eft"),
         "Delivery": ("delivery", "parcel", "shipment", "package"),
@@ -84,11 +88,10 @@ class ScenarioParser:
         return cues + detect_message_signs(text)
 
     @staticmethod
-    def infer_difficulty(cues, is_phishing, severity=""):
-        """Easy messages show many obvious clues; hard ones hide them."""
-        if severity == "high":
-            return "Hard"
-
+    def infer_difficulty(cues, is_phishing):
+        """How hard a message is to judge, from its clues: obvious phishing (many clues) is Easy and subtle
+        phishing Hard; a genuine message is harder the more it looks suspicious. A dataset's own "severity"
+        column is not used: it rates how dangerous a threat is, not how hard it is to spot."""
         if is_phishing:
             if len(cues) >= 3:
                 difficulty = "Easy"
@@ -98,9 +101,6 @@ class ScenarioParser:
                 difficulty = "Hard"
         else:
             difficulty = "Hard" if len(cues) >= 2 else "Medium" if cues else "Easy"
-
-        if severity == "medium" and difficulty == "Easy":
-            return "Medium"
         return difficulty
 
     # Made-up addresses the importer writes in (e.g. you@example.com) are not anyone's personal data
@@ -146,11 +146,12 @@ class ScenarioParser:
 
         normalized = str(value or "").strip().lower()
         if normalized in {
-            "1", "true", "phishing", "phish", "smishing", "malicious", "fraud",
+            "1", "true", "phishing", "phish", "smishing", "malicious", "fraud", "phishing email",
         }:
             return "PHISHING"
-        if normalized in {"0", "false", "legitimate", "safe", "ham", "benign"}:
+        if normalized in {"0", "false", "legitimate", "legit", "safe", "ham", "benign", "safe email"}:
             return "LEGITIMATE"
+        # "spam" stays unlabelled on purpose: unwanted marketing is not the same as phishing
         return None
 
     EMPTY_VALUES = {"", "nan", "none", "null", "yes", "no"}
@@ -194,7 +195,9 @@ class ScenarioParser:
         best = max(matches, key=matches.get)
         if matches[best]:
             return best
-        return "Password Reset" if "verify" in lower else "Social Media"
+        # No category's keywords: "General" (an everyday message, not a phishing type) rather than filing it
+        # under a real category such as Social Media, which a meeting note or a "how are you" text is not
+        return "Password Reset" if "verify" in lower else ScenarioParser.GENERAL_CATEGORY
 
     @staticmethod
     def _category_for(row, full_text):
@@ -217,6 +220,43 @@ class ScenarioParser:
                 return " ".join(words[:size])
         return text
 
+    # Lines some generated datasets add to every phishing message (the prompt's words), never part of an email.
+    # Left in, they give the answer away, so the importer removes them.
+    GENERATOR_LINES = re.compile(r"(?im)^[ \t]*keywords[ \t]*:.*(?:\n|$)")
+    # A "Subject:" header on its own first line, with the body below it
+    INLINE_SUBJECT = re.compile(r"\A\s*subject[ \t]*:[ \t]*([^\n]*?)[ \t]*\n", re.IGNORECASE)
+    GREETING = re.compile(
+        r"^(?:(?:hello|hi|hey|dear|greetings|good (?:morning|afternoon|evening))\b[^,.!:\n]{0,40}[,.!:]?|"
+        r"(?:attention|notice|important|urgent|reminder|alert|warning)\s*[,.!:])\s*",
+        re.IGNORECASE,
+    )
+    SUBJECT_LENGTH = 70
+
+    @staticmethod
+    def clean_generated_text(subject, message, keep_subject=True):
+        """Remove dataset artefacts from a message: generator "Keywords:" lines, and a "Subject:" header line
+        written above the body (moved into the subject when the row has none, unless keep_subject is False,
+        as for SMS). A one-line message that merely starts with "Subject:" is left alone. Returns (subject, message)."""
+        cleaned = ScenarioParser.GENERATOR_LINES.sub("", message)
+        inline = ScenarioParser.INLINE_SUBJECT.match(cleaned)
+        if inline and cleaned[inline.end():].strip():
+            if not subject and keep_subject:
+                subject = inline.group(1)
+            cleaned = cleaned[inline.end():]
+        if cleaned == message:
+            return subject, message  # nothing removed: the text is left exactly as the dataset had it
+        return subject, re.sub(r"\n{3,}", "\n\n", cleaned).strip()
+
+    @staticmethod
+    def subject_from_text(message):
+        """A plausible subject line for an email that has none: its first sentence without the greeting,
+        cut at a word boundary. Used so that no kind of message is given away by lacking a subject."""
+        first = re.split(r"(?<=[.!?])\s|\n", message.strip(), maxsplit=1)[0]
+        first = ScenarioParser.GREETING.sub("", first).strip(" .!?,;:-")
+        if len(first) > ScenarioParser.SUBJECT_LENGTH:
+            first = first[:ScenarioParser.SUBJECT_LENGTH].rsplit(" ", 1)[0].rstrip(" ,;:-")
+        return first[:1].upper() + first[1:] if first else ""
+
     @staticmethod
     def parse_row(row, dataset_type="EMAIL"):
         """Convert one dataset row into a processed record, or None if unusable."""
@@ -226,10 +266,16 @@ class ScenarioParser:
         subject = ScenarioParser._value(row, "subject", "title")
         message = ScenarioParser._value(
             row, "body", "content", "text", "email_body", "message", "text_combined",
+            "email text", "v2", "sms",
         )
         if not message:
             return None
 
+        subject, message = ScenarioParser.clean_generated_text(
+            subject, message, keep_subject=dataset_type.upper() == "EMAIL",
+        )
+        if not message:
+            return None
         message = ScenarioParser.drop_repeated_text(message)
         receiver = ScenarioParser._value(row, "receiver", "to")
         subject = ScenarioParser.anonymise_recipient(subject, receiver)
@@ -240,20 +286,28 @@ class ScenarioParser:
         sender = " ".join(sender.split())[:255]
         subject = " ".join(subject.split())[:255]
 
+        # An email without a subject gets one from its first sentence (marked, so the channel check ignores it)
+        subject_from_text = False
+        if dataset_type.upper() == "EMAIL" and not subject:
+            subject = ScenarioParser.subject_from_text(message)
+            subject_from_text = bool(subject)
+
         full_text = f"{subject} {message}"
         label = ScenarioParser.normalize_label(
-            ScenarioParser._value(row, "label", "class", "is_phishing", "correct_answer")
+            ScenarioParser._value(
+                row, "label", "class", "is_phishing", "correct_answer", "email type", "v1", "spam", "category",
+            )
         )
         cues = ScenarioParser.extract_cues(full_text, sender)
-        severity = ScenarioParser._value(row, "severity").lower()
 
         return {
             "message_type": dataset_type.upper(),
             "sender": sender,
             "subject": subject,
             "message": message,
-            "difficulty": ScenarioParser.infer_difficulty(cues, label == "PHISHING", severity),
+            "difficulty": ScenarioParser.infer_difficulty(cues, label == "PHISHING"),
             "phishing_cues": cues,
             "category": ScenarioParser._category_for(row, full_text),
             "label": label,
+            "subject_from_text": subject_from_text,
         }

@@ -2,6 +2,7 @@
 
 import re
 from datetime import datetime, timedelta
+from random import SystemRandom
 
 from app.extensions import db
 
@@ -45,6 +46,9 @@ class ScenarioService:
     # A quality score at or above this passes the automatic check
     GOOD_QUALITY = 80
 
+    # A live category or difficulty where one answer is below this share is flagged as uneven
+    UNEVEN_SHARE = 0.25
+
     # The dataset filter value for scenarios written by hand or loaded with the demo data
     NO_DATASET = "none"
 
@@ -54,6 +58,7 @@ class ScenarioService:
     COOLDOWN_ATTEMPTS = 5
     MISTAKE_REVIEW_GAP = 3
     TRIAGE_SIZE = 6
+    TRIAGE_PHISHING = (2, 4)
 
     @staticmethod
     def display_title(scenario):
@@ -156,6 +161,7 @@ class ScenarioService:
             "scenarios": rows,
             "stats": ScenarioService._stats(ScenarioService._filtered_query(filters, include_status=False)),
             "groups": ScenarioService._dataset_groups(filters),
+            "balance": ScenarioService.live_balance(filters.get("simulation_type")),
             "categories": sorted(name for (name,) in ScenarioService._reviewable().with_entities(Scenario.category).distinct()),
             "pagination": {
                 "page": scenario_page.page,
@@ -246,6 +252,47 @@ class ScenarioService:
         if None in groups:
             ordered.append(describe(None))
         return [group for group in ordered if group["count"]]
+
+    @staticmethod
+    def live_balance(simulation_type=None):
+        """Where the live (Active) scenarios lean to one answer, per channel, category and difficulty. Training
+        picks phishing or genuine first, so such a group is still mixed in normal practice, but a player who
+        focuses on that category sees mostly one answer, and the content does not cover the other case.
+        Only the flagged groups are returned, each with its phishing and genuine counts."""
+        query = Scenario.query.filter(db.func.upper(Scenario.status) == "ACTIVE")
+        channel = (simulation_type or "").upper()
+        if channel in {"EMAIL", "SMS"}:
+            query = query.filter(db.func.upper(Scenario.simulation_type) == channel)
+        rows = query.with_entities(
+            db.func.upper(Scenario.simulation_type), Scenario.category, Scenario.difficulty,
+            db.func.upper(Scenario.correct_answer), db.func.count(),
+        ).group_by(
+            db.func.upper(Scenario.simulation_type), Scenario.category, Scenario.difficulty,
+            db.func.upper(Scenario.correct_answer),
+        ).all()
+
+        totals = {}
+        for row_channel, category, difficulty, answer, count in rows:
+            for group, name in (("category", category), ("difficulty", difficulty)):
+                cell = totals.setdefault((row_channel, group, name), {"phishing": 0, "genuine": 0})
+                cell["phishing" if answer == "REPORT" else "genuine"] += count
+
+        levels = AdaptiveEngine.DIFFICULTY_LEVELS
+        def order(key):
+            row_channel, group, name = key
+            return row_channel, group, levels.index(name) if name in levels else len(levels), name
+
+        flagged = []
+        for key in sorted(totals, key=order):
+            cell = totals[key]
+            minority = min(cell["phishing"], cell["genuine"])
+            if minority / (cell["phishing"] + cell["genuine"]) < ScenarioService.UNEVEN_SHARE:
+                row_channel, group, name = key
+                flagged.append({
+                    "channel": row_channel, "group": group, "name": name, **cell,
+                    "status": "one_sided" if minority == 0 else "uneven",
+                })
+        return flagged
 
     @staticmethod
     def _stats(query):
@@ -575,28 +622,42 @@ class ScenarioService:
         return grouped
 
     @staticmethod
-    def _random_excluding(query, excluded_ids):
-        """A random scenario from the query, skipping some ids."""
-        if excluded_ids:
-            query = query.filter(~Scenario.scenario_id.in_(excluded_ids))
-        return query.order_by(db.func.random()).first()
+    def pick(candidates, answer, category, difficulty, exclusions, strict_category=False, rng=None):
+        """Choose the next scenario id from `candidates`, (scenario_id, category, difficulty, correct_answer)
+        rows of one channel's active scenarios. The answer comes first: a scenario with the chosen answer
+        ("REPORT" or "SAFE") in the practice category at the player's difficulty, then the nearest difficulty,
+        then any category (unless the player picked the category), and only when no scenario with that answer
+        is left, one with the other answer in the same order. `exclusions` are id sets tried in turn (for
+        example: done before, then only the last few). The demo seed calls this too, so its history is
+        chosen exactly as the app chooses. Returns None when nothing is left."""
+        rng = rng or SystemRandom()
+        levels = AdaptiveEngine.DIFFICULTY_LEVELS
+
+        def distance(level):
+            if level in levels and difficulty in levels:
+                return abs(levels.index(level) - levels.index(difficulty))
+            return 0 if level == difficulty else len(levels)
+
+        scopes = [True] if strict_category else ([True, False] if category else [False])
+        for excluded in exclusions:
+            remaining = [row for row in candidates if row[0] not in excluded]
+            for same_answer in (True, False):
+                for in_category in scopes:
+                    rows = [
+                        row for row in remaining
+                        if ((row[3] or "").upper() == answer) == same_answer and (not in_category or row[1] == category)
+                    ]
+                    for gap in sorted({distance(row[2]) for row in rows}):
+                        group = [row for row in rows if distance(row[2]) == gap]
+                        return rng.choice(sorted(group))[0]
+        return None
 
     @staticmethod
-    def _choose(queries, completed_ids, recent_ids, include_completed):
-        """Try each query in order until one returns a scenario."""
-        if not include_completed:
-            for query in queries:
-                scenario = ScenarioService._random_excluding(query, completed_ids)
-                if scenario:
-                    return scenario
-            return None
-
-        for excluded in (recent_ids, []):
-            for query in queries:
-                scenario = ScenarioService._random_excluding(query, excluded)
-                if scenario:
-                    return scenario
-        return None
+    def _candidates(query):
+        """The (id, category, difficulty, answer) rows `pick` chooses from."""
+        return query.with_entities(
+            Scenario.scenario_id, Scenario.category, Scenario.difficulty, Scenario.correct_answer,
+        ).order_by(Scenario.scenario_id).all()
 
     @staticmethod
     def _player_payload(scenario, completed_ids):
@@ -673,25 +734,29 @@ class ScenarioService:
         simulation_type = simulation_type.upper()
         _, attempts, difficulty, difficulty_reason = ScenarioService._player_history(user_id)
         completed_ids = {a.scenario_id for a in attempts if a.simulation_type.upper() == simulation_type}
-        active_query = ScenarioService._active_query(simulation_type)
+        candidates = ScenarioService._candidates(ScenarioService._active_query(simulation_type))
 
-        chosen = []
-        for query in (
-            active_query.filter(Scenario.difficulty == difficulty),
-            active_query,
-        ):
-            excluded = completed_ids | {scenario.scenario_id for scenario in chosen}
-            if excluded:
-                query = query.filter(~Scenario.scenario_id.in_(excluded))
-            chosen += query.order_by(db.func.random()).limit(
-                ScenarioService.TRIAGE_SIZE - len(chosen)
-            ).all()
-        if len(chosen) < ScenarioService.TRIAGE_SIZE:
-            taken = {scenario.scenario_id for scenario in chosen}
-            query = active_query.filter(~Scenario.scenario_id.in_(taken)) if taken else active_query
-            chosen += query.order_by(db.func.random()).limit(
-                ScenarioService.TRIAGE_SIZE - len(chosen)
-            ).all()
+        # A mixed inbox: 2 to 4 of the 6 are phishing, so counting them gives nothing away
+        rng = SystemRandom()
+        phishing = rng.randint(*ScenarioService.TRIAGE_PHISHING)
+        answers = ["REPORT"] * phishing + ["SAFE"] * (ScenarioService.TRIAGE_SIZE - phishing)
+        chosen_ids = []
+        for answer in answers:
+            taken = set(chosen_ids)
+            exclusions = [completed_ids | taken, taken]
+            # Keep the mix even if it means a message seen before; the other answer only when none is left
+            with_answer = [row for row in candidates if (row[3] or "").upper() == answer]
+            scenario_id = (
+                ScenarioService.pick(with_answer, answer, None, difficulty, exclusions, rng=rng)
+                or ScenarioService.pick(candidates, answer, None, difficulty, exclusions, rng=rng)
+            )
+            if scenario_id is None:
+                break
+            chosen_ids.append(scenario_id)
+        rng.shuffle(chosen_ids)
+        by_id = {scenario.scenario_id: scenario for scenario in Scenario.query.filter(
+            Scenario.scenario_id.in_(chosen_ids)).all()} if chosen_ids else {}
+        chosen = [by_id[scenario_id] for scenario_id in chosen_ids]
 
         if len(chosen) < 2:
             return False, "Not enough scenarios for an inbox challenge yet.", None
@@ -737,14 +802,18 @@ class ScenarioService:
                 category_attempts, occupation,
             )
 
-        category_query = (
-            active_query.filter(Scenario.category == practice_category)
-            if practice_category else active_query
+        # Phishing or genuine is decided first, so neither the difficulty nor the category gives it away
+        candidates = ScenarioService._candidates(active_query)
+        answer = AdaptiveEngine.recommend_answer(channel_attempts)
+        exclusions = [set(recent_ids), set()] if include_completed else [completed_ids]
+        scenario_id = ScenarioService.pick(
+            candidates, answer, practice_category, difficulty, exclusions,
+            strict_category=bool(requested_category),
         )
-        queries = [category_query.filter(Scenario.difficulty == difficulty), category_query]
-        if not requested_category:
-            queries.append(active_query)
-        scenario = ScenarioService._choose(queries, completed_ids, recent_ids, include_completed)
+        scenario = db.session.get(Scenario, scenario_id) if scenario_id else None
+        if scenario and practice_category and scenario.category != practice_category:
+            # Says only what was served: naming why could hint at the answer
+            practice_category, category_reason = scenario.category, "Mixed practice across categories"
 
         if not scenario:
             if total_active and not include_completed:
@@ -776,17 +845,30 @@ class ScenarioService:
             "practice_categories": [
                 ScenarioService._category_summary(
                     category, category_attempts[category], available_by_category.get(category, 0),
+                    ScenarioService.is_mixed(candidates, category),
                 )
                 for category in categories
             ],
         }
 
     @staticmethod
-    def _category_summary(category, attempts, available):
+    def is_mixed(candidates, category):
+        """True when a category's live scenarios hold both answers, neither under UNEVEN_SHARE (the rule the
+        admin's balance card uses). Only such a category is offered for focused practice: in a one-sided one
+        the player would soon see only one answer, which gives it away."""
+        answers = [(row[3] or "").upper() for row in candidates if row[1] == category]
+        if not answers:
+            return False
+        phishing = answers.count("REPORT")
+        return min(phishing, len(answers) - phishing) / len(answers) >= ScenarioService.UNEVEN_SHARE
+
+    @staticmethod
+    def _category_summary(category, attempts, available, focusable=True):
         """One category's numbers for the practice picker."""
         return {
             "name": category,
             "available": available,
+            "focusable": focusable,
             "attempts": len(attempts),
             "accuracy": round(
                 sum(attempt.correct for attempt in attempts) / len(attempts) * 100

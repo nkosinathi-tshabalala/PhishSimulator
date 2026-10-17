@@ -31,7 +31,7 @@ export async function apiRequest(
     }
 
     const response = await fetch(`${API_BASE_URL}${endpoint}`, options);
-    const result = await response.json().catch(() => ({ success: false, message: "Unexpected server response." }));
+    const result = await response.json().catch(() => ({ success: false, message: describeNonJson(response.status) }));
 
     const renewedToken = response.headers.get("X-New-Token");
     if (renewedToken && getToken()) {
@@ -65,4 +65,15 @@ export async function downloadFile(endpoint: string, filename: string, token: st
     link.click();
     URL.revokeObjectURL(url);
     return true;
+}
+
+/** A readable message when the server (or the nginx proxy in front of it) answers with a page instead of JSON. */
+function describeNonJson(status: number) {
+    if (status === 413) {
+        return "This file is larger than the upload limit. Upload a smaller file, or raise MAX_UPLOAD_MB in .env and restart.";
+    }
+    if (status === 502 || status === 503 || status === 504) {
+        return "The server took too long or stopped responding. For very large datasets, raise REQUEST_TIMEOUT_SECONDS in .env and restart.";
+    }
+    return `Unexpected server response (HTTP ${status}).`;
 }
