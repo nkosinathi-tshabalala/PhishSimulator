@@ -1,7 +1,6 @@
 // API calls for stats, progress and user monitoring
 
 import { apiRequest, downloadFile } from "./api";
-import { getToken } from "./session";
 
 /** API calls for stats and user monitoring. */
 class AnalyticsService {
@@ -15,8 +14,7 @@ class AnalyticsService {
     return apiRequest(
       "/analytics/admin-dashboard",
       "GET",
-      null,
-      getToken()
+      null
     );
   }
 
@@ -25,8 +23,7 @@ class AnalyticsService {
     return apiRequest(
       `/analytics/admin${query ? `?${query}` : ""}`,
       "GET",
-      null,
-      getToken()
+      null
     );
   }
 
@@ -35,8 +32,7 @@ class AnalyticsService {
     return apiRequest(
       "/analytics/users",
       "GET",
-      null,
-      getToken()
+      null
     );
   }
 
@@ -45,8 +41,7 @@ class AnalyticsService {
     return apiRequest(
       `/analytics/users/${userId}`,
       "GET",
-      null,
-      getToken()
+      null
     );
   }
 
@@ -55,8 +50,7 @@ class AnalyticsService {
     return apiRequest(
       `/analytics/users/${userId}`,
       "DELETE",
-      null,
-      getToken()
+      null
     );
   }
 
@@ -64,8 +58,7 @@ class AnalyticsService {
   async exportPlayerProgress() {
     return downloadFile(
       "/analytics/export/players.csv",
-      "player_progress.csv",
-      getToken()
+      "player_progress.csv"
     );
   }
 
@@ -74,8 +67,7 @@ class AnalyticsService {
     return apiRequest(
       `/analytics/my-activity${year ? `?year=${year}` : ""}`,
       "GET",
-      null,
-      getToken()
+      null
     );
   }
 
@@ -84,8 +76,7 @@ class AnalyticsService {
     return apiRequest(
       `/analytics/my-performance${query ? `?${query}` : ""}`,
       "GET",
-      null,
-      getToken()
+      null
     );
   }
 }

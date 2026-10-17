@@ -1,10 +1,10 @@
 # These are the endpoints for stats, progress and user monitoring
 
 from flask import Blueprint, Response, request
-from flask_jwt_extended import get_jwt_identity, jwt_required
+from flask_jwt_extended import jwt_required
 
 from app.analytics.filters import MetricFilters
-from app.routes.route_helpers import require_admin, respond
+from app.routes.route_helpers import current_user_id, require_admin, respond
 from app.services.analytics_service import AnalyticsService
 
 
@@ -75,7 +75,7 @@ def get_monitored_user(user_id):
 @require_admin
 def delete_user(user_id):
     """Admin: delete a user and all their data."""
-    success, message = AnalyticsService.delete_user(user_id, int(get_jwt_identity()))
+    success, message = AnalyticsService.delete_user(user_id, current_user_id())
     return respond(success, message, None)
 
 
@@ -85,7 +85,7 @@ def delete_user(user_id):
 def get_my_performance():
     """The signed-in player's progress, narrowed by the filters in the URL."""
     filters = MetricFilters.from_args(request.args)
-    performance = AnalyticsService.get_player_performance(int(get_jwt_identity()), filters)
+    performance = AnalyticsService.get_player_performance(current_user_id(), filters)
     return respond(bool(performance), "Performance retrieved." if performance else "Player profile not found.",
                    performance, error_status=404)
 
@@ -95,6 +95,6 @@ def get_my_performance():
 @jwt_required()
 def get_my_activity():
     """The signed-in player's activity calendar for one year (this year by default)."""
-    activity = AnalyticsService.get_player_activity(int(get_jwt_identity()), request.args.get("year", type=int))
+    activity = AnalyticsService.get_player_activity(current_user_id(), request.args.get("year", type=int))
     return respond(bool(activity), "Activity retrieved." if activity else "Player profile not found.",
                    activity, error_status=404)

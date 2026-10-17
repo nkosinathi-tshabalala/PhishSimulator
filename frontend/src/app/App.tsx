@@ -26,7 +26,7 @@ import { BaselineManagementPage } from "./components/BaselineManagementPage";
 import { AdminProfilePage } from "./components/AdminProfilePage";
 import AuthService from "../services/authService";
 import { SessionWatcher } from "./components/SessionWatcher";
-import { getToken, clearToken } from "../services/session";
+import { clearSession, mightBeSignedIn } from "../services/session";
 
 /** Root component: restores the login and shows the right page for the user's role. */
 export default function App() {
@@ -35,7 +35,6 @@ export default function App() {
   const [currentPage, setCurrentPage] = useState("landing");
 
   interface CurrentUser {
-    user_id: number;
     full_name: string;
     email: string;
     age: number | null;
@@ -59,7 +58,7 @@ export default function App() {
 
   /** Go to the login page after the session has ended. */
   const handleSessionEnd = () => {
-    clearToken();
+    clearSession();
     sessionStorage.removeItem("current_page");
     setCurrentUser(null);
     setIsLoggedIn(false);
@@ -75,10 +74,12 @@ export default function App() {
   };
 
   const restoreSession = async () => {
-    // A password reset email links to /reset-password?token=...; the token is read, then removed from the address bar
+    // A password reset email links to /reset-password#token=... The token is after "#", so the browser never
+    // sends it to a server (no logs, no Referer). It is read here, then removed from the address bar.
     const params = new URLSearchParams(window.location.search);
-    if (window.location.pathname === "/reset-password" && params.get("token")) {
-      setResetToken(params.get("token") ?? "");
+    const fragment = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+    if (window.location.pathname === "/reset-password" && fragment.get("token")) {
+      setResetToken(fragment.get("token") ?? "");
       setCurrentPage("reset");
       window.history.replaceState(null, "", "/");
       setIsLoading(false);
@@ -89,9 +90,8 @@ export default function App() {
     const loginFor = params.get("login")?.trim().toLowerCase() || "";
     if (loginFor) window.history.replaceState(null, "", window.location.pathname);
 
-    const token = getToken();
-
-    if (!token) {
+    // No CSRF cookie means no session in this browser: skip asking the server
+    if (!mightBeSignedIn()) {
       if (loginFor) showLoginFor(loginFor);
       setIsLoading(false);
       return;
@@ -149,11 +149,15 @@ export default function App() {
     }
   };
 
-  const handleLogin = async (role: "player" | "admin") => {
+  const handleLogin = async () => {
+    // The role comes from the signed-in user's own details, never from a token
     const response = await AuthService.getCurrentUser();
-    if (response.ok) {
-      setCurrentUser(response.data.data);
+    if (!response.ok) {
+      setLoginNotice("Signing in did not complete. Please try again.");
+      return;
     }
+    setCurrentUser(response.data.data);
+    const role = String(response.data.data.role).toLowerCase() === "admin" ? "admin" : "player";
 
     const page = role === "admin" ? "admin-dashboard" : "dashboard";
     sessionStorage.setItem("current_page", page);

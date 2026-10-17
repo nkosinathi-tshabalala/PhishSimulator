@@ -1,17 +1,18 @@
-// API calls for accounts and signing in
+// API calls for accounts and signing in. The server keeps the session and sets HttpOnly cookies;
+// no token ever passes through this code.
 
-import { apiRequest } from "./api";
-import { getToken, clearToken } from "./session";
+import { apiRequest, renewSession } from "./api";
+import { clearSession } from "./session";
 
 /** API calls for accounts and signing in. */
 class AuthService {
   /** Create a player account. */
-  async register(userData: any) {
+  async register(userData: Record<string, unknown>) {
     return await apiRequest("/auth/register", "POST", userData);
   }
 
-  /** Sign in and get a token. */
-  async login(credentials: any) {
+  /** Sign in. The server answers with the session timing and sets the login cookies. */
+  async login(credentials: { email: string; password: string }) {
     return await apiRequest("/auth/login", "POST", credentials);
   }
 
@@ -29,42 +30,32 @@ class AuthService {
     });
   }
 
-  /** The signed-in user's details. */
+  /** The signed-in user's details (and when the session ends if idle). */
   async getCurrentUser() {
-    const token = getToken();
+    return await apiRequest("/auth/me", "GET");
+  }
 
-    return await apiRequest("/auth/me", "GET", null, token);
+  /** Keep the session going (new cookies; the old refresh token stops working). */
+  async refresh() {
+    return await renewSession();
   }
 
   /** Save profile changes. */
-  async updateProfile(profileData: any) {
-    const token = getToken();
-
-    return await apiRequest("/auth/update-profile", "PUT", profileData, token);
+  async updateProfile(profileData: Record<string, unknown>) {
+    return await apiRequest("/auth/update-profile", "PUT", profileData);
   }
 
-  /** Change the password. */
-  async changePassword(passwordData: any) {
-    const token = getToken();
-
-    return await apiRequest(
-      "/auth/change-password",
-      "PUT",
-      passwordData,
-      token,
-    );
+  /** Change the password. Other devices signed in to this account are signed out. */
+  async changePassword(passwordData: Record<string, unknown>) {
+    return await apiRequest("/auth/change-password", "PUT", passwordData);
   }
 
-  /** Sign out and forget the token. */
+  /** Sign out: the server ends the session and clears the cookies. */
   async logout() {
-    const token = getToken();
-
     try {
-      if (token) {
-        await apiRequest("/auth/logout", "POST", null, token);
-      }
+      await apiRequest("/auth/logout", "POST");
     } finally {
-      clearToken();
+      clearSession();
     }
   }
 }

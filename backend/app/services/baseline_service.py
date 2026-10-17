@@ -328,7 +328,8 @@ class BaselineService:
         if assessment.template_id and question.template_id != assessment.template_id:
             return False, "That question is not part of this assessment.", None
 
-        answer = data["answer_text"].lower()
+        answer_text = str(data["answer_text"]).strip()
+        answer = answer_text.lower()
         matched_keywords = [
             keyword for keyword in question.get_expected_keywords()
             if keyword.lower() in answer
@@ -342,7 +343,7 @@ class BaselineService:
             assessment_id=assessment.assessment_id,
             question_id=question.question_id,
         )
-        response.answer_text = data["answer_text"]
+        response.answer_text = answer_text
         response.matched_keywords = ",".join(matched_keywords)
         response.score = score
         response.passed = score >= question.confidence_threshold

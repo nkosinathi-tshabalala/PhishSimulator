@@ -3,6 +3,7 @@
 import { useState } from "react";
 
 import AuthService from "../../services/authService";
+import { LIMITS, emailProblem } from "../../services/validation";
 
 import {
   Fish,
@@ -28,10 +29,9 @@ import {
   CardHeader,
   CardTitle,
 } from "./ui/card";
-import { setToken } from "../../services/session";
 
 interface LoginPageProps {
-  onLogin: (role: "player" | "admin") => void;
+  onLogin: () => void;
   onNavigate: (page: string) => void;
   notice?: string;
   /** Pre-fills the email, e.g. for the recipient of a training email. */
@@ -62,6 +62,12 @@ export function LoginPage({
     setErrorMessage("");
     setSuccessMessage("");
 
+    const problem = emailProblem(email) || (password ? "" : "Password is required.");
+    if (problem) {
+      setErrorMessage(problem);
+      return;
+    }
+
     setIsLoading(true);
 
     try {
@@ -77,18 +83,13 @@ export function LoginPage({
 
       }
 
-      setToken(response.data.data.access_token);
-
+      // The server set the login cookies; this page never sees a token
       setSuccessMessage(
         "Login successful. Redirecting to your dashboard..."
       );
 
       setTimeout(() => {
-        const role =
-          response.data.data.role.toLowerCase();
-
-        onLogin(role);
-
+        onLogin();
       }, 1500);
 
     } catch (error) {
@@ -188,6 +189,8 @@ export function LoginPage({
                 id="email"
                 type="email"
                 placeholder="student@university.edu"
+                maxLength={LIMITS.email}
+                autoComplete="username"
                 value={email}
                 onChange={(e) =>
                   setEmail(e.target.value)
@@ -207,6 +210,8 @@ export function LoginPage({
                 id="password"
                 type="password"
                 placeholder="Enter your password"
+                maxLength={LIMITS.passwordMax}
+                autoComplete="current-password"
                 value={password}
                 onChange={(e) =>
                   setPassword(e.target.value)

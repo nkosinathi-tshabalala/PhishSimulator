@@ -1,9 +1,9 @@
 # These are the endpoints for scenarios: playing them and reviewing them
 
 from flask import Blueprint, request
-from flask_jwt_extended import get_jwt_identity, jwt_required
+from flask_jwt_extended import jwt_required
 
-from app.routes.route_helpers import require_admin, respond
+from app.routes.route_helpers import current_user_id, require_admin, respond
 from app.services.scenario_service import ScenarioService
 
 
@@ -18,7 +18,7 @@ def get_random_scenario(simulation_type):
     include_completed = request.args.get("include_completed", "false").lower() == "true"
     success, message, result = ScenarioService.get_random_scenario(
         simulation_type,
-        int(get_jwt_identity()),
+        current_user_id(),
         include_completed,
         request.args.get("category"),
     )
@@ -32,7 +32,7 @@ def get_review_scenario(simulation_type):
     """A scenario the player got wrong before, for another try."""
     success, message, result = ScenarioService.get_review_scenario(
         simulation_type,
-        int(get_jwt_identity()),
+        current_user_id(),
     )
     return respond(success, message, result, error_status=404)
 
@@ -44,7 +44,7 @@ def get_triage_batch(simulation_type):
     """A mixed inbox of messages for the triage challenge (no answers)."""
     success, message, result = ScenarioService.get_triage_batch(
         simulation_type,
-        int(get_jwt_identity()),
+        current_user_id(),
     )
     return respond(success, message, result, error_status=404)
 

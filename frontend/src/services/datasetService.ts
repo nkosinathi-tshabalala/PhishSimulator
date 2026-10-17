@@ -1,67 +1,51 @@
 // API calls for datasets (admin only)
 
 import { apiRequest } from "./api";
-import { getToken } from "./session";
 
 /** API calls for datasets. */
 class DatasetService {
   /** Every uploaded dataset. */
   async getDatasets() {
-    const token = getToken();
-
     return await apiRequest(
       "/datasets",
       "GET",
-      null,
-      token
+      null
     );
   }
 
   /** Upload a CSV or JSON dataset. */
   async uploadDataset(formData: FormData) {
-    const token = getToken();
-
     return await apiRequest(
       "/datasets/upload",
       "POST",
-      formData,
-      token
+      formData
     );
   }
 
   /** Delete a dataset. */
   async deleteDataset(datasetId: number) {
-    const token = getToken();
-
     return await apiRequest(
       `/datasets/${datasetId}`,
       "DELETE",
-      null,
-      token
+      null
     );
   }
 
   /** Re-apply the realism rules to a dataset's drafts. */
   async reprocessDataset(datasetId: number) {
-    const token = getToken();
-
     return await apiRequest(
       `/datasets/${datasetId}/reprocess`,
       "POST",
-      null,
-      token
+      null
     );
   }
 
   /** One dataset's details. */
   async getDataset(datasetId: number) {
-    const token = getToken();
-
     return await apiRequest(
       `/datasets/${datasetId}`,
       "GET",
-      null,
-      token
+      null
     );
   }
 

@@ -108,6 +108,7 @@ try:
     os.environ["SMTP_PASSWORD"] = "abcd efgh ijkl mnop"   # Gmail's display format, with spaces
     os.environ["CAMPAIGN_ALLOWED_RECIPIENTS"] = PLAYER_EMAIL
     os.environ["CAMPAIGN_SWEEPER"] = "off"   # the test drives the sweep itself
+    os.environ["RATE_LIMITS"] = "off"        # many sign-ins from one address; one check turns limits back on
 
     from app import create_app
     from app.extensions import bcrypt, db
@@ -146,13 +147,30 @@ try:
         db.session.commit()
         ADMIN_EMAIL, ADMIN_ID, ADMIN2_ID = admin.email, admin.user_id, admin2.user_id
 
-    client = app.test_client()
+    class Browser:
+        """One person's browser: its own cookie jar (the login cookies), so several people can be signed in
+        side by side during the check, as in separate browsers."""
+
+        def __init__(self):
+            self.client = app.test_client()
+
+        def cookie(self, name, path="/"):
+            found = self.client.get_cookie(name, path=path)
+            return found.value if found else ""
+
+        def csrf(self, refresh=False):
+            return self.cookie("ps_csrf_refresh" if refresh else "ps_csrf")
+
+    anonymous = app.test_client()
+    CHANGES = {"POST", "PUT", "PATCH", "DELETE"}
 
     def api(method, path, token=None, **kwargs):
+        """A request as `token` (a signed-in Browser) or as nobody. Changes repeat the CSRF cookie in the
+        X-CSRF-Token header, as the page does."""
         headers = kwargs.pop("headers", {})
-        if token:
-            headers["Authorization"] = f"Bearer {token}"
-        return client.open(path, method=method, headers=headers, **kwargs)
+        if token and method.upper() in CHANGES:
+            headers.setdefault("X-CSRF-Token", token.csrf(refresh=path.endswith("/auth/refresh")))
+        return (token.client if token else anonymous).open(path, method=method, headers=headers, **kwargs)
 
     def body(response):
         try:
@@ -163,9 +181,11 @@ try:
     def data_of(response):
         return body(response).get("data") or {}
 
-    def login(email):
-        response = api("POST", "/api/auth/login", json={"email": email, "password": PASSWORD})
-        return data_of(response).get("access_token"), response
+    def login(email, password=PASSWORD):
+        """Sign in from a new browser. Returns (Browser, response), or (None, response) when it failed."""
+        browser = Browser()
+        response = browser.client.post("/api/auth/login", json={"email": email, "password": password})
+        return (browser if response.status_code == 200 and browser.cookie("ps_access", "/api/") else None), response
 
     def items(value, *keys):
         if isinstance(value, list):
@@ -1029,6 +1049,148 @@ try:
     check("sorting: ascending by title", bool(rows) and [row["scenario_id"] for row in rows] == expected_ids,
           [row["title"] for row in rows[:5]])
 
+
+    # ================= SESSIONS, COOKIES AND HARDENING =================
+    import base64
+    import json as json_module
+    from datetime import timedelta as _timedelta
+
+    def payload_of(jwt_text):
+        part = jwt_text.split(".")[1]
+        return json_module.loads(base64.urlsafe_b64decode(part + "=" * (-len(part) % 4)))
+
+    def set_cookie_attrs(response):
+        return {header.split("=", 1)[0]: header for header in response.headers.getlist("Set-Cookie")}
+
+    sec, r = login(ADMIN_EMAIL)
+    cookies = set_cookie_attrs(r)
+    check("session: the login reply carries no token, user id or role, only the session timing",
+          set(data_of(r)) == {"session"} and "access_token" not in r.get_data(as_text=True), data_of(r))
+    check("session: both tokens are HttpOnly, Secure, SameSite=Strict cookies",
+          all(name in cookies and "HttpOnly" in cookies[name] and "Secure" in cookies[name]
+              and "SameSite=Strict" in cookies[name] for name in ("ps_access", "ps_refresh")), list(cookies))
+    check("session: the refresh cookie is only sent to /api/auth/refresh",
+          "Path=/api/auth/refresh" in cookies.get("ps_refresh", ""), cookies.get("ps_refresh"))
+    claims = payload_of(sec.cookie("ps_access", "/api/"))
+    check("session: the access token names only a random session key (no user id, email or role)",
+          not {"role", "email", "user_id", "session_id"} & set(claims) and len(claims["sub"]) >= 40
+          and ADMIN_EMAIL not in json_module.dumps(claims) and claims.get("iss") == "phishsimulator-api", sorted(claims))
+    me_sec = data_of(api("GET", "/api/auth/me", sec))
+    check("session: /me gives no internal ids", "user_id" not in me_sec and me_sec.get("role") == "ADMIN", sorted(me_sec))
+
+    r = sec.client.put("/api/auth/update-profile", json={})
+    check("csrf: a change without the CSRF token is refused (403)", r.status_code == 403, r.status_code)
+    r = api("PUT", "/api/auth/update-profile", sec, json={}, headers={"Origin": "https://evil.example"})
+    check("csrf: a change sent from another website is refused (403)", r.status_code == 403, r.status_code)
+    r = api("POST", "/api/auth/logout", sec, headers={"X-CSRF-Token": "wrong"})
+    check("csrf: a wrong CSRF token is refused", r.status_code == 403, r.status_code)
+
+    old_refresh = sec.cookie("ps_refresh", "/api/auth/refresh")
+    old_refresh_csrf = sec.csrf(refresh=True)
+    old_access = sec.cookie("ps_access", "/api/")
+    r = api("POST", "/api/auth/refresh", sec)
+    check("refresh: renewing gives new cookies (rotation)", r.status_code == 200
+          and sec.cookie("ps_refresh", "/api/auth/refresh") != old_refresh, body(r))
+    stale = Browser()
+    stale.client.set_cookie("ps_access", old_access, path="/api/")
+    check("refresh: the access token from before the renewal stops working at once",
+          stale.client.get("/api/auth/me").status_code == 401)
+    with app.app_context():
+        from app.models.authentication import UserSession
+        row = UserSession.query.filter(UserSession.status == "ACTIVE").order_by(UserSession.session_id.desc()).first()
+        row.rotated_at = row.rotated_at - _timedelta(minutes=5)   # past the grace for two tabs
+        db.session.commit()
+    thief = Browser()
+    thief.client.set_cookie("ps_refresh", old_refresh, path="/api/auth/refresh")
+    # A thief who copied the cookies before the renewal has the old refresh token and its CSRF value
+    thief.client.set_cookie("ps_csrf_refresh", old_refresh_csrf)
+    r = thief.client.post("/api/auth/refresh", headers={"X-CSRF-Token": old_refresh_csrf})
+    check("refresh: a copied old refresh token is refused", r.status_code == 401, r.status_code)
+    check("refresh: ...and the whole session is revoked (the real user must sign in again)",
+          api("GET", "/api/auth/me", sec).status_code == 401)
+    with app.app_context():
+        reason = UserSession.query.order_by(UserSession.session_id.desc()).first().ended_reason
+    check("refresh: the session records why it ended", reason == "refresh_reuse", reason)
+
+    sec, _ = login(ADMIN_EMAIL)
+    other = Browser()
+    other.client.set_cookie("ps_access", sec.cookie("ps_access", "/api/"), path="/api/")
+    r = other.client.get("/api/auth/me", headers={"User-Agent": "curl/8.0"})
+    check("hijack: a stolen access cookie used from another browser is refused", r.status_code == 401, r.status_code)
+    check("hijack: ...and that session ends", api("GET", "/api/auth/me", sec).status_code == 401)
+
+    first, _ = login(ADMIN_EMAIL)
+    second, _ = login(ADMIN_EMAIL)
+    r = api("PUT", "/api/auth/change-password", first, json={
+        "current_password": PASSWORD, "new_password": "Changed#2026x", "confirm_password": "Changed#2026x"})
+    check("password change: signs out the account's other sessions, keeps this one",
+          r.status_code == 200 and api("GET", "/api/auth/me", second).status_code == 401
+          and api("GET", "/api/auth/me", first).status_code == 200, (r.status_code, body(r).get("message")))
+    api("PUT", "/api/auth/change-password", first, json={
+        "current_password": "Changed#2026x", "new_password": PASSWORD, "confirm_password": PASSWORD})
+    with app.app_context():
+        from app.models.authentication import User as _User
+        _User.query.filter_by(email=ADMIN_EMAIL).first().failed_logins = 0
+        db.session.commit()
+    atoken, _ = login(ADMIN_EMAIL)   # the admin's earlier session was ended by the password change
+
+    idle_browser, _ = login(PLAYER_EMAIL)
+    with app.app_context():
+        from datetime import datetime as _datetime
+        newest = UserSession.query.order_by(UserSession.session_id.desc()).first()
+        newest.idle_expires_at = _datetime.utcnow() - _timedelta(seconds=1)
+        db.session.commit()
+    r = api("GET", "/api/auth/me", idle_browser)
+    with app.app_context():
+        expired = UserSession.query.order_by(UserSession.session_id.desc()).first()
+        expired_state = (expired.status.value, expired.ended_reason)
+    check("idle: a session not renewed within the idle time ends", r.status_code == 401
+          and expired_state == ("EXPIRED", "idle_timeout"), expired_state)
+
+    r = api("POST", "/api/auth/login", json={"email": PLAYER_EMAIL, "password": "x" * 100})
+    check("passwords: a very long password gets a normal reply, not a server error", r.status_code == 401, r.status_code)
+    r = api("POST", "/api/auth/register", json={
+        "full_name": "<script>alert(1)</script>", "email": "xss@example.test", "password": "Valid#2026",
+        "confirm_password": "Valid#2026", "age": 20, "occupation": "STUDENT", "it_background": False})
+    check("validation: a name with markup is refused at registration", r.status_code == 400, body(r).get("message"))
+    r = api("POST", "/api/auth/register", json={
+        "full_name": "Robert'); DROP TABLE player;--", "email": "bobby@example.test", "password": "Valid#2026",
+        "confirm_password": "Valid#2026", "age": 20, "occupation": "STUDENT", "it_background": False})
+    with app.app_context():
+        from sqlalchemy import inspect as _inspect
+        player_table_alive = "player" in _inspect(db.engine).get_table_names()
+    check("validation: an SQL-injection style name is refused, and the tables are untouched",
+          r.status_code == 400 and player_table_alive, body(r).get("message"))
+    r = api("POST", "/api/auth/login", json={"email": "' OR '1'='1", "password": "' OR '1'='1"})
+    check("injection: SQL in the login fields is just a wrong login", r.status_code == 401, r.status_code)
+
+    with app.app_context():
+        from app.models.authentication import Player as _Player
+        victim = _Player.query.order_by(_Player.player_id).first()
+        victim_id, original_name = victim.player_id, victim.full_name
+        victim.full_name = "=HYPERLINK(\"http://evil.example\")"
+        db.session.commit()
+    csv_text = api("GET", "/api/analytics/export/players.csv", atoken).get_data(as_text=True)
+    with app.app_context():
+        db.session.get(_Player, victim_id).full_name = original_name
+        db.session.commit()
+    check("export: a cell that would run as a spreadsheet formula is made plain text",
+          "'=HYPERLINK" in csv_text and "\n=HYPERLINK" not in csv_text and ",=HYPERLINK" not in csv_text)
+
+    r = api("GET", "/api/auth/me", atoken)
+    check("headers: API replies forbid framing, sniffing, caching and loading anything",
+          r.headers.get("X-Frame-Options") == "DENY" and r.headers.get("X-Content-Type-Options") == "nosniff"
+          and r.headers.get("Cache-Control") == "no-store" and "default-src 'none'" in r.headers.get("Content-Security-Policy", ""),
+          dict(r.headers))
+    check("errors: an unknown address gives a plain JSON reply (no stack trace)",
+          api("GET", "/api/does-not-exist").status_code == 404 and "Traceback" not in api("GET", "/api/does-not-exist").get_data(as_text=True))
+
+    app.config["RATE_LIMITS"] = True
+    statuses = [api("POST", "/api/auth/forgot-password", json={"email": "limit@example.test"}).status_code for _ in range(7)]
+    app.config["RATE_LIMITS"] = False
+    check("rate limit: repeated password-reset requests from one address are slowed down (429)",
+          statuses[:5] == [200] * 5 and 429 in statuses[5:], statuses)
+
     for _ in range(5):
         api("POST", "/api/auth/login", json={"email": PLAYER_EMAIL, "password": "wrong-password-1"})
     r = api("POST", "/api/auth/login", json={"email": PLAYER_EMAIL, "password": PASSWORD})
@@ -1039,7 +1201,7 @@ try:
     SENT.clear()
     r = api("POST", "/api/auth/forgot-password", json={"email": PLAYER_EMAIL.upper()})
     check("reset: request a link (email matched in any case)", r.status_code == 200 and len(SENT) == 1, f"{r.status_code} sent={len(SENT)}")
-    found = re.search(r"reset-password\?token=([\w-]+)", SENT[-1].get_body(("plain",)).get_content()) if SENT else None
+    found = re.search(r"reset-password#token=([\w-]+)", SENT[-1].get_body(("plain",)).get_content()) if SENT else None
     reset_token = found.group(1) if found else ""
     with app.app_context():
         from app.models.authentication import PasswordResetToken
@@ -1057,9 +1219,8 @@ try:
     r = api("POST", "/api/auth/reset-password", json={"token": reset_token, "new_password": new_password, "confirm_password": new_password})
     check("reset: the link only works once", r.status_code == 400, body(r))
     check("reset: every old session is signed out", api("GET", "/api/auth/me", ptoken).status_code == 401)
-    r = api("POST", "/api/auth/login", json={"email": PLAYER_EMAIL, "password": new_password})
-    check("reset: sign in with the new password (lock cleared)", r.status_code == 200, body(r))
-    ptoken = data_of(r).get("access_token")
+    ptoken, r = login(PLAYER_EMAIL, new_password)
+    check("reset: sign in with the new password (lock cleared)", r.status_code == 200 and ptoken, body(r))
 
     check("security: log out", api("POST", "/api/auth/logout", ptoken).status_code == 200)
     check("security: a logged-out token is rejected straight away", api("GET", "/api/auth/me", ptoken).status_code == 401)

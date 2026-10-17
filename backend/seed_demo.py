@@ -601,8 +601,8 @@ def _seed_sessions(player, rng):
     for day, day_attempts in by_day.items():
         start = min(a.attempted_at for a in day_attempts)
         end = max(a.attempted_at for a in day_attempts)
-        db.session.add(UserSession(user_id=player.user_id, login_time=start,
-                                   logout_time=end + timedelta(minutes=2), status="LOGGED_OUT"))
+        db.session.add(UserSession(user_id=player.user_id, login_time=start, logout_time=end + timedelta(minutes=2),
+                                   status="LOGGED_OUT", ended_reason="logout"))
         by_type = {}
         for attempt in day_attempts:
             by_type.setdefault(attempt.simulation_type, []).append(attempt)
@@ -612,10 +612,12 @@ def _seed_sessions(player, rng):
                 started_at=min(a.attempted_at for a in rows), completed_at=max(a.attempted_at for a in rows),
                 total_attempts=len(rows), total_score=sum(a.score or 0 for a in rows),
             ))
-    # A recent open login for some players, so "active now" and "active this week" show data
+    # A recent visit for some players that ended by the idle time-out (no logout), so "active this week" shows
+    # data. Only real sign-ins count as "active now": a seeded session holds no key, so it could never be used.
     if rng.random() < 0.5:
-        db.session.add(UserSession(user_id=player.user_id,
-                                   login_time=datetime.utcnow() - timedelta(hours=rng.randint(1, 72)), status="ACTIVE"))
+        login = datetime.utcnow() - timedelta(hours=rng.randint(1, 72))
+        db.session.add(UserSession(user_id=player.user_id, login_time=login, status="EXPIRED",
+                                   logout_time=login + timedelta(minutes=30), ended_reason="idle_timeout"))
 
 
 def _refresh_tracker(player_id):

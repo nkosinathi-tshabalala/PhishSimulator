@@ -39,6 +39,54 @@ class UserSession(db.Model):
         default=SessionStatus.ACTIVE
     )
 
+    # SHA-256 of the random session key carried in this session's tokens (the key itself is never stored)
+    key_hash = db.Column(
+        db.String(64),
+        unique=True,
+        index=True
+    )
+
+    # SHA-256 of the current refresh token's id, and of the one before it (allowed briefly, when two tabs
+    # refresh at the same moment). Any older refresh token means it was copied, so the session is revoked.
+    refresh_hash = db.Column(
+        db.String(64)
+    )
+
+    previous_refresh_hash = db.Column(
+        db.String(64)
+    )
+
+    # Goes up with every refresh; an access token is only accepted with the current number
+    generation = db.Column(
+        db.Integer,
+        nullable=False,
+        default=0,
+        server_default="0"
+    )
+
+    rotated_at = db.Column(
+        db.DateTime
+    )
+
+    # Ends when not refreshed for the idle time, and at the latest at expires_at, however active
+    idle_expires_at = db.Column(
+        db.DateTime
+    )
+
+    expires_at = db.Column(
+        db.DateTime
+    )
+
+    # SHA-256 of the browser's User-Agent at sign-in; a token used from another browser ends the session
+    user_agent_hash = db.Column(
+        db.String(64)
+    )
+
+    # Why the session ended: logout, idle_timeout, max_lifetime, password_changed, refresh_reuse...
+    ended_reason = db.Column(
+        db.String(40)
+    )
+
     user = db.relationship(
         "User",
         back_populates="sessions"

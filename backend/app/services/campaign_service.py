@@ -855,6 +855,12 @@ def start_sweeper(app):
                     CampaignService.sweep()
                 except Exception:
                     logger.exception("Campaign sweep failed")
+                try:
+                    # Close login sessions that ran out without signing out
+                    from app.services.session_service import SessionService
+                    SessionService.expire_idle()
+                except Exception:
+                    logger.exception("Session clean-up failed")
                 finally:
                     db.session.remove()
 

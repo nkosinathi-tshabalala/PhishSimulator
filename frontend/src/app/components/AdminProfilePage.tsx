@@ -8,9 +8,9 @@ import { Label } from "./ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
 import { PageHeader } from "./PageHeader";
 import AuthService from "../../services/authService";
+import { LIMITS, passwordProblem } from "../../services/validation";
 
 interface CurrentUser {
-  user_id: number;
   full_name: string;
   email: string;
   role: string;
@@ -36,6 +36,12 @@ export function AdminProfilePage({ user, onBack }: AdminProfilePageProps) {
     event.preventDefault();
     if (passwords.currentPassword === passwords.newPassword) {
       setMessage({ ok: false, text: "Your new password must be different from your current password." });
+      return;
+    }
+    const problem = passwordProblem(passwords.newPassword)
+      || (passwords.newPassword !== passwords.confirmPassword ? "New passwords do not match." : "");
+    if (problem) {
+      setMessage({ ok: false, text: problem });
       return;
     }
 
@@ -98,7 +104,7 @@ export function AdminProfilePage({ user, onBack }: AdminProfilePageProps) {
                 ] as const).map(([key, label, autoComplete]) => (
                   <div key={key} className="space-y-2">
                     <Label htmlFor={key}>{label}</Label>
-                    <Input id={key} type="password" required autoComplete={autoComplete}
+                    <Input id={key} type="password" required maxLength={LIMITS.passwordMax} autoComplete={autoComplete}
                       value={passwords[key]} onChange={(event) => setField(key, event.target.value)} />
                   </div>
                 ))}

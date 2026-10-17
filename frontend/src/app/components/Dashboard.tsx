@@ -35,7 +35,6 @@ import { CampaignInbox, CampaignTag, formatXp } from "./CampaignInbox";
 import type { Progress as PlayerProgress } from "../../types/catch";
 
 interface CurrentUser {
-  user_id: number;
   full_name: string;
   email: string;
   age: number | null;

@@ -302,21 +302,40 @@ The admin report shows opens, clicks, attachment opens, reports and ignored per 
 
 ## Security
 
+### How signing in works
+
+Logins are **server-side sessions**: every sign-in is one row in the `user_session` table. The browser holds two signed tokens (JWT, HS256), both in **HttpOnly cookies** that page scripts cannot read, so a cross-site-scripting bug could not steal them:
+
+| Cookie | Lasts | Sent to | Carries |
+| --- | --- | --- | --- |
+| `ps_access` | 10 minutes (`ACCESS_TOKEN_MINUTES`) | `/api/` | a random session key and the session's refresh count |
+| `ps_refresh` | the session | `/api/auth/refresh` only | the same session key |
+
+- **No personal data in tokens.** Neither token names the user, their email or their role. The server looks the session up on every request and reads the role from the database, so a role change or a deleted account takes effect at once. Only SHA-256 hashes of the session key and the refresh token are stored.
+- **Rotation.** When the access token runs out, the page calls `/api/auth/refresh`: the refresh token is swapped for a new one, and the previous access token stops working at once. Using a replaced refresh token again means it was copied, so the whole session is revoked (a short grace period covers two tabs refreshing together).
+- **The session ends** after `SESSION_IDLE_MINUTES` (30) without a refresh, after `SESSION_MAX_HOURS` (12) in any case, on logout, when the password is changed (other devices) or reset (all devices), and when its token is used from a different browser (User-Agent). The session row records why it ended, and a background job closes the ones that ran out.
+- **One login per browser.** The cookies are shared by every tab of the site. To be the admin and a player at the same time, use a second browser or a private window.
+- **Cookie flags.** `HttpOnly`, `SameSite=Strict` and `Secure`. Browsers send Secure cookies to `http://localhost`, so Docker and Vite work as they are. To open the app over plain http from another device, set `COOKIE_SECURE=false` (or serve it over HTTPS).
+
+### Protections
+
 | Area | What the app does |
 | --- | --- |
-| Secrets | Passwords and keys live only in `.env` files, which git and Docker both ignore. The API refuses to start unless `SECRET_KEY` and `JWT_SECRET_KEY` are at least 32 characters. |
+| Cross-site request forgery | Three layers: SameSite=Strict cookies; every change (POST, PUT, PATCH, DELETE) must repeat the readable `ps_csrf` cookie in the `X-CSRF-Token` header; and a change whose `Origin` is another site is refused. |
+| Cross-site scripting | React escapes all text; the page's Content-Security-Policy only runs scripts from the app itself (`script-src 'self'`, `object-src 'none'`, no framing); tokens are out of reach of scripts; names are limited to letters, digits and `' . -`. |
+| SQL injection | Every query goes through SQLAlchemy with bound parameters, never by pasting text into SQL. The server checks every field (type, length, format); the forms repeat the same rules (`frontend/src/services/validation.ts`) only to help the user, since anyone can send requests without the page. |
+| Secrets | Passwords and keys live only in `.env` files, which git and Docker both ignore. The API refuses to start unless `SECRET_KEY` and `JWT_SECRET_KEY` are at least 32 characters. Tokens only accept HS256 with this API's issuer and audience. |
 | Accidental commits | `.githooks/pre-commit` blocks a commit that adds an `.env` file, a key file, uploaded data, or a line such as `SMTP_PASSWORD=...`. Turn it on once per clone with `git config core.hooksPath .githooks`. |
-| Passwords | Stored as bcrypt hashes. New passwords need at least 8 characters with a letter and a number (sign-up, change and reset). |
-| Guessing passwords | Five wrong passwords in a row lock the account for 15 minutes. The login reply never says whether an email exists. |
-| Sessions | Login tokens last 15 minutes and renew while you are active. Each token belongs to a login session, so logging out (or resetting the password) stops it working immediately. Each browser tab keeps its own login, so you can be the admin in one tab and a player in another; closing a tab signs that tab out. |
-| Password reset | A one-time link that works for 30 minutes. Only a SHA-256 hash of the token is stored, and using it signs out every session. Reset emails, like campaigns, only go to allow-listed addresses. |
-| Errors | Unexpected errors are logged on the server; the browser only sees "Something went wrong". |
-| Headers | The API sends `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy` and `Cache-Control: no-store`. nginx adds a Content-Security-Policy so the page only runs code from the app itself. |
+| Passwords | Stored as bcrypt hashes. New passwords need 8 to 64 characters with a letter and a number (bcrypt reads at most 72 bytes). |
+| Guessing | Five wrong passwords in a row lock the account for 15 minutes. Per-address rate limits on sign-in (10 a minute), registration (10 an hour), password resets (5 per 15 minutes) and refreshing. The reply never says whether an email exists, and an unknown email takes as long to answer as a known one. |
+| Password reset | A one-time link that works for 30 minutes. The token is after `#` in the link, so it never reaches a server log or a Referer header. Only a SHA-256 hash is stored, and using it signs out every session. |
+| Data leaks | Replies carry only what the page shows: no ids or security fields in `/me`, no tokens in any body. Errors are logged on the server; the browser only sees a plain message. The CSV export makes any cell that would run as a spreadsheet formula plain text. |
+| Headers | The API sends a `default-src 'none'` Content-Security-Policy, `X-Frame-Options: DENY`, `nosniff`, `no-referrer`, `Cache-Control: no-store`, `Cross-Origin-Opener-Policy` and `Cross-Origin-Resource-Policy`, plus HSTS when reached over HTTPS. |
 | Uploads | CSV or JSON only, saved under a random name, and capped at `MAX_UPLOAD_MB` by both nginx and Flask. |
-| Containers | The backend runs as a normal user, not root. Ports listen on `127.0.0.1` unless `HOST_IP` says otherwise, and the database port is never published. In Docker `FLASK_ENV=production`, so the debugger is off. |
-| Roles | Admin endpoints check the role on the server (`@require_admin`), and players can only read their own data. |
+| Containers | The backend runs as a normal user, not root. Ports listen on `127.0.0.1` unless `HOST_IP` says otherwise, and the database port is never published. In Docker `FLASK_ENV=production`, so the debugger is off. `TRUSTED_PROXY_COUNT=1` lets the API see each visitor's address behind nginx. |
+| Roles | Admin endpoints check the role in the database on every request (`@require_admin`), and players can only read their own data. |
 
-One known trade-off: the login token is kept in the browser's `localStorage`, which a successful cross-site-scripting attack could read. React's escaping and the Content-Security-Policy make that unlikely; moving the token into an `httpOnly` cookie would be the next step for a production deployment.
+Known limits: the rate-limit counts are kept per Gunicorn worker in memory (3 workers, so up to 3 times the stated limit; the per-account lock still applies), and the User-Agent check is a signal, not proof, since a thief can copy it too. Registration does say when an email is already registered, so people can sign in instead.
 
 ## Important development rules
 
@@ -338,7 +357,7 @@ Backend syntax check and CATCH rule tests:
 cd backend; .\.venv\Scripts\python.exe -m unittest discover tests
 ```
 
-End-to-end check of the whole API (about 140 checks across every CATCH stage). It builds a fresh throwaway database on your PostgreSQL server from every migration plus the demo data, prints a trace of one test learner, then drops the database; your own database is never touched:
+End-to-end check of the whole API (224 checks across every CATCH stage, sessions and security). It builds a fresh throwaway database on your PostgreSQL server from every migration plus the demo data, prints a trace of one test learner, then drops the database; your own database is never touched:
 
 ```powershell
 cd backend; .\.venv\Scripts\python.exe tests\e2e_check.py

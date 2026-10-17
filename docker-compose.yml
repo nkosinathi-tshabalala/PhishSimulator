@@ -39,6 +39,10 @@ services:
       REQUEST_TIMEOUT_SECONDS: ${REQUEST_TIMEOUT_SECONDS:?Set REQUEST_TIMEOUT_SECONDS in .env}
       # The demo seed reads its email and SMS dataset files from the folder mounted below
       DEMO_DATASET_DIR: /app/demo_datasets
+      # nginx sits in front of the API: trust its forwarded client address (rate limits) and https flag
+      TRUSTED_PROXY_COUNT: ${TRUSTED_PROXY_COUNT:?Set TRUSTED_PROXY_COUNT in .env}
+      # Login cookies are only sent over HTTPS or to localhost unless this is false
+      COOKIE_SECURE: ${COOKIE_SECURE:?Set COOKIE_SECURE in .env}
     volumes:
       # Uploaded datasets are kept between restarts, like the database
       - uploads_data:/app/uploads

@@ -1,9 +1,9 @@
 # These are the endpoints for the baseline quiz
 
 from flask import Blueprint, request
-from flask_jwt_extended import get_jwt_identity, jwt_required
+from flask_jwt_extended import jwt_required
 
-from app.routes.route_helpers import require_admin, respond
+from app.routes.route_helpers import current_user_id, require_admin, respond
 from app.services.baseline_service import BaselineService
 
 
@@ -15,7 +15,7 @@ baseline_bp = Blueprint("baseline", __name__, url_prefix="/api/baseline")
 @jwt_required()
 def get_latest_result():
     """The player's most recent completed quiz."""
-    success, message, result = BaselineService.get_latest_result(get_jwt_identity())
+    success, message, result = BaselineService.get_latest_result(current_user_id())
     return respond(success, message, result)
 
 
@@ -24,7 +24,7 @@ def get_latest_result():
 @jwt_required()
 def get_available():
     """The baseline assessments offered to the player's role."""
-    success, message, result = BaselineService.get_available(get_jwt_identity())
+    success, message, result = BaselineService.get_available(current_user_id())
     return respond(success, message, result)
 
 
@@ -33,7 +33,7 @@ def get_available():
 @jwt_required()
 def get_result(assessment_id):
     """A completed baseline assessment with its marked answers."""
-    success, message, result = BaselineService.get_result(assessment_id, get_jwt_identity())
+    success, message, result = BaselineService.get_result(assessment_id, current_user_id())
     return respond(success, message, result, error_status=404)
 
 
@@ -43,7 +43,7 @@ def get_result(assessment_id):
 def start_assessment():
     """Start a baseline assessment the player has not taken yet."""
     success, message, result = BaselineService.start_assessment(
-        get_jwt_identity(), request.get_json(silent=True) or {},
+        current_user_id(), request.get_json(silent=True) or {},
     )
     return respond(success, message, result)
 
@@ -55,7 +55,7 @@ def submit_response():
     """Save and mark one quiz answer."""
     success, message, result = BaselineService.submit_response(
         request.get_json(silent=True) or {},
-        get_jwt_identity(),
+        current_user_id(),
     )
     return respond(success, message, result, ok_status=201)
 
@@ -67,7 +67,7 @@ def complete_assessment():
     """Finish the quiz and set the starting difficulty."""
     success, message, result = BaselineService.complete_assessment(
         request.get_json(silent=True) or {},
-        get_jwt_identity(),
+        current_user_id(),
     )
     return respond(success, message, result)
 

@@ -22,10 +22,10 @@ import {
 } from "./ui/select";
 
 import AuthService from "../../services/authService";
+import { LIMITS, ageProblem, firstProblem, nameProblem, passwordProblem, tidy } from "../../services/validation";
 import { PageHeader } from "./PageHeader";
 
 interface CurrentUser {
-  user_id: number;
   full_name: string;
   email: string;
   age: number | null;
@@ -93,11 +93,16 @@ export function ProfilePage({
 
     setErrorMessage("");
     setSuccessMessage("");
+    const problem = firstProblem(nameProblem(profileData.fullName), ageProblem(profileData.age));
+    if (problem) {
+      setErrorMessage(problem);
+      return;
+    }
     setIsUpdating(true);
 
     try {
       const response = await AuthService.updateProfile({
-        full_name: profileData.fullName,
+        full_name: tidy(profileData.fullName),
         age: Number(profileData.age),
         it_background: profileData.itBackground === "yes",
         occupation: profileData.occupation,
@@ -159,6 +164,15 @@ export function ProfilePage({
       return;
     }
 
+    const problem = firstProblem(
+      passwordProblem(passwordData.newPassword),
+      passwordData.newPassword !== passwordData.confirmPassword ? "New passwords do not match." : "",
+    );
+    if (problem) {
+      showPasswordError(problem);
+      return;
+    }
+
     setIsChangingPassword(true);
 
     try {
@@ -213,6 +227,7 @@ export function ProfilePage({
                   <Input
                     id="fullName"
                     type="text"
+                    maxLength={LIMITS.name}
                     value={profileData.fullName}
                     onChange={(e) =>
                       setProfileData({
@@ -239,6 +254,9 @@ export function ProfilePage({
                   <Input
                     id="age"
                     type="number"
+                    min={LIMITS.ageMin}
+                    max={LIMITS.ageMax}
+                    step={1}
                     value={profileData.age}
                     onChange={(e) =>
                       setProfileData({ ...profileData, age: e.target.value })
@@ -344,6 +362,8 @@ export function ProfilePage({
                   <Input
                     id="currentPassword"
                     type="password"
+                    maxLength={LIMITS.passwordMax}
+                    autoComplete="current-password"
                     value={passwordData.currentPassword}
                     onChange={(e) =>
                       setPasswordData({
@@ -359,6 +379,8 @@ export function ProfilePage({
                   <Input
                     id="newPassword"
                     type="password"
+                    maxLength={LIMITS.passwordMax}
+                    autoComplete="new-password"
                     value={passwordData.newPassword}
                     onChange={(e) =>
                       setPasswordData({
@@ -376,6 +398,8 @@ export function ProfilePage({
                   <Input
                     id="confirmNewPassword"
                     type="password"
+                    maxLength={LIMITS.passwordMax}
+                    autoComplete="new-password"
                     value={passwordData.confirmPassword}
                     onChange={(e) =>
                       setPasswordData({

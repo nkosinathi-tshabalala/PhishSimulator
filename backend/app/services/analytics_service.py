@@ -240,6 +240,13 @@ class AnalyticsService:
     )
 
     @staticmethod
+    def _safe_cell(value):
+        """Spreadsheet apps run a cell starting with = + - @ (or a tab) as a formula. Text from users is
+        prefixed with an apostrophe so it always opens as plain text (CSV injection)."""
+        text = str(value or "")
+        return f"'{text}" if text[:1] in ("=", "+", "-", "@", "\t", "\r") else text
+
+    @staticmethod
     def export_player_progress_csv():
         """One row per player for tutors. The private skill rank is left out on purpose."""
         output = io.StringIO()
@@ -252,8 +259,8 @@ class AnalyticsService:
                 continue
             last = performance["recent_attempts"][0]["attempted_at"] if performance["recent_attempts"] else ""
             writer.writerow([
-                player.full_name,
-                player.user.email if player.user else "",
+                AnalyticsService._safe_cell(player.full_name),
+                AnalyticsService._safe_cell(player.user.email if player.user else ""),
                 player.profile.occupation.value if player.profile else "",
                 performance["baseline_score"] if performance["baseline_score"] is not None else "",
                 performance["total_attempts"],
