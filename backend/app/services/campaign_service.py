@@ -153,11 +153,6 @@ class CampaignService:
             ).first()
             if not scenario:
                 return False, "Choose an active email scenario, or write a custom email.", None
-            if not CampaignService.is_clickable(scenario.message, scenario.attachment):
-                return False, (
-                    "This email has no link and no attachment, so there is nothing to click or track. "
-                    "Choose another email, or write a custom one."
-                ), None
             email = CampaignService.scenario_email(scenario)
 
         default_name = f"{email['subject']} campaign"
@@ -211,8 +206,9 @@ class CampaignService:
 
     @staticmethod
     def is_clickable(message, attachment):
-        """A campaign email needs something to click (a link in the body, or an attachment), or the test
-        can only measure reporting. The same rule applies to dataset emails and custom ones."""
+        """True when the email has something to click (a link in the body, or an attachment). An email without
+        one can still be sent: its result is a report or ignore (like a scam that asks for a reply), and it can
+        never be "clicked". The picker shows which kind each email is."""
         return bool(attachment) or bool(LINK_PATTERN.search(message or ""))
 
     @staticmethod
@@ -240,10 +236,6 @@ class CampaignService:
         attachment = str(custom.get("attachment") or "").strip()
         if attachment and not ATTACHMENT_PATTERN.match(attachment):
             return False, "The attachment name must look like a file, e.g. Invoice_2026.pdf.", None
-
-        # The email must have something to click: a link in the body, or an attachment
-        if not CampaignService.is_clickable(message, attachment):
-            return False, "Add a link in the body (e.g. [Verify](https://...)) or an attachment to track.", None
 
         return True, "", {
             "scenario_id": None,
@@ -313,7 +305,9 @@ class CampaignService:
             "report": f"{base}/report/{token}",
         }
 
-        text_lines = [campaign.message, "", f"Open: {urls['link']}"]
+        text_lines = [campaign.message]
+        if LINK_PATTERN.search(campaign.message or ""):
+            text_lines += ["", f"Open: {urls['link']}"]   # only an email that has a link offers one
         if campaign.attachment:
             text_lines += ["", f"Attachment {campaign.attachment}: {urls['attachment']}"]
         text_lines += ["", f"{REPORT_NOTICE} {urls['report']}"]

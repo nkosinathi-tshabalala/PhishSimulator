@@ -529,16 +529,18 @@ try:
           all(p["blocked_reason"] == ("Not on the safety allow-list" if p["consented"] else "Has not agreed to campaign emails")
               for p in players if not p["selectable"]))
     unclickable = next((s for s in context["scenarios"] if not s["clickable"]), None)
-    check("campaign: dataset emails with no link and no attachment are marked as having nothing to click",
+    check("campaign: emails with no link and no attachment are marked as having nothing to click",
           unclickable is not None and all(
               s["clickable"] == bool(s["attachment"] or re.search(r"https?://|www\.", s["message"] or ""))
               for s in context["scenarios"]))
     if unclickable:
+        # Like a scam that asks for a reply: it can still be sent, and its result is a report or an ignore
         r = api("POST", "/api/campaigns", atoken, json={
             "scenario_id": unclickable["scenario_id"], "name": "E2E nothing to click", "recipients": [PLAYER_EMAIL]})
-        check("campaign: a dataset email with nothing to click is refused, like a custom one",
-              r.status_code == 400 and "nothing to click" in (body(r).get("message") or ""),
-              f"{r.status_code} {body(r).get('message')}")
+        check("campaign: an email with nothing to click can still be a campaign (report or ignore)",
+              r.status_code == 201, f"{r.status_code} {body(r).get('message')}")
+        if r.status_code == 201:
+            api("DELETE", f"/api/campaigns/{data_of(r).get('campaign_id')}", atoken)
     check("picker: occupations are Student/Employee/Other",
           {p["occupation"] for p in players} <= {"Student", "Employee", "Other"}, {p["occupation"] for p in players})
     check("campaign: scenario list offers phishing and genuine emails",
@@ -716,7 +718,10 @@ try:
     check("custom: missing subject is refused", r.status_code == 400, body(r).get("message"))
     r = api("POST", "/api/campaigns", atoken, json={"name": "E2E nothing to click", "recipients": [PLAYER_EMAIL],
                                                      "custom": {"sender": "IT <it@example.test>", "subject": "Hello", "message": "No link here"}})
-    check("custom: an email with no link and no attachment is refused", r.status_code == 400, body(r).get("message"))
+    check("custom: an email with no link and no attachment is accepted (report or ignore only)",
+          r.status_code == 201, f"{r.status_code} {body(r).get('message')}")
+    if r.status_code == 201:
+        api("DELETE", f"/api/campaigns/{data_of(r).get('campaign_id')}", atoken)
 
     def launch_custom(name, is_phishing, attachment=None):
         response = api("POST", "/api/campaigns", atoken, json={

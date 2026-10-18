@@ -2,9 +2,11 @@
 
 import { Loader2 } from "lucide-react";
 
-/** A spinning icon. Sized by className (default 20 px). */
+/** A spinning icon. Sized by className (default 20 px); the theme's primary colour unless className sets one
+ * (e.g. text-current inside a button, which is itself the primary colour). */
 export function Spinner({ className = "w-5 h-5" }: { className?: string }) {
-  return <Loader2 aria-hidden className={`animate-spin text-primary ${className}`} />;
+  const colour = /\btext-(?!xs|sm|base|lg|xl|\d)/.test(className) ? "" : "text-primary";
+  return <Loader2 aria-hidden className={`animate-spin ${colour} ${className}`} />;
 }
 
 /** Fills the page area (or the whole screen) while a page or its data loads. */
