@@ -3,6 +3,8 @@
 import re
 from random import Random
 
+from app.utils.links import find_urls, suspicious_links
+
 
 WARNING_SIGNS = {
     "Suspicious link": (
@@ -54,6 +56,22 @@ TRUST_SIGNALS = {
         r"\bexpected\b", r"\bcontext\b", r"\broutine\b", r"\bnormal\b", r"\bmakes sense\b",
         r"\brelevant\b",
     ),
+    "Official link": (
+        r"\b(official|real|correct|proper) (link|site|website|web site|domain|address)\b",
+        r"\blink (looks|is) (real|right|fine|legit|official)\b",
+    ),
+    "No link or attachment": (
+        r"\bno (links?|urls?|attachments?|files?)\b", r"\bnothing to (click|open|download)\b",
+        r"\bdoes(n't| not) (have|include|contain) (a |any )?(links?|attachments?)\b",
+    ),
+    "Personal greeting": (
+        r"\b(uses?|used|says|has|knows|with) my (real |first |full )?name\b", r"\bpersonal(i[sz]ed)? greeting\b",
+        r"\baddressed to me\b", r"\bby (my )?name\b",
+    ),
+    "Safe way to check": (
+        r"\bthe app\b", r"\bbanking app\b", r"\bofficial app\b", r"\bnever ask", r"\bbranch\b",
+        r"\bcall (the|a|their) (known|official|usual) number\b", r"\bcheck (it )?(myself|yourself|independently)\b",
+    ),
 }
 
 LEGACY_NAMES = {
@@ -77,7 +95,29 @@ CLUE_TIPS = {
     "No personal info requested": "The message doesn't ask for passwords, PINs or payment details.",
     "No pressure to act": "There is no artificial deadline or threat.",
     "Expected context": "The message fits something you were expecting.",
+    "Official link": "Every link goes to the organisation's real website, not a look-alike.",
+    "No link or attachment": "There is nothing to click or open, so there is nothing to trap you.",
+    "Personal greeting": "It greets you by name, which mass scams rarely do.",
+    "Safe way to check": "It points you to the official app, a branch or a known number instead of a link.",
 }
+
+# Phrases in a genuine message that send the reader to a safe channel instead of a link
+SAFE_CHANNEL_PHRASES = (
+    "we will never ask", "will never ask", "never ask for", "in the app", "the app", "banking app",
+    "official app", "our app", "nearest branch", "at the branch", "visit a branch", "any branch",
+    "number on the back of your card", "call us on", "call the number on",
+)
+# Opens with a greeting and a name: "Hi Thabo", "Dear Ms Naidoo", "Good morning Lerato"
+PERSONAL_GREETING = re.compile(
+    r"\A\s*(?i:hi|hello|hey|dear|good (?:morning|afternoon|evening)|morning|howzit|sawubona|molo)[ ,]+"
+    r"(?:(?:mr|mrs|ms|miss|dr|prof)\.? )?"
+    # Not a role or a group ("Dear Student", "Dear Residents"): those greet everyone, not you by name
+    r"(?!(?i:(?:customer|user|member|client|sir|madam|valued|friend|account|subscriber|beneficiary|winner|applicant"
+    r"|recipient|resident|student|parent|guardian|colleague|employee|staff|patient|guest|partner|supplier|investor"
+    r"|shareholder|policyholder|cardholder|holder|learner|team|everyone|all|there|neighbour|community|citizen"
+    r"|taxpayer|voter|traveller|passenger|shopper|seller|buyer|tenant|landlord|owner|reader|sender|player"
+    r"|valued)s?)\b)[A-Z][a-z]+"
+)
 
 # Words and phrases that show a warning sign in a message, matched as whole words in lower case. Every form of
 # a word is listed ("expire", "expires"...), since "expire" does not match inside "expires".
@@ -162,7 +202,8 @@ MESSAGE_PATTERNS = {
     ),
 }
 
-OPTIONS_PER_GROUP = 3
+# Clue buttons shown for one decision
+OPTION_COUNT = 6
 
 
 def normalise_clue(name):
@@ -206,23 +247,50 @@ def real_clues(scenario):
     if "Urgency" not in stored and "Threat or penalty" not in stored:
         signals.append("No pressure to act")
     signals.append("Expected context")
+    # These depend on the message itself, so on many genuine messages they are false and make good decoys
+    message = getattr(scenario, "message", "") or ""
+    urls = find_urls(message)
+    if urls and not suspicious_links(message):
+        signals.append("Official link")
+    if not urls and not (getattr(scenario, "attachment", "") or "").strip():
+        signals.append("No link or attachment")
+    if PERSONAL_GREETING.search(message):
+        signals.append("Personal greeting")
+    lowered = message.lower()
+    if any(contains_word(lowered, phrase) for phrase in SAFE_CHANNEL_PHRASES):
+        signals.append("Safe way to check")
     return signals
 
 
-def _pick_group(rng, group, real):
-    """Choose 3 names from one group, putting the real clues in first."""
-    real_in_group = [name for name in group if name in real]
-    others = [name for name in group if name not in real]
-    rng.shuffle(real_in_group)
-    rng.shuffle(others)
-    return (real_in_group + others)[:OPTIONS_PER_GROUP]
+def round_key(player_id, attempts, scenario_id):
+    """Identifies one showing of a scenario to one player: their id and how many times they have answered it
+    in training (campaign results left out). The page and the scoring both work it out from the attempts, so
+    the clue buttons change every time a message comes back, yet the score always uses the buttons shown."""
+    answered = sum(1 for attempt in attempts
+                   if attempt.scenario_id == scenario_id and getattr(attempt, "campaign_recipient_id", None) is None)
+    return f"{player_id}:{answered}"
 
 
-def clue_options(scenario):
-    """Six clue buttons: 3 warning signs and 3 trust signals, real ones included."""
-    rng = Random(scenario.scenario_id)
-    real = real_clues(scenario)
-    options = _pick_group(rng, list(WARNING_SIGNS), real) + _pick_group(rng, list(TRUST_SIGNALS), real)
+def clue_options(scenario, key=""):
+    """Six clue buttons from both groups. The group that matches the answer (warning signs for phishing, trust
+    signals for genuine) holds 2, 3 or 4 buttons, equally often, so neither the mix nor the layout gives the
+    answer away. It always holds at least one real clue and at least one decoy that does not apply to this
+    message, so ticking a whole group never works. The other group fills the rest with decoys. The same
+    scenario and key always give the same buttons."""
+    rng = Random(f"{scenario.scenario_id}:{key}")
+    is_phishing = scenario.correct_answer.upper() == "REPORT"
+    own, other = (WARNING_SIGNS, TRUST_SIGNALS) if is_phishing else (TRUST_SIGNALS, WARNING_SIGNS)
+    real = [clue for clue in real_clues(scenario) if clue in own]
+    own_decoys = [clue for clue in own if clue not in real]
+    other_decoys = list(other)
+    for group in (real, own_decoys, other_decoys):
+        rng.shuffle(group)
+
+    own_count = rng.choice((2, 3, 4))
+    shown_real = min(len(real), own_count - 1) if own_decoys else min(len(real), own_count)
+    options = real[:shown_real] + own_decoys[:own_count - shown_real]
+    options += other_decoys[:OPTION_COUNT - len(options)]
+    options += [clue for clue in own_decoys + real if clue not in options][:OPTION_COUNT - len(options)]
     rng.shuffle(options)
     return options
 
@@ -237,10 +305,11 @@ def match_reason(text):
     return matched
 
 
-def evaluate_justification(scenario, selected_clues, reason_text):
-    """Compare the player's reasons with the scenario's real clues."""
+def evaluate_justification(scenario, selected_clues, reason_text, key=""):
+    """Compare the player's reasons with the scenario's real clues. `key` is the round_key the buttons were
+    shown with, so only those buttons count."""
     real = real_clues(scenario)
-    offered = clue_options(scenario)
+    offered = clue_options(scenario, key)
     targets = [clue for clue in real if clue in offered]
     selected = [clue for clue in dict.fromkeys(selected_clues or []) if clue in offered]
     from_text = match_reason(reason_text)

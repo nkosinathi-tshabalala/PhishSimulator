@@ -11,7 +11,7 @@ from app.schemas.simulation_schema import SimulationSchema
 from app.analytics import FeedbackGenerator
 from app.services.campaign_service import CampaignService
 from app.services.progress_service import ProgressService
-from app.utils.clues import evaluate_justification
+from app.utils.clues import evaluate_justification, round_key
 
 
 class SimulationService:
@@ -50,7 +50,9 @@ class SimulationService:
         player_answer = str(data["player_answer"]).upper().strip()
         correct = player_answer == scenario.correct_answer.upper()
         justification = data.get("justification", "").strip()
-        clue_result = evaluate_justification(scenario, data.get("selected_clues", []), justification)
+        # The buttons this player was shown for this message, worked out as the page's request did
+        key = round_key(player.player_id, previous_attempts, scenario.scenario_id)
+        clue_result = evaluate_justification(scenario, data.get("selected_clues", []), justification, key)
 
         xp_earned = ProgressService.calculate_xp(
             correct,

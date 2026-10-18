@@ -62,7 +62,7 @@ from app.services.dataset_service import DatasetService
 from app.services.progress_service import ProgressService
 from app.services.scenario_service import ScenarioService
 from app.services.simulation_service import SimulationService
-from app.utils.clues import TRUST_SIGNALS, WARNING_SIGNS, clue_options, evaluate_justification, real_clues
+from app.utils.clues import TRUST_SIGNALS, WARNING_SIGNS, clue_options, evaluate_justification, real_clues, round_key
 from app.utils.emails import shown_email
 from app.utils.links import find_urls
 
@@ -571,7 +571,8 @@ def _decide(history, scenario, rng, when, skill):
             trap = "ATTACHMENT"
     answer = "SAFE" if trap else (scenario.correct_answer.upper() if correct else ("SAFE" if is_phishing else "REPORT"))
 
-    offered = clue_options(scenario)
+    key = round_key(history.player.player_id, history.attempts, scenario.scenario_id)
+    offered = clue_options(scenario, key)
     if correct:
         real = real_clues(scenario)
         spot_chance = min(0.9, 0.35 + skill * 0.55)
@@ -586,7 +587,7 @@ def _decide(history, scenario, rng, when, skill):
         picks = rng.sample(options, min(len(options), rng.randint(1, 2)))
     if not picks:
         picks = [rng.choice(offered)]   # the page asks for at least one clue or a reason
-    clue_result = evaluate_justification(scenario, picks, "")
+    clue_result = evaluate_justification(scenario, picks, "", key)
 
     xp = ProgressService.calculate_xp(correct, scenario.difficulty, clue_result["net_found"], history.multiplier())
     attempt = SimulationAttempt(

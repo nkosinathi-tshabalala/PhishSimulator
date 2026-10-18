@@ -318,6 +318,14 @@ export function ScenarioManagementPage({ onBack }: ScenarioManagementPageProps) 
     setPage(1);
   };
 
+  /** List the live scenarios behind one balance flag, so the admin can see which ones lean one way. */
+  const showFlag = (flag: BalanceFlag) => {
+    setChannel(flag.channel);
+    setFilters({ ...emptyFilters, status: "ACTIVE", [flag.group]: flag.name });
+    setPage(1);
+    document.getElementById("scenario-groups")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
   const openReview = async (scenarioId: number) => {
     if (busy) return;
     setBusy(`open-${scenarioId}`);
@@ -623,31 +631,33 @@ export function ScenarioManagementPage({ onBack }: ScenarioManagementPageProps) 
                   these categories for focused practice until they hold both kinds.
                 </span>
                 <span className="block">
-                  To fix a group: make live some scenarios of the missing kind in it, or correct a wrong category or
-                  difficulty when you review.
+                  To fix a group: make live some scenarios of the missing kind in it, archive the one-sided ones, or
+                  correct a wrong category or difficulty when you review. Click a group to list its live scenarios.
                 </span>
               </CardDescription>
             </CardHeader>
             <CardContent className="flex flex-wrap gap-2">
               {balance.map((flag) => (
-                <span
+                <button
+                  type="button"
                   key={`${flag.channel}-${flag.group}-${flag.name}`}
-                  className={`rounded-md border px-2 py-1 text-xs ${
+                  onClick={() => showFlag(flag)}
+                  className={`rounded-md border px-2 py-1 text-xs transition-colors hover:border-sky-400/60 ${
                     flag.status === "one_sided"
                       ? "border-amber-500/50 bg-amber-500/10 text-amber-200"
                       : "border-border text-muted-foreground"
                   }`}
-                  title={flag.status === "one_sided" ? "Only one answer is live" : "One answer is under a quarter"}
+                  title={`${flag.status === "one_sided" ? "Only one answer is live" : "One answer is under a quarter"}. Click to list these live scenarios.`}
                 >
                   {flag.channel === "EMAIL" ? "Email" : "SMS"} · {flag.name}
                   {flag.group === "difficulty" ? " (difficulty)" : ""}: {flag.phishing} phishing, {flag.genuine} genuine
-                </span>
+                </button>
               ))}
             </CardContent>
           </Card>
         )}
 
-        <Card>
+        <Card id="scenario-groups" className="scroll-mt-4">
           <CardHeader>
             <CardTitle>Scenarios by dataset</CardTitle>
             <CardDescription>
