@@ -79,29 +79,86 @@ CLUE_TIPS = {
     "Expected context": "The message fits something you were expecting.",
 }
 
+# Words and phrases that show a warning sign in a message, matched as whole words in lower case. Every form of
+# a word is listed ("expire", "expires"...), since "expire" does not match inside "expires".
 MESSAGE_KEYWORDS = {
     "Urgency": (
-        "urgent", "immediately", "within 24 hours", "act now", "expire",
-        "limited time", "action required", "as soon as possible",
+        "urgent", "urgently", "immediately", "immediate action", "immediate attention", "immediate response",
+        "within 24 hours", "within 48 hours", "within 12 hours", "24 hours", "48 hours",
+        "act now", "act fast", "act quickly", "respond now", "reply now", "respond asap", "asap",
+        "as soon as possible", "right away", "without delay", "do not delay", "don't wait", "don't miss",
+        "expire", "expires", "expired", "expiring", "expiration", "limited time", "time sensitive",
+        "time-sensitive", "action required", "action is required", "required action", "today only",
+        "ends soon", "ends today", "last chance", "final notice", "final warning", "final reminder",
+        "deadline", "before midnight", "expires midnight", "hurry", "promptly", "call now", "txt now",
+        "text now", "claim now", "emergency",
     ),
     "Credential request": (
-        "password", "login", "log in", "username", "verify your account",
-        "confirm your identity", "pin", "bank details",
+        "password", "passwords", "passcode", "login", "log in", "log-in", "sign in", "sign-in", "username",
+        "user name", "verify your account", "verify your identity", "verify your email", "verify your information",
+        "verify your details", "verify your username", "validate your", "confirm your identity",
+        "confirm your account", "confirm your details", "confirm your information", "update your information",
+        "update your informations", "update your details", "update your account", "re-confirm", "reconfirm",
+        "pin", "otp", "one-time pin", "2fa", "verification code", "security code", "security question",
+        "recovery key", "bank details", "banking details", "card details", "card number", "cvv",
+        "account number", "routing number", "social security number", "ssn", "id number",
+        "personal information", "personal details", "date of birth",
     ),
     "Generic greeting": (
-        "dear customer", "dear user", "dear member", "dear client",
-        "valued customer", "dear account holder",
+        "dear customer", "dear customers", "dear user", "dear member", "dear client", "valued customer",
+        "valued member", "dear valued", "dear account holder", "dear sir", "dear madam", "dear sir/madam",
+        "dear sir or madam", "dear friend", "dear beneficiary", "dear subscriber", "dear email user",
+        "dear webmail user", "dear applicant", "dear winner", "dear recipient", "hello user",
     ),
     "Too good to be true": (
-        "congratulations", "you have won", "winner", "prize", "free gift",
-        "claim your", "lottery", "reward",
+        "congratulations", "you have won", "you've won", "you won", "you ve won", "u have won", "ur awarded",
+        "you are awarded", "you have been awarded", "you have been selected", "you've been selected",
+        "selected recipient", "winner", "prize", "free gift", "gift card", "cashback", "await collection",
+        "claim your", "claim now", "to claim", "lottery", "jackpot", "reward", "cash prize", "100% free", "risk free",
+        "risk-free", "guaranteed", "double your", "investment opportunity", "inheritance", "next of kin",
+        "business proposal", "strictly confidential", "huge profit", "easy money", "earn money", "make money",
     ),
     "Threat or penalty": (
-        "suspended", "locked", "terminated", "legal action", "penalty",
-        "will be closed", "blocked", "deactivated",
+        "suspend", "suspended", "suspension", "locked", "terminate", "terminated", "termination",
+        "legal action", "penalty", "penalties", "fined", "will be closed", "be closed", "blocked", "block your",
+        "will block", "deactivate", "deactivated", "deactivation", "restricted", "restriction", "disabled",
+        "restrict your", "freeze your", "frozen", "seize your", "seized", "to court", "will be limited",
+        "access will be limited", "avoid interruption", "interruption of service", "service interruption",
+        "will be deleted", "permanently deleted", "lose access", "loss of access", "on hold", "hold on your",
+        "prosecution", "prosecuted", "arrest", "arrested", "warrant", "court order", "taken to court",
+        "lawsuit", "failure to", "will result in", "may result in", "will lead to", "will be denied",
+        "shutdown", "shut down", "debt collector", "blacklisted", "criminal", "prison", "the judge",
+        # Scares about the reader's device or account, to rush them into installing or signing in
+        "infected", "infection", "malware", "virus detected", "has been compromised", "been hacked",
+        "data breach",
     ),
     "Unexpected attachment": (
-        "see attached", "attachment", "open the file", "zip", "exe",
+        "see attached", "attached", "attachment", "attachments", "open the file", "open the attached",
+        "find attached", "enclosed", "download the", "zip file",
+    ),
+}
+
+# Warning signs that need a pattern rather than a word list
+MESSAGE_PATTERNS = {
+    "Generic greeting": (
+        # Opens without anyone's name: "Account holder, ...", "Attention: ...", "Notice, ..."
+        re.compile(r"\A\s*(?:account holder|attention|notice|hello user|hi user)\s*[,:!]"),
+        # Greets an email address instead of a person: "Hi you@example.com", "Dear jo@mail.com,"
+        re.compile(r"\b(?:dear|hello|hi)\s+[\w.+-]+@[\w-]+\.[\w.]+"),
+    ),
+    "Too good to be true": (
+        # Millions on offer: "$25 million", "US$ 10.5M", "15 million dollars"
+        re.compile(r"(?:[$€£₹]|\b(?:usd|us\$|eur|gbp)\s?)\s?\d[\d,.]*\s?(?:million|m)\b"
+                   r"|\b\d[\d,.]*\s?million\s(?:dollars|usd|euros?|pounds|rand)\b"),
+        # Text-speak claims: "Now toClaim", "2 claim"
+        re.compile(r"\b(?:to|2)\s?claim\b"),
+    ),
+    "Threat or penalty": (
+        # A fine, but not "I'm fine": "avoid a fine", "a fine of R500", "pay the fine", "traffic fine"
+        re.compile(r"\b(?:avoid (?:a |the |any )?fines?|a fine of|pay (?:the|a|your) fine|traffic fine|be fined)\b"),
+    ),
+    "Unexpected attachment": (
+        re.compile(r"\.(?:zip|exe|htm|html|docm|xlsm|iso|scr|js)\b"),
     ),
 }
 
@@ -130,6 +187,7 @@ def detect_message_signs(text):
     return [
         clue for clue, keywords in MESSAGE_KEYWORDS.items()
         if any(contains_word(lowered, keyword) for keyword in keywords)
+        or any(pattern.search(lowered) for pattern in MESSAGE_PATTERNS.get(clue, ()))
     ]
 
 

@@ -4,6 +4,7 @@ import {
   AtSign,
   Briefcase,
   Building2,
+  Gift,
   GraduationCap,
   KeyRound,
   Landmark,
@@ -19,14 +20,15 @@ import {
 import type { ScenarioStatus } from "../../types/catch";
 
 export const CATEGORY_STYLES: Record<string, { icon: typeof Tag; className: string }> = {
-  Banking: { icon: Landmark, className: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30" },
+  "Banking & Money": { icon: Landmark, className: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30" },
   Delivery: { icon: Package, className: "bg-orange-500/15 text-orange-300 border-orange-500/30" },
   Government: { icon: Building2, className: "bg-yellow-500/15 text-yellow-200 border-yellow-500/30" },
   Employment: { icon: Briefcase, className: "bg-teal-500/15 text-teal-300 border-teal-500/30" },
   University: { icon: GraduationCap, className: "bg-indigo-500/15 text-indigo-300 border-indigo-500/30" },
-  "Password Reset": { icon: KeyRound, className: "bg-rose-500/15 text-rose-300 border-rose-500/30" },
-  "Microsoft 365": { icon: LayoutGrid, className: "bg-sky-500/15 text-sky-300 border-sky-500/30" },
+  "Account Security": { icon: KeyRound, className: "bg-rose-500/15 text-rose-300 border-rose-500/30" },
+  "Email & IT": { icon: LayoutGrid, className: "bg-sky-500/15 text-sky-300 border-sky-500/30" },
   "Social Media": { icon: AtSign, className: "bg-fuchsia-500/15 text-fuchsia-300 border-fuchsia-500/30" },
+  "Prizes & Offers": { icon: Gift, className: "bg-pink-500/15 text-pink-300 border-pink-500/30" },
 };
 
 const DIFFICULTY_STYLES: Record<string, string> = {
@@ -108,7 +110,7 @@ export function AnswerBadge({ answer }: { answer: "REPORT" | "SAFE" }) {
       }`}
     >
       <Icon className="w-3 h-3" />
-      {isPhishing ? "Phishing" : "Legitimate"}
+      {isPhishing ? "Phishing" : "Genuine"}
     </span>
   );
 }

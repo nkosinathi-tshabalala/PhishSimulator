@@ -11,10 +11,14 @@
 # activity calendar look real. Only when OWNER_EMAIL is set does it also create a player for your own
 # address, with a couple of finished email campaigns.
 #
-# Every scenario comes from two real dataset files, one email and one SMS (DEMO_EMAIL_DATASET and
-# DEMO_SMS_DATASET in DEMO_DATASET_DIR, by default backend/uploads/datasets). They are imported exactly as
-# the Datasets page does it, so the quality check, cleaning and draft scenarios are the real ones. An admin
-# review is then replayed: a balanced set of drafts that pass every automatic check is approved and
+# Scenarios come from two public dataset files, one email and one SMS (DEMO_EMAIL_DATASET and
+# DEMO_SMS_DATASET in DEMO_DATASET_DIR, by default backend/uploads/datasets), plus two small DEMO-ONLY files
+# of author-written genuine messages (backend/demo, see its README). The public files have phishing about
+# accounts, IT, prizes and government but almost no genuine messages on those topics, so those categories
+# could not be practised on their own. DEMO_AUTHOR_WRITTEN=off leaves the demo-only files out, for figures
+# that come from the public datasets alone (as in the paper). Every file is imported exactly as the Datasets
+# page does it, so the quality check, cleaning and draft scenarios are the real ones. An admin review is
+# then replayed per channel: a balanced set of drafts that pass every automatic check is approved and
 # switched on, a few are left approved, a few broken ones are rejected, and the rest wait in review.
 # Players only ever practise on those active dataset scenarios, and each decision is chosen and scored
 # by the app's own rules (adaptive difficulty and category, clue checking, XP with the level multiplier).
@@ -23,6 +27,7 @@
 # your own inbox, so campaigns can be demonstrated end to end. Without DEMO_EMAIL they get clearly fake
 # @phishsimulator.test addresses. Most test players have agreed to campaign emails; some have not.
 
+import json
 import os
 import random
 import re
@@ -38,6 +43,7 @@ from app import create_app
 from app.adaptive.adaptive_engine import AdaptiveEngine
 from app.analytics import FeedbackGenerator
 from app.datasets.scenario_parser import ScenarioParser
+from app.datasets.scenario_realism import enrich_scenario
 from app.extensions import db, bcrypt
 from app.enums.occupation import Occupation
 from app.models.analytics import FeedbackReport, PerformanceTracker
@@ -93,11 +99,21 @@ NO_CONSENT_EVERY = 4
 DEMO_DATASET_DIR = Path(os.getenv("DEMO_DATASET_DIR") or Path(__file__).parent / "uploads" / "datasets")
 DEMO_DATASETS = (
     ("EMAIL", os.getenv("DEMO_EMAIL_DATASET") or "email/phishing_legit_dataset_KD_10000.csv"),
-    ("SMS", os.getenv("DEMO_SMS_DATASET") or "sms/Dataset_5971.csv"),
+    ("SMS", os.getenv("DEMO_SMS_DATASET") or "sms/Combined-Labeled-Dataset.csv"),
 )
+# Author-written content for the demo only, kept in the repository (backend/demo), left out with
+# DEMO_AUTHOR_WRITTEN=off: genuine emails in the KD format (uploaded as a "demo_only_..." dataset, so they
+# pair with KD phishing), and South African scenarios added by the admin (phishing and genuine, email and SMS).
+DEMO_ONLY_DIR = Path(__file__).parent / "demo"
+DEMO_ONLY_DATASETS = (
+    ("EMAIL", "demo_only_author_written_genuine_email.csv"),
+)
+SA_ADMIN_SCENARIOS = DEMO_ONLY_DIR / "sa_admin_scenarios.json"
+INCLUDE_DEMO_ONLY = (os.getenv("DEMO_AUTHOR_WRITTEN") or "on").strip().lower() != "off"
 # The datasets were uploaded and reviewed just before the first players joined
 UPLOADED_DAYS_AGO = DAYS + 6
-# The replayed admin review, per dataset and category: where a category has both answers, the same number of
+# The replayed admin review, per channel (all its datasets together) and category: where a category has both
+# answers, the same number of
 # phishing and genuine drafts are switched on (at most this many of each). Categories with only one answer
 # get at least a few, then are topped up in turn until the channel has as many phishing as genuine live
 # (Scenario Review flags them, and they are not offered for focused practice). A few more are approved but
@@ -105,7 +121,7 @@ UPLOADED_DAYS_AGO = DAYS + 6
 ACTIVE_PER_CATEGORY = 40
 ONE_SIDED_PER_CATEGORY = 4
 APPROVED_PER_ANSWER = 2
-REJECTED_PER_DATASET = 10
+REJECTED_PER_CHANNEL = 10
 
 # How the simulated players behave inside a decision
 SMS_SHARE = 0.4                 # share of decisions made in SMS training (the rest is email)
@@ -162,9 +178,12 @@ def demo_consent(index):
 
 
 def demo_dataset_files():
-    """The email and SMS files the demo scenarios come from. Checked before anything is wiped, so a missing
-    file leaves the database as it was."""
+    """The email and SMS files the demo scenarios come from: the public datasets, then the demo-only ones
+    unless DEMO_AUTHOR_WRITTEN=off. Checked before anything is wiped, so a missing file leaves the database
+    as it was."""
     files = [(channel, DEMO_DATASET_DIR / name) for channel, name in DEMO_DATASETS]
+    if INCLUDE_DEMO_ONLY:
+        files += [(channel, DEMO_ONLY_DIR / name) for channel, name in DEMO_ONLY_DATASETS]
     missing = [str(path) for _, path in files if not path.is_file()]
     if missing:
         raise SystemExit(
@@ -252,12 +271,38 @@ def _varied(scenarios, rng):
     return chosen
 
 
-def review_demo_dataset(dataset, rng, reviewed_at):
-    """Replay the admin's review in Scenario Review. Only drafts that pass every automatic check (the same
-    checks the review screen shows) can go live. Per category, an equal number of phishing and genuine ones
-    are switched on where the category has both; a one-sided category gets only a few. Then a few more are
-    left approved, and a few of the worst failing ones are rejected."""
-    drafts = Scenario.query.filter_by(dataset_id=dataset.dataset_id).order_by(Scenario.scenario_id).all()
+def seed_sa_admin_scenarios(reviewed_at):
+    """The admin's own South African scenarios (backend/demo/sa_admin_scenarios.json): common local phishing
+    and smishing with genuine messages of the same kind, the same number of each in every category. Added as
+    the Scenario Review "Create scenario" form adds them (no dataset), then approved and switched on. The
+    category is the admin's; warning signs, difficulty and realism follow the same rules as dataset imports."""
+    items = json.loads(SA_ADMIN_SCENARIOS.read_text(encoding="utf-8"))
+    for index, item in enumerate(items):
+        is_phishing = item["answer"] == "phishing"
+        fields = ScenarioParser.derive_fields(
+            item["channel"], item.get("sender", ""), item.get("subject", ""), item["message"], is_phishing,
+        )
+        scenario = Scenario(
+            title=item["title"], simulation_type=item["channel"], category=item["category"],
+            difficulty=fields["difficulty"], sender=fields["sender"] or None, subject=item.get("subject") or None,
+            message=item["message"], attachment=item.get("attachment"),
+            correct_answer="REPORT" if is_phishing else "SAFE", status="ACTIVE",
+            created_at=reviewed_at, approved_at=reviewed_at, updated_at=reviewed_at + timedelta(minutes=index),
+        )
+        scenario.set_phishing_cues(fields["phishing_cues"])
+        enrich_scenario(scenario)
+        db.session.add(scenario)
+    db.session.commit()
+    return len(items)
+
+
+def review_demo_channel(channel, dataset_ids, rng, reviewed_at):
+    """Replay the admin's review of one channel in Scenario Review, across all its datasets (so genuine
+    messages from one file can balance phishing from another in the same category). Only drafts that pass
+    every automatic check (the same checks the review screen shows) can go live. Per category, an equal
+    number of phishing and genuine ones are switched on where the category has both; a one-sided category gets
+    only a few. Then a few more are left approved, and a few of the worst failing ones are rejected."""
+    drafts = Scenario.query.filter(Scenario.dataset_id.in_(dataset_ids)).order_by(Scenario.scenario_id).all()
     passing = {"REPORT": [], "SAFE": []}
     failing = []
     for scenario in drafts:
@@ -314,7 +359,7 @@ def review_demo_dataset(dataset, rng, reviewed_at):
     for (category, answer), count in taken.items():
         spare[answer] += by_category[category][answer][count:]
     if not any(s.correct_answer == "REPORT" for s in live) or not any(s.correct_answer == "SAFE" for s in live):
-        raise SystemExit(f"Demo data not loaded: {dataset.name} has no phishing or no genuine drafts that pass "
+        raise SystemExit(f"Demo data not loaded: the {channel} datasets have no phishing or no genuine drafts that pass "
                          "every automatic check, so a mixed set cannot be switched on.")
 
     def mark(scenario, status, when):
@@ -328,7 +373,7 @@ def review_demo_dataset(dataset, rng, reviewed_at):
         for index, scenario in enumerate(group[:APPROVED_PER_ANSWER]):
             mark(scenario, "APPROVED", reviewed_at + timedelta(hours=3, minutes=2 * index))
     failing.sort(key=lambda scenario: (scenario.quality_score or 0, scenario.scenario_id))
-    for index, scenario in enumerate(failing[:REJECTED_PER_DATASET]):
+    for index, scenario in enumerate(failing[:REJECTED_PER_CHANNEL]):
         mark(scenario, "REJECTED", reviewed_at + timedelta(minutes=index))
     db.session.commit()
 
@@ -800,11 +845,17 @@ def main():
         wipe_dynamic_data()
 
         now = datetime.utcnow()
+        imported = {}  # channel -> ids of its datasets (ids, since each import detaches earlier objects)
+        last_upload = now - timedelta(days=UPLOADED_DAYS_AGO)
         for offset, (channel, source) in enumerate(sources):
-            uploaded = now - timedelta(days=UPLOADED_DAYS_AGO - offset, hours=rng.randint(1, 6))
+            last_upload = now - timedelta(days=UPLOADED_DAYS_AGO - offset, hours=rng.randint(1, 6))
             print(f"Importing the {channel} dataset {source.name} (the same check and drafts as an upload)...")
-            dataset = import_demo_dataset(channel, source, uploaded)
-            review_demo_dataset(dataset, rng, uploaded + timedelta(days=1))
+            imported.setdefault(channel, []).append(import_demo_dataset(channel, source, last_upload).dataset_id)
+        for channel, dataset_ids in imported.items():
+            review_demo_channel(channel, dataset_ids, rng, last_upload + timedelta(days=1))
+        if INCLUDE_DEMO_ONLY:
+            print("Adding the admin's South African scenarios...")
+            seed_sa_admin_scenarios(last_upload + timedelta(days=1, hours=2))
         # Loaded again here: each import clears the session as it goes, which detaches earlier objects
         live = Scenario.query.filter(Scenario.status == "ACTIVE").order_by(Scenario.scenario_id).all()
         pool = ScenarioPool(live)
@@ -862,6 +913,12 @@ def main():
             print(f"  {dataset.dataset_type} dataset {dataset.name}: {counts.get('ACTIVE', 0)} active "
                   f"({phishing} phishing), {counts.get('APPROVED', 0)} approved, {counts.get('REJECTED', 0)} rejected, "
                   f"{counts.get('DRAFT', 0)} drafts waiting for review")
+        for channel in ("EMAIL", "SMS"):
+            added = Scenario.query.filter(Scenario.dataset_id.is_(None), Scenario.simulation_type == channel,
+                                          Scenario.status == "ACTIVE")
+            if added.count():
+                print(f"  {channel} added by the admin (South African scenarios): {added.count()} active "
+                      f"({added.filter(Scenario.correct_answer == 'REPORT').count()} phishing)")
         print(f"  {players} players, {BaselineTemplate.query.count()} baseline assessments ({len(questions)} questions), "
               f"{attempts} decisions, {campaigns} campaigns")
         print(f"  baselines: assessment 1 on for every role; Student assessment 2 on ({second_baseline} students took it); "

@@ -9,9 +9,9 @@ class AdaptiveEngine:
     RECENT_ATTEMPT_COUNT = 5
     RECENT_CATEGORY_COUNT = 2
     OCCUPATION_CATEGORY_PRIORITIES = {
-        "Student": ("University", "Social Media", "Password Reset", "Delivery"),
-        "Employee": ("Microsoft 365", "Employment", "Banking", "Password Reset"),
-        "Other": ("Government", "Banking", "Delivery", "Social Media"),
+        "Student": ("University", "Social Media", "Account Security", "Delivery"),
+        "Employee": ("Email & IT", "Employment", "Banking & Money", "Account Security"),
+        "Other": ("Government", "Banking & Money", "Delivery", "Social Media"),
     }
 
     DIFFICULTY_LEVELS = ("Easy", "Medium", "Hard")

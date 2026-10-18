@@ -59,10 +59,11 @@ class ProgressService:
         ("zero_misses", "skill", "Zero Misses", "10 in a row with no missed phishing", 10,
          "Make 10 decisions in a row without marking a phishing message as safe. False alarms don't break the run."),
         ("category_master", "skill", "Category Master", "90%+ over 10 scenarios in one category", 10,
-         "Answer 10 scenarios in one category, like Banking, and get at least 90% of them right. Retakes count."),
+         "Answer 10 scenarios in one category, like Banking & Money, and get at least 90% of them right. "
+         "Retakes count."),
         ("all_rounder", "skill", "All-Rounder", "A correct decision in every category", len(ScenarioParser.CATEGORY_KEYWORDS),
-         "Get at least one scenario right in each category: banking, delivery, government, jobs, university, "
-         "passwords, Microsoft 365 and social media."),
+         "Get at least one scenario right in each category: delivery, university, jobs, government, social media, "
+         "email and IT, prizes and offers, account security, and banking and money."),
         ("comeback", "skill", "Comeback", "Skill rank rises after a drop", 1,
          "Your skill rank has to drop and then climb back up. Keep training after a bad run."),
         ("real_world_catch", "skill", "Real-World Catch", "Report a phishing campaign email", 1,

@@ -26,6 +26,7 @@ import { BaselineManagementPage } from "./components/BaselineManagementPage";
 import { AdminProfilePage } from "./components/AdminProfilePage";
 import AuthService from "../services/authService";
 import { SessionWatcher } from "./components/SessionWatcher";
+import { ViewerContext } from "./viewer";
 import { clearSession, mightBeSignedIn } from "../services/session";
 
 /** Root component: restores the login and shows the right page for the user's role. */
@@ -245,24 +246,26 @@ export default function App() {
   const backToTraining = () => handleNavigate("simulations");
 
   return (
-    <AppLayout
-      currentPage={currentPage}
-      backdrop="/assets/backdrop-player.webp"
-      renderSidebar={(layout) => (
-        <Sidebar currentPage={currentPage} onNavigate={handleNavigate} onLogout={handleLogout} {...layout} />
-      )}
-    >
-      <SessionWatcher onSignInAgain={handleSessionEnd} onLogout={handleLogout} />
-      {currentPage === "dashboard" && <Dashboard user={currentUser} onNavigate={handleNavigate} />}
-      {currentPage === "quiz" && <BaselineQuiz onBack={backToHome} />}
-      {currentPage === "simulations" && <SimulationsPage onNavigate={handleNavigate} />}
-      {currentPage === "email" && <EmailSimulation onBack={backToTraining} onNavigate={handleNavigate} />}
-      {currentPage === "sms" && <SMSSimulation onBack={backToTraining} onNavigate={handleNavigate} />}
-      {currentPage === "triage" && <InboxTriage onBack={backToTraining} onNavigate={handleNavigate} />}
-      {currentPage === "performance" && <Analytics />}
-      {currentPage === "profile" && (
-        <ProfilePage user={currentUser} setCurrentUser={setCurrentUser} onBack={backToHome} />
-      )}
-    </AppLayout>
+    <ViewerContext.Provider value={currentUser ? { name: currentUser.full_name, email: currentUser.email } : null}>
+      <AppLayout
+        currentPage={currentPage}
+        backdrop="/assets/backdrop-player.webp"
+        renderSidebar={(layout) => (
+          <Sidebar currentPage={currentPage} onNavigate={handleNavigate} onLogout={handleLogout} {...layout} />
+        )}
+      >
+        <SessionWatcher onSignInAgain={handleSessionEnd} onLogout={handleLogout} />
+        {currentPage === "dashboard" && <Dashboard user={currentUser} onNavigate={handleNavigate} />}
+        {currentPage === "quiz" && <BaselineQuiz onBack={backToHome} />}
+        {currentPage === "simulations" && <SimulationsPage onNavigate={handleNavigate} />}
+        {currentPage === "email" && <EmailSimulation onBack={backToTraining} onNavigate={handleNavigate} />}
+        {currentPage === "sms" && <SMSSimulation onBack={backToTraining} onNavigate={handleNavigate} />}
+        {currentPage === "triage" && <InboxTriage onBack={backToTraining} onNavigate={handleNavigate} />}
+        {currentPage === "performance" && <Analytics />}
+        {currentPage === "profile" && (
+          <ProfilePage user={currentUser} setCurrentUser={setCurrentUser} onBack={backToHome} />
+        )}
+      </AppLayout>
+    </ViewerContext.Provider>
   );
 }

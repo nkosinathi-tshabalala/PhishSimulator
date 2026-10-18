@@ -34,7 +34,7 @@ def make_attempts(results):
     return [SimpleNamespace(correct=result) for result in reversed(results)]
 
 
-def make_fact(correct=True, difficulty="Easy", is_phishing=True, category="Banking", clue_score=None):
+def make_fact(correct=True, difficulty="Easy", is_phishing=True, category="Banking & Money", clue_score=None):
     """One attempt in the shape the progress rules expect."""
     return {
         "correct": correct,
@@ -199,7 +199,7 @@ class CorrectStageTests(unittest.TestCase):
     @staticmethod
     def feedback(answer="REPORT", cues="Suspicious link,Urgency", correct=True, selected=(), trap=None):
         scenario = make_scenario(answer, cues)
-        scenario.simulation_type, scenario.category, scenario.feedback = "EMAIL", "Banking", None
+        scenario.simulation_type, scenario.category, scenario.feedback = "EMAIL", "Banking & Money", None
         scenario.message = "Your card is blocked. Unlock it at [Secure my account](https://fnb-verify.co.za/unlock)"
         result = evaluate_justification(scenario, list(selected), "")
         return FeedbackGenerator.build(scenario, correct, result, trap)
@@ -210,7 +210,7 @@ class CorrectStageTests(unittest.TestCase):
         self.assertEqual([clue["name"] for clue in feedback["clues_spotted"]], ["Suspicious link"])
         self.assertEqual([clue["name"] for clue in feedback["clues_missed"]], ["Urgency"])
         self.assertTrue(all(clue["tip"] for clue in feedback["clues_spotted"] + feedback["clues_missed"]))
-        self.assertEqual(feedback["threat_explanation"], FeedbackGenerator.CATEGORY_GUIDANCE["Banking"][0])
+        self.assertEqual(feedback["threat_explanation"], FeedbackGenerator.CATEGORY_GUIDANCE["Banking & Money"][0])
 
     def test_a_missed_link_clue_names_the_fake_link_and_why(self):
         missed = {clue["name"]: clue["tip"] for clue in self.feedback()["clues_missed"]}
@@ -297,11 +297,11 @@ class HelpStageRankTests(unittest.TestCase):
 
     def test_skill_badges_for_hard_catches_categories_and_campaigns(self):
         facts = [make_fact(True, "Hard", category=name) for name in
-                 ("Banking", "Delivery", "Government", "Employment", "University", "Password Reset",
-                  "Microsoft 365", "Social Media")]
+                 ("Banking & Money", "Delivery", "Government", "Employment", "University", "Account Security",
+                  "Email & IT", "Social Media", "Prizes & Offers")]
         facts.append({**make_fact(True), "campaign": True})
         progress = ProgressService.badge_progress(facts, [], {"daily_streak": 0, "longest_streak": 0})
-        self.assertEqual((progress["sharp_eye"], progress["all_rounder"], progress["real_world_catch"]), (8, 8, 1))
+        self.assertEqual((progress["sharp_eye"], progress["all_rounder"], progress["real_world_catch"]), (9, 9, 1))
 
 
 class LinkTests(unittest.TestCase):
@@ -333,6 +333,7 @@ class LinkTests(unittest.TestCase):
 
     def test_organisation_phone_numbers_are_not_personal_data(self):
         self.assertEqual(ScenarioParser.find_personal_data("Call 0800 110 929 or 0860 10 20 43"), [])
+        self.assertEqual(ScenarioParser.find_personal_data("Call 09061701461 to claim, or 08712400200"), [])
         self.assertEqual(ScenarioParser.find_personal_data("Call me on 082 555 1234"), ["phone number"])
 
     def test_made_up_addresses_are_not_personal_data(self):

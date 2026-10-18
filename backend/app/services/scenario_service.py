@@ -148,6 +148,8 @@ class ScenarioService:
             "simulation_type": scenario.simulation_type,
             "category": scenario.category,
             "difficulty": scenario.difficulty,
+            # Admins review the label too: "REPORT" is phishing, "SAFE" is genuine
+            "correct_answer": (scenario.correct_answer or "").upper(),
             "status": (scenario.status or "DRAFT").upper(),
             "dataset_id": scenario.dataset_id,
             "quality_score": scenario.quality_score,
@@ -197,6 +199,7 @@ class ScenarioService:
             "category": Scenario.category,
             # Easy, Medium, Hard in that order rather than alphabetically
             "difficulty": db.case({"Easy": 1, "Medium": 2, "Hard": 3}, value=Scenario.difficulty, else_=4),
+            "answer": Scenario.correct_answer,
             "status": Scenario.status,
             "quality": Scenario.quality_score,
             "uses": uses,

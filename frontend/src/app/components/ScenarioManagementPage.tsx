@@ -64,6 +64,7 @@ interface ScenarioSummary {
   simulation_type: Channel;
   category: string;
   difficulty: "Easy" | "Medium" | "Hard";
+  correct_answer: "REPORT" | "SAFE";
   status: ScenarioStatus;
   dataset_id: number | null;
   quality_score: number | null;
@@ -119,8 +120,8 @@ interface ScenarioForm {
 }
 
 const CATEGORIES = [
-  "Banking", "Delivery", "Government", "Employment",
-  "University", "Password Reset", "Microsoft 365", "Social Media", "General",
+  "Banking & Money", "Account Security", "Email & IT", "Prizes & Offers", "Delivery", "Government",
+  "Employment", "University", "Social Media", "General",
 ];
 
 const QA_ITEMS = [
@@ -196,7 +197,7 @@ function emptyForm(channel: Channel): ScenarioForm {
   return {
     title: "",
     simulation_type: channel,
-    category: "Password Reset",
+    category: "Account Security",
     difficulty: "Medium",
     sender: "",
     subject: "",
@@ -549,13 +550,22 @@ export function ScenarioManagementPage({ onBack }: ScenarioManagementPageProps) 
           <Card className="border-amber-500/40">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <AlertTriangle className="w-4 h-4 text-amber-400" /> Live answer balance
+                <AlertTriangle className="w-4 h-4 text-amber-400" /> Categories with only one kind of answer
               </CardTitle>
-              <CardDescription>
-                In these groups of active scenarios, phishing or genuine is missing or rare. Training picks phishing or
-                genuine first, so everyday practice stays mixed, but a player who focuses on one of these categories
-                sees mostly one answer. Switch on scenarios of the missing kind, or correct a category or difficulty
-                while reviewing.
+              <CardDescription className="space-y-1">
+                <span className="block">
+                  Live scenarios in these groups are all (or almost all) phishing, or all genuine. Amber: only one
+                  kind is live. Grey: the other kind is under a quarter.
+                </span>
+                <span className="block">
+                  Why it matters: if every live Government message is phishing, a player could answer "Report" from
+                  the label alone. The Adaptive mix still alternates phishing and genuine, but players can't pick
+                  these categories for focused practice until they hold both kinds.
+                </span>
+                <span className="block">
+                  To fix a group: make live some scenarios of the missing kind in it, or correct a wrong category or
+                  difficulty when you review.
+                </span>
               </CardDescription>
             </CardHeader>
             <CardContent className="flex flex-wrap gap-2">
@@ -619,6 +629,7 @@ export function ScenarioManagementPage({ onBack }: ScenarioManagementPageProps) 
         <TableHeader>
           <TableRow>
             <TableHead><SortButton label="Scenario" column="title" sort={sortState} onSort={sortBy} /></TableHead>
+            <TableHead><SortButton label="Label" column="answer" sort={sortState} onSort={sortBy} /></TableHead>
             <TableHead><SortButton label="Category" column="category" sort={sortState} onSort={sortBy} /></TableHead>
             <TableHead><SortButton label="Difficulty" column="difficulty" sort={sortState} onSort={sortBy} /></TableHead>
             <TableHead><SortButton label="Status" column="status" sort={sortState} onSort={sortBy} /></TableHead>
@@ -644,6 +655,7 @@ export function ScenarioManagementPage({ onBack }: ScenarioManagementPageProps) 
                   )}
                 </span>
               </TableCell>
+              <TableCell><AnswerBadge answer={scenario.correct_answer} /></TableCell>
               <TableCell><CategoryBadge category={scenario.category} /></TableCell>
               <TableCell><DifficultyBadge difficulty={scenario.difficulty} /></TableCell>
               <TableCell><StatusBadge status={scenario.status} /></TableCell>
@@ -668,7 +680,7 @@ export function ScenarioManagementPage({ onBack }: ScenarioManagementPageProps) 
           ))}
           {!scenarios.length && (
             <TableRow>
-              <TableCell colSpan={9} className="py-8 text-center text-muted-foreground">
+              <TableCell colSpan={10} className="py-8 text-center text-muted-foreground">
                 No scenarios match these filters.
               </TableCell>
             </TableRow>

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { ChevronDown, ChevronUp, FileArchive, FileCode2, FileSpreadsheet, FileText, Paperclip } from "lucide-react";
+import { useViewer } from "../../viewer";
 
 /** Split "Display Name <address>" into its parts. */
 export function parseSender(sender: string | null) {
@@ -19,11 +20,15 @@ function initials(name: string) {
   return (words[0]?.[0] ?? "?").toUpperCase() + (words[1]?.[0] ?? "").toUpperCase();
 }
 
-/** Sender display name; the real address shows when the details are opened. */
+/** Sender display name; the details (real from address, and the player as the recipient) show when opened. */
 export function SenderLine({ sender, compact = false }: { sender: string | null; compact?: boolean }) {
   const [isOpen, setIsOpen] = useState(false);
+  const viewer = useViewer();
   const { name, address } = parseSender(sender);
   const colour = AVATAR_COLOURS[name.length % AVATAR_COLOURS.length];
+  const hasAddress = Boolean(address) && address !== name;
+  const Chevron = isOpen ? ChevronUp : ChevronDown;
+  const toggle = () => setIsOpen((current) => !current);
 
   return (
     <div className="flex items-start gap-3 min-w-0">
@@ -33,19 +38,39 @@ export function SenderLine({ sender, compact = false }: { sender: string | null;
       <div className="min-w-0">
         <button
           type="button"
-          onClick={() => setIsOpen((current) => !current)}
+          onClick={toggle}
           className="flex items-center gap-1 font-semibold text-foreground hover:underline text-left"
           title="Show sender details"
         >
           <span className="truncate">{name}</span>
-          {address !== name && (isOpen ? <ChevronUp className="w-4 h-4 shrink-0" /> : <ChevronDown className="w-4 h-4 shrink-0" />)}
+          {(hasAddress || !compact) && <Chevron className="w-4 h-4 shrink-0" />}
         </button>
-        {isOpen && address !== name && (
-          <div className="mt-0.5 text-xs text-muted-foreground font-mono break-all animate-in fade-in slide-in-from-top-1">
-            &lt;{address}&gt;
-          </div>
+        {!compact && !isOpen && (
+          <button type="button" onClick={toggle} className="text-xs text-muted-foreground hover:underline">
+            to me
+          </button>
         )}
-        {!compact && <div className="text-xs text-muted-foreground">to me</div>}
+        {isOpen && (
+          <dl className="mt-1 grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 text-xs text-muted-foreground animate-in fade-in slide-in-from-top-1">
+            <dt>from:</dt>
+            <dd className="break-all">
+              <span className="text-foreground">{name}</span>
+              {hasAddress
+                ? <span className="font-mono"> &lt;{address}&gt;</span>
+                : <span className="italic"> (no address shown)</span>}
+            </dd>
+            {!compact && (
+              <>
+                <dt>to:</dt>
+                <dd className="break-all">
+                  {viewer
+                    ? <><span className="text-foreground">{viewer.name}</span> <span className="font-mono">&lt;{viewer.email}&gt;</span></>
+                    : "me"}
+                </dd>
+              </>
+            )}
+          </dl>
+        )}
       </div>
     </div>
   );

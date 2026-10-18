@@ -147,6 +147,29 @@ try:
         db.session.commit()
         ADMIN_EMAIL, ADMIN_ID, ADMIN2_ID = admin.email, admin.user_id, admin2.user_id
 
+        # The demo-only, author-written genuine messages pair with dataset phishing, so most email categories
+        # hold both answers and can be practised on their own (the public datasets alone allow one)
+        from app.models.datasets import Dataset
+        from app.models.scenario import Scenario
+        from app.services.scenario_service import ScenarioService
+        demo_only = [d for d in Dataset.query.all() if d.name.startswith("demo_only_")]
+        check("demo: the author-written genuine emails are imported as their own, clearly named dataset",
+              len(demo_only) == 1 and all(
+                  not Scenario.query.filter_by(dataset_id=d.dataset_id, correct_answer="REPORT").count() for d in demo_only),
+              [d.name for d in demo_only])
+        for channel, least in (("EMAIL", 7), ("SMS", 6)):
+            live = ScenarioService._candidates(ScenarioService._active_query(channel))
+            focusable = [c for c in {row[1] for row in live} if ScenarioService.is_mixed(live, c)]
+            check(f"demo: at least {least} {channel.lower()} categories can be picked for focused practice",
+                  len(focusable) >= least, sorted(focusable))
+        sa_live = Scenario.query.filter(Scenario.dataset_id.is_(None), Scenario.status == "ACTIVE").all()
+        sa_balance = {}
+        for scenario in sa_live:
+            key = (scenario.simulation_type, scenario.category)
+            sa_balance[key] = sa_balance.get(key, 0) + (1 if scenario.correct_answer == "REPORT" else -1)
+        check("demo: the admin's South African scenarios are live, with as many genuine as phishing in each category",
+              len(sa_live) > 80 and not any(sa_balance.values()), {k: v for k, v in sa_balance.items() if v})
+
     class Browser:
         """One person's browser: its own cookie jar (the login cookies), so several people can be signed in
         side by side during the check, as in separate browsers."""
@@ -522,15 +545,18 @@ try:
     check("campaign: scenario list offers phishing and genuine emails",
           {s["is_phishing"] for s in context["scenarios"]} == {True, False}, {s["is_phishing"] for s in context["scenarios"]})
     with app.app_context():
+        import json as _json
+        import seed_demo as _seed
         from app.models.scenario import Scenario
-        demo_sources = {(dataset_id is not None) for (dataset_id,) in db.session.query(Scenario.dataset_id).filter(
-            Scenario.status != Scenario.CAMPAIGN_STATUS).distinct()}
-    check("demo: every training scenario, and so every email offered for campaigns, comes from an uploaded dataset",
-          bool(context["scenarios"]) and demo_sources == {True}, demo_sources)
+        sa_titles = {item["title"] for item in _json.loads(_seed.SA_ADMIN_SCENARIOS.read_text(encoding="utf-8"))}
+        unknown = [title for title, dataset_id in db.session.query(Scenario.title, Scenario.dataset_id).filter(
+            Scenario.status != Scenario.CAMPAIGN_STATUS).all() if dataset_id is None and title not in sa_titles]
+    check("demo: every training scenario comes from an uploaded dataset or the admin's South African set",
+          bool(context["scenarios"]) and not unknown, unknown[:5])
     # The demo emails come from a generated dataset with no links, so the link-tracking checks use a phishing
     # email the admin adds by hand and switches on (create -> approve with the full checklist -> activate)
     r = api("POST", "/api/scenarios", atoken, json={
-        "title": "E2E campaign email", "simulation_type": "EMAIL", "category": "Banking", "difficulty": "Medium",
+        "title": "E2E campaign email", "simulation_type": "EMAIL", "category": "Banking & Money", "difficulty": "Medium",
         "sender": "Standard Bank <alerts@standardbank-verify.co>", "subject": "Unusual sign-in on your account",
         "correct_answer": "REPORT", "phishing_cues": ["Suspicious link", "Urgency"],
         "message": "We noticed an unusual sign-in. Confirm your details within 24 hours at "
