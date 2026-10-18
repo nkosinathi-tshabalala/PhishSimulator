@@ -165,6 +165,14 @@ docker compose up -d
 
 Otherwise run `docker compose down -v` once (this deletes the data) so the database is recreated with the new values.
 
+**A clean install without demo data** (as a real organisation would start): set `SEED_DEMO=off` in `backend/.env` before the first start, then create the administrator. Registration in the app only creates players, and the command asks for the password twice so it stays out of the shell history:
+
+```powershell
+docker compose exec backend flask --app run.py create-admin admin@example.com
+```
+
+Sign in as that administrator, load the baseline questions (**Baseline Management → Load template bank**), upload datasets on the **Datasets** page, then approve and activate scenarios in **Scenario Review**. Players register themselves.
+
 Useful commands: `docker compose ps` (status and health), `docker compose logs -f backend` (what the API is doing), `docker compose up -d --build` (after pulling changes).
 
 ## Requirements (manual setup)

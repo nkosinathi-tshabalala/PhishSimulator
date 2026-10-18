@@ -1314,6 +1314,20 @@ try:
     check("security: log out", api("POST", "/api/auth/logout", ptoken).status_code == 200)
     check("security: a logged-out token is rejected straight away", api("GET", "/api/auth/me", ptoken).status_code == 401)
 
+    # ---------- an administrator created from the command line (a database without the demo data) ----------
+    runner = app.test_cli_runner()
+    cli_admin, cli_password = "cli.admin@example.test", "Cli#Admin2026"
+    result = runner.invoke(args=["create-admin", cli_admin, "--password", cli_password])
+    check("cli: create-admin makes an administrator", result.exit_code == 0 and "created" in result.output,
+          f"{result.output} {result.exception!r}")
+    cli_token, r = login(cli_admin, cli_password)
+    check("cli: the new administrator can sign in and reach admin pages",
+          bool(cli_token) and api("GET", "/api/datasets", cli_token).status_code == 200, body(r))
+    result = runner.invoke(args=["create-admin", cli_admin, "--password", cli_password])
+    check("cli: create-admin refuses an address that already has an account", result.exit_code != 0, result.output)
+    result = runner.invoke(args=["create-admin", "weak.admin@example.test", "--password", "short"])
+    check("cli: create-admin refuses a weak password", result.exit_code != 0, result.output)
+
     # ---------- delete the player last (removes attempts + baseline too) ----------
     if test_user:
         r = api("DELETE", f"/api/analytics/users/{test_user['user_id']}", atoken)

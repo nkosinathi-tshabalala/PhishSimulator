@@ -5,6 +5,7 @@ import os
 from flask import Flask
 from flask_cors import CORS
 
+from app.commands import register_commands
 from app.config import Config
 from app.extensions import bcrypt, db, jwt, migrate
 from app.security import register_security
@@ -39,6 +40,7 @@ def create_app():
     bcrypt.init_app(app)
     jwt.init_app(app)
     register_security(app)
+    register_commands(app)
 
     for blueprint in (
         auth_bp,
