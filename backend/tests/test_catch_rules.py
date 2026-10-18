@@ -15,6 +15,7 @@ from app.utils.clues import (
     clue_options,
     evaluate_justification,
     real_clues,
+    round_key,
 )
 
 
@@ -142,14 +143,16 @@ class TestStageTests(unittest.TestCase):
 
     def test_selected_and_written_clues_both_count(self):
         scenario = make_scenario()
-        decoy = next(option for option in clue_options(scenario) if option in TRUST_SIGNALS)
-        result = evaluate_justification(
-            scenario, ["Suspicious link", "Fake sender", decoy], "It says within 24 hours",
-        )
-        self.assertEqual(result["spotted"], ["Suspicious link", "Urgency", "Fake sender"])
+        real = real_clues(scenario)
+        offered = clue_options(scenario)
+        real_offered = [option for option in offered if option in real]
+        decoy = next(option for option in offered if option not in real)
+        result = evaluate_justification(scenario, real_offered + [decoy], "It says within 24 hours")
+        # A typed reason counts even when its button was not among the six
+        self.assertEqual(set(result["spotted"]), set(real_offered) | {"Urgency"})
         self.assertEqual(result["missed"], [])
         self.assertEqual(result["wrong_picks"], [decoy])
-        self.assertEqual(result["score"], 67)
+        self.assertEqual(result["score"], round((len(real_offered) - 1) / len(real_offered) * 100))
 
     def test_ticking_every_button_earns_nothing_extra(self):
         scenario = make_scenario()
@@ -176,21 +179,59 @@ class TestStageTests(unittest.TestCase):
         self.assertIn("No personal info requested", clues)
 
     def test_options_mix_real_clues_with_decoys_and_are_stable(self):
-        scenario = make_scenario()
-        options = clue_options(scenario)
-        self.assertEqual(len(options), 6)
-        self.assertTrue(set(real_clues(scenario)) <= set(options))
-        self.assertEqual(options, clue_options(scenario))
+        for scenario in (make_scenario(), make_scenario("SAFE", cues="")):
+            real = real_clues(scenario)
+            own = WARNING_SIGNS if scenario.correct_answer == "REPORT" else TRUST_SIGNALS
+            for key in ("1:0", "1:1", "7:0", "7:3"):
+                options = clue_options(scenario, key)
+                self.assertEqual(len(options), 6)
+                self.assertEqual(len(set(options)), 6)
+                self.assertTrue(any(option in real for option in options), options)
+                # A decoy on the answer's own side, so ticking that whole side never works
+                self.assertTrue(any(option in own and option not in real for option in options), options)
+                self.assertEqual(options, clue_options(scenario, key))
+
+    def test_buttons_change_each_time_a_message_comes_back(self):
+        scenario = make_scenario("SAFE", cues="")
+        shown = {tuple(sorted(clue_options(scenario, f"7:{n}"))) for n in range(6)}
+        self.assertGreater(len(shown), 2)
 
     def test_button_mix_does_not_reveal_the_answer(self):
-        for scenario_id in range(1, 30):
-            for scenario in (
-                make_scenario("REPORT", scenario_id=scenario_id),
-                make_scenario("SAFE", cues="", scenario_id=scenario_id),
-            ):
-                options = clue_options(scenario)
-                self.assertEqual(sum(option in WARNING_SIGNS for option in options), 3)
-                self.assertEqual(sum(option in TRUST_SIGNALS for option in options), 3)
+        def trust_counts(answer, cues):
+            return [sum(option in TRUST_SIGNALS for option in clue_options(make_scenario(answer, cues, scenario_id=n)))
+                    for n in range(1, 301)]
+        phishing, genuine = trust_counts("REPORT", "Suspicious link,Urgency,Fake sender"), trust_counts("SAFE", "")
+        self.assertEqual(set(phishing), {2, 3, 4})
+        self.assertEqual(set(genuine), {2, 3, 4})
+        self.assertLess(abs(sum(phishing) / 300 - sum(genuine) / 300), 0.25)
+
+    def test_round_key_counts_training_answers_only(self):
+        attempts = [SimpleNamespace(scenario_id=5, campaign_recipient_id=None),
+                    SimpleNamespace(scenario_id=5, campaign_recipient_id=9),
+                    SimpleNamespace(scenario_id=6, campaign_recipient_id=None)]
+        self.assertEqual(round_key(3, attempts, 5), "3:1")
+        self.assertEqual(round_key(3, [], 5), "3:0")
+
+    def test_trust_signals_that_depend_on_the_message(self):
+        def clues(message, attachment=""):
+            scenario = make_scenario("SAFE", cues="")
+            scenario.message, scenario.attachment = message, attachment
+            return real_clues(scenario)
+        official = clues("Hi Thabo, your order has shipped. Track it at https://www.takealot.com/orders")
+        self.assertIn("Official link", official)
+        self.assertIn("Personal greeting", official)
+        self.assertNotIn("No link or attachment", official)
+        plain = clues("Dear customer, your statement is ready. We will never ask for your PIN.")
+        self.assertIn("No link or attachment", plain)
+        self.assertIn("Safe way to check", plain)
+        self.assertNotIn("Personal greeting", plain)
+        for group in ("Dear Student, exams start Monday.", "Dear Residents, water is off today.", "Hi all, see you"):
+            self.assertNotIn("Personal greeting", clues(group), group)
+        self.assertIn("Personal greeting", clues("Good morning Lerato, your parcel is at the counter."))
+        self.assertIn("Personal greeting", clues("Dear Ms Naidoo, your statement is ready."))
+        self.assertNotIn("Official link", plain)
+        self.assertNotIn("No link or attachment", clues("Your payslip is attached.", attachment="Payslip.pdf"))
+        self.assertNotIn("Official link", clues("Hi Thabo, confirm at https://takealot-secure-login.xyz/verify"))
 
 
 class CorrectStageTests(unittest.TestCase):
@@ -201,7 +242,10 @@ class CorrectStageTests(unittest.TestCase):
         scenario = make_scenario(answer, cues)
         scenario.simulation_type, scenario.category, scenario.feedback = "EMAIL", "Banking & Money", None
         scenario.message = "Your card is blocked. Unlock it at [Secure my account](https://fnb-verify.co.za/unlock)"
-        result = evaluate_justification(scenario, list(selected), "")
+        # A showing whose buttons include every real clue (when one exists), so "missed" covers all of them
+        key = next((key for key in map(str, range(200))
+                    if set(real_clues(scenario)) <= set(clue_options(scenario, key))), "")
+        result = evaluate_justification(scenario, list(selected), "", key)
         return FeedbackGenerator.build(scenario, correct, result, trap)
 
     def test_phishing_feedback_lists_found_and_missed_clues_with_tips(self):

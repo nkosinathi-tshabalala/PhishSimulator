@@ -64,7 +64,7 @@ function JustifyStep({ round }: { round: SimulationRound }) {
   const scenario = round.scenario;
   if (!scenario) return null;
 
-  const decisionText = round.decision === "REPORT" ? "reported" : "marked as safe";
+  const decisionText = round.decision === "REPORT" ? "reported this message" : "marked this message as safe";
 
   return (
     <div className="space-y-3">
@@ -73,7 +73,7 @@ function JustifyStep({ round }: { round: SimulationRound }) {
       ) : (
         <div className="flex items-center justify-between gap-2">
           <h4 className="font-semibold">
-            You {decisionText} this message. <span className="text-sky-400">Why?</span>
+            You {decisionText}. <span className="text-sky-400">Why?</span>
           </h4>
           <Button variant="ghost" size="sm" onClick={round.changeDecision}>
             <ArrowLeft className="w-4 h-4 mr-1" />

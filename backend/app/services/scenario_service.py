@@ -17,7 +17,7 @@ from app.datasets.scenario_parser import ScenarioParser
 from app.datasets.scenario_realism import quality_review, quality_score
 from app.schemas.scenario_schema import ScenarioSchema
 from app.utils.clock import iso_utc, local_today, utc_now, utc_start_of
-from app.utils.clues import clue_options
+from app.utils.clues import clue_options, round_key
 from app.utils.labels import LEGACY_TITLE_PREFIX, message_label
 from app.utils.links import describe_link, find_urls, link_problems
 
@@ -665,8 +665,10 @@ class ScenarioService:
         ).order_by(Scenario.scenario_id).all()
 
     @staticmethod
-    def _player_payload(scenario, completed_ids):
-        """What a player may see before deciding: never the answer or clues."""
+    def _player_payload(scenario, completed_ids, player, channel_attempts):
+        """What a player may see before deciding: never the answer or clues. The clue buttons are drawn for
+        this showing of the message (see round_key), and the scoring draws the same ones."""
+        key = round_key(player.player_id if player else 0, channel_attempts, scenario.scenario_id)
         return {
             "scenario_id": scenario.scenario_id,
             "simulation_type": scenario.simulation_type,
@@ -676,7 +678,7 @@ class ScenarioService:
             "subject": scenario.subject,
             "message": scenario.message,
             "attachment": scenario.attachment,
-            "clue_options": clue_options(scenario),
+            "clue_options": clue_options(scenario, key),
             "already_completed": scenario.scenario_id in completed_ids,
         }
 
@@ -718,7 +720,7 @@ class ScenarioService:
         completed_ids = {a.scenario_id for a in channel_attempts}
         occupation = player.profile.occupation if player and player.profile else None
         return True, "Here's one you missed before. Take another look.", {
-            **ScenarioService._player_payload(scenario, completed_ids),
+            **ScenarioService._player_payload(scenario, completed_ids, player, channel_attempts),
             "completed_count": len(completed_ids),
             "mistakes_to_review": len(mistake_ids),
             "total_active": ScenarioService._active_query(simulation_type).count(),
@@ -796,7 +798,7 @@ class ScenarioService:
             return False, "No scenarios are currently available.", None
 
         return True, "Scenario retrieved successfully.", {
-            **ScenarioService._player_payload(scenario, completed_ids),
+            **ScenarioService._player_payload(scenario, completed_ids, player, channel_attempts),
             "completed_count": len(completed_ids),
             "mistakes_to_review": len(ScenarioService.mistakes_to_review(channel_attempts)),
             "total_active": total_active,
