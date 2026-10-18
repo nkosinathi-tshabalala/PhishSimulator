@@ -2,6 +2,16 @@
 
 PhishSimulator is a scenario-based, gamified phishing-awareness trainer built on the **CATCH framework**. Players inspect realistic email and SMS messages, choose **Report** or **Mark Safe**, and then **justify** the decision by picking clues. The server checks the reasons against the real clues, gives instant feedback, awards XP, and adapts the next scenario to the player's skill. There is no public leaderboard: progress and skill rank are private.
 
+**Quick start:** install Docker Desktop, then from this folder:
+
+```powershell
+Copy-Item .env.example .env                   # Docker settings: database, ports, URLs
+Copy-Item backend\.env.example backend\.env   # then set SECRET_KEY and JWT_SECRET_KEY (see below)
+docker compose up -d --build
+```
+
+Open http://localhost:8080 once `docker compose ps` shows the backend as `healthy` (the first start loads the demo data for a few minutes). Sign in as **admin@phishsimulator.com** / **Admin#2026**, or register a player. Details are in "Running with Docker" below.
+
 ## The CATCH framework
 
 | Stage | What happens | Where in the code |
@@ -26,11 +36,13 @@ PhishSimulator is a scenario-based, gamified phishing-awareness trainer built on
 - Works on phones: the sidebar becomes a slide-in menu, and pages load on demand.
 - Every table and list has a search, filters and click-to-sort columns (click once for ascending, again for descending), and every row opens its details.
 - The metrics pages (admin **System Analytics** and the player's **My Progress**) filter by date range (7, 30 or 90 days, all time, or custom dates), channel, difficulty, category, training vs campaign emails and, for admins, group (students, employees, other). XP, level and badges always count the full history.
-- Skeleton loaders and toast notifications (shadcn/ui + Sonner) throughout.
+- Loading indicators on every page (page spinners, skeletons, and a spinner on each button while the server works) and toast notifications (shadcn/ui + Sonner). A dataset upload or delete keeps running while you move to another page.
 - Private progress, inspired by platforms like TryHackMe: a stats strip (rank, badges, streak, simulations completed), 15 badges, current and best streaks, a yearly activity calendar, XP, levels and the skill rank, plus your position among all players (e.g. **#11 of 41, top 27%**; players with fewer than 10 decisions are not rated yet and sit below everyone who is). Players only ever see their own position, never another player's name or score.
 - **Home** is about what to do next (daily goal, training, goals, campaign inbox, recent decisions); **My Progress** is about how you are doing, in three tabs: *Overview* (activity calendar, skill rank, level), *Performance* (filtered metrics and charts) and *Badges* (the full collection).
 - Administrator dashboard, user monitoring, role-based baseline assessment management and analytics, with tinted stat cards throughout.
 - Email phishing campaigns: send a real training email through Gmail to your own inboxes — from an approved scenario or a custom email you write, phishing or genuine, with a link and/or a look-alike attachment — then track opens, clicks, attachment opens, reports and "ignored" (no action inside the response window). Once a recipient acts, the result is locked; once every recipient's result is final, the campaign shows as **Completed**. Every result emails the recipient branded feedback (good or bad) and awards XP (a mistake earns 0, never less), and each result counts as a real decision in the player's stats, streak, rank and Home **Inbox**.
+- Scenario Review flags live categories that hold only one kind of answer; each flag lists the scenarios behind it.
+- Test players' addresses are shown with the owner's inbox hidden (`•••+zanele.mashaba@gmail.com`).
 - Local reset and realistic demo-data generation utilities.
 
 ### Email campaign safety
@@ -41,10 +53,59 @@ Campaign emails are only ever sent to addresses on the `CAMPAIGN_ALLOWED_RECIPIE
 
 The application has two parts:
 
-- `backend/`: Flask API, JWT authentication, SQLAlchemy models, migrations, dataset processing, adaptive logic, and analytics.
+- `backend/`: Flask API with server-side login sessions (signed tokens in HttpOnly cookies), SQLAlchemy models, Alembic migrations, dataset processing, adaptive logic, analytics and email campaigns.
 - `frontend/`: React/TypeScript/Vite interface for player and administrator workflows.
 
 The frontend communicates with the backend through JSON API services. The backend is the source of truth for authentication, scenario correctness, scores, permissions, adaptive recommendations, and analytics.
+
+In Docker, three containers run:
+
+```text
+browser --> nginx (frontend container, :8080) --> /api/* --> Gunicorn + Flask (backend, :5000) --> PostgreSQL (db)
+             serves the built React app                      a background thread closes campaign emails past
+                                                             their window and sessions that ran out
+```
+
+The page and the API share one address (nginx forwards `/api`; in development the Vite dev server does), so the login cookies stay first-party. Campaign links and the tracking pixel go to the API port directly (`PUBLIC_BACKEND_URL`).
+
+### Tech stack
+
+| Part | Built with |
+| --- | --- |
+| Frontend | React 19, TypeScript 5.8, Vite 7, Tailwind CSS 4, shadcn/ui (Radix), Recharts, Sonner, Lucide icons |
+| Backend | Python 3.12, Flask 3.1, SQLAlchemy 2 (Flask-SQLAlchemy), Alembic (Flask-Migrate), Flask-JWT-Extended, bcrypt, Gunicorn |
+| Database | PostgreSQL (16 in Docker) |
+| Email | Gmail SMTP with an app password |
+| Containers | Docker Compose: `postgres:16-alpine`, `python:3.12-slim`, `node:24-alpine` (build) then `nginx:alpine` |
+
+### Project layout
+
+```text
+backend/
+  app/
+    routes/        HTTP endpoints, one file per area (auth, baseline, scenarios, simulation, analytics, datasets, campaigns)
+    services/      the rules behind each endpoint (where most logic lives)
+    models/        database tables (SQLAlchemy)
+    schemas/       input checks for each request
+    adaptive/      difficulty and answer selection (adaptive_engine.py)
+    analytics/     feedback text, metric filters and trends
+    datasets/      dataset parsing and realism (scenario_parser.py, scenario_realism.py)
+    email/         Gmail sending and the branded result email
+    utils/         clues, links, labels, dates and address display
+    seed/          the baseline question bank (baseline_questions.json)
+    security.py    sessions, CSRF and origin checks, rate limits, headers, error replies
+    config.py      settings read from backend/.env
+  migrations/      Alembic migrations: the database schema history, kept in git
+  demo/            the admin's custom scenarios used by the demo (admin_custom_scenarios.json)
+  tests/           unit tests (test_*.py) and the end-to-end check (e2e_check.py)
+  seed_demo.py     builds the demo data; reset_database.py empties the database
+  entrypoint.sh    container start: wait for the database, migrate, seed in the background, start Gunicorn
+frontend/
+  src/app/         App.tsx (pages and navigation) and components/ (one file per page, plus ui/, simulation/, progress/, charts/)
+  src/services/    API calls, session and CSRF helpers, form checks, background dataset jobs
+  nginx.conf.template   serves the build and forwards /api to the backend
+docker-compose.yml, .env.example   the Docker setup
+```
 
 The main runtime flow is:
 
@@ -72,9 +133,11 @@ Copy-Item backend\.env.example backend\.env   # then set SECRET_KEY and JWT_SECR
 docker compose up -d --build
 ```
 
-Open http://localhost:8080. The API is on http://localhost:5000.
+Create each secret with `python -c "import secrets; print(secrets.token_hex(32))"`; the API refuses to start with a missing or short one. For the demo data, put the two public dataset files in `backend/uploads/datasets` (see "Demo data"); without them the app starts with an empty database.
 
-Nothing is hard-coded in `docker-compose.yml`; every setting comes from one of two files:
+Open http://localhost:8080. The API is on http://localhost:5000, reachable from this computer only.
+
+Settings come from two files. Only two values are fixed in `docker-compose.yml` itself, so nothing in `.env` or the shell can change them: `FLASK_ENV=production` (Gunicorn never runs the debugger) and `TRUSTED_PROXY_COUNT=1` (nginx sits in front of the API).
 
 | File | Holds |
 | --- | --- |
@@ -83,7 +146,7 @@ Nothing is hard-coded in `docker-compose.yml`; every setting comes from one of t
 
 Both are ignored by git, and neither is copied into an image.
 
-With `SEED_DEMO=auto` (the default), the demo data is loaded **once**, the first time the database is empty. After that it is kept across restarts, rebuilds and `docker compose down`, and so are the datasets you upload (they live in their own `uploads_data` volume). No public datasets are baked into the image (only the two small demo-only files in `backend/demo`): the demo's public datasets are imported from the two files in `DEMO_DATASETS_HOST_DIR` (by default `backend/uploads/datasets`), which compose mounts read-only into the backend, and you can upload more from the Datasets page once running. Loading takes about three minutes (most of it the quality check and import of the 85,000-row SMS file). It loads in the background: the app answers at once, but until it finishes every page says "PhishSimulator is still getting ready" and `docker compose ps` shows the backend as `health: starting`. Wait for `healthy` (or "Ready: the app can be used now." in `docker compose logs -f backend`) and do not restart the container meanwhile, because an interrupted load starts again from the beginning. If a demo file is missing, the seed stops before deleting anything and the app starts without demo data. Set `SEED_DEMO=reset` to reload the demo data on every start, or `off` to never seed.
+With `SEED_DEMO=auto` (the default), the demo data is loaded **once**, the first time the database is empty. After that it is kept across restarts, rebuilds and `docker compose down`, and so are the datasets you upload (they live in their own `uploads_data` volume). No public datasets are baked into the image (only the admin's custom scenarios in `backend/demo`): the demo's public datasets are imported from the two files in `DEMO_DATASETS_HOST_DIR` (by default `backend/uploads/datasets`), which compose mounts read-only into the backend, and you can upload more from the Datasets page once running. Loading takes about three minutes (most of it the quality check and import of the 85,000-row SMS file). It loads in the background: the app answers at once, but until it finishes every page says "PhishSimulator is still getting ready" and `docker compose ps` shows the backend as `health: starting`. Wait for `healthy` (or "Ready: the app can be used now." in `docker compose logs -f backend`) and do not restart the container meanwhile, because an interrupted load starts again from the beginning. If a demo file is missing, the seed stops before deleting anything and the app starts without demo data. Set `SEED_DEMO=reset` to reload the demo data on every start, or `off` to never seed.
 
 Sign in as the admin the seed creates (`ADMIN_EMAIL` / `ADMIN_PASSWORD` in `backend/.env`, by default **admin@phishsimulator.com** / **Admin#2026**). Every test player uses `DEMO_PASSWORD` (by default `Player#2026`, e.g. `lerato.mokoena@phishsimulator.test`). The seed does not create an account for you: register your own player in the app. Campaigns can still reach it as long as your address is on `CAMPAIGN_ALLOWED_RECIPIENTS`.
 
@@ -93,14 +156,23 @@ Sign in as the admin the seed creates (`ADMIN_EMAIL` / `ADMIN_PASSWORD` in `back
 | `docker compose down` | Removed | Kept |
 | `docker compose down -v` | Removed | **Deleted** (database and uploads); the next `up` loads the demo data again |
 
-The database user and password are applied only when the database volume is first created. If you change `DB_USER` or `DB_PASSWORD` in `.env`, run `docker compose down -v` once so the database is recreated with them.
+The database user and password are applied only when the database volume is first created. To change the password and keep the data, change it inside the database first, then in `.env`, and restart:
+
+```powershell
+"ALTER USER postgres PASSWORD 'new-password';" | docker compose exec -T db psql -U postgres -d phishsimulator_db
+docker compose up -d
+```
+
+Otherwise run `docker compose down -v` once (this deletes the data) so the database is recreated with the new values.
+
+Useful commands: `docker compose ps` (status and health), `docker compose logs -f backend` (what the API is doing), `docker compose up -d --build` (after pulling changes).
 
 ## Requirements (manual setup)
 
-- Python 3.10+ recommended.
-- Node.js and npm.
+- Python 3.12 (the version in Docker; newer ones work too).
+- Node.js 22 or 24 with npm (Vite 7 needs Node 20.19 or newer).
 - Git.
-- PostgreSQL (the only supported database).
+- PostgreSQL 16 or newer (the only supported database).
 
 ## Backend setup
 
@@ -159,7 +231,7 @@ npm install
 npm run dev
 ```
 
-Open the Vite URL shown in the terminal, normally `http://localhost:5173`.
+Open the Vite URL shown in the terminal, normally `http://localhost:5173`. The dev server passes `/api` to Flask on `http://127.0.0.1:5000` (`VITE_DEV_API_TARGET` in `frontend/.env`), so start the API first.
 
 To create a production frontend build:
 
@@ -302,7 +374,7 @@ Badge rules, targets and "how to earn it" text live in one place: `ProgressServi
 
 ## Email campaigns
 
-An admin can send a real phishing-awareness email, built from an approved email scenario, to their own inboxes and see who opens it, clicks the link, or reports it.
+An admin can send a real phishing-awareness email, built from an active email scenario or written from scratch, to their own inboxes and see who opens it, clicks the link, or reports it.
 
 **Setup (Gmail):**
 
@@ -311,7 +383,7 @@ An admin can send a real phishing-awareness email, built from an approved email 
 3. Set `CAMPAIGN_ALLOWED_RECIPIENTS` to your own addresses. `*` is a wildcard, so `you+*@gmail.com` lets you send to any Gmail plus-alias of your own address (each alias arrives in your inbox but looks like a separate recipient).
 4. Open campaign emails on this computer. The app runs on `localhost` only, and the links in each email point to `PUBLIC_BACKEND_URL` (`http://localhost:5000`), which only this computer can reach.
 
-**Building a campaign:** pick an active email scenario, or write your own (sender, subject, body, phishing or genuine, warning signs, and an optional look-alike attachment such as `Invoice_2026.pdf`). Choose recipients from the registered players — the picker greys out anyone not on the allow-list. Save the draft, then Send.
+**Building a campaign:** pick an active email scenario, or write your own (sender, subject, body, phishing or genuine, warning signs, and an optional look-alike attachment such as `Invoice_2026.pdf`). Choose recipients from the registered players — the picker greys out anyone who has not agreed to campaign emails or is not on the allow-list. Save the draft, then Send.
 
 **How it works:** each recipient gets a unique tracking link, an invisible tracking pixel, a clickable attachment tile (styled like a mail client — no real file is attached), and a neutral report link. Opening the email loads the pixel (an open); clicking the link or the attachment, or using the report link, is recorded. The **first** action is the one that counts and locks the result; a later action changes nothing. If nothing happens within `CAMPAIGN_IGNORE_MINUTES` (default 10), the result is **Ignored**. An email with no link and no attachment (like a scam that asks for a reply) can be sent as well: its result can only be **Reported** or **Ignored**, and the campaign page lists such emails apart as "report or ignore only". A background sweep closes expired emails even if no one is looking at the app.
 
@@ -352,7 +424,7 @@ Logins are **server-side sessions**: every sign-in is one row in the `user_sessi
 | Secrets | Passwords and keys live only in `.env` files, which git and Docker both ignore. The API refuses to start unless `SECRET_KEY` and `JWT_SECRET_KEY` are at least 32 characters. Tokens only accept HS256 with this API's issuer and audience. |
 | Accidental commits | `.githooks/pre-commit` blocks a commit that adds an `.env` file, a key file, uploaded data, or a line such as `SMTP_PASSWORD=...`. Turn it on once per clone with `git config core.hooksPath .githooks`. |
 | Passwords | Stored as bcrypt hashes. New passwords need 8 to 64 characters with a letter and a number (bcrypt reads at most 72 bytes). |
-| Guessing | Five wrong passwords in a row lock the account for 15 minutes. Per-address rate limits on sign-in (10 a minute), registration (10 an hour), password resets (5 per 15 minutes) and refreshing. The reply never says whether an email exists, and an unknown email takes as long to answer as a known one. |
+| Guessing | Five wrong passwords in a row lock the account for 15 minutes. Per-address rate limits on sign-in (10 a minute), registration (10 an hour), password resets (5 per 15 minutes) and refreshing. A failed sign-in never says whether the email exists, and an unknown email takes as long to answer as a known one. |
 | Password reset | A one-time link that works for 30 minutes. The token is after `#` in the link, so it never reaches a server log or a Referer header. Only a SHA-256 hash is stored, and using it signs out every session. |
 | Data leaks | Replies carry only what the page shows: no ids or security fields in `/me`, no tokens in any body. Errors are logged on the server; the browser only sees a plain message. The CSV export makes any cell that would run as a spreadsheet formula plain text. |
 | Headers | The API sends a `default-src 'none'` Content-Security-Policy, `X-Frame-Options: DENY`, `nosniff`, `no-referrer`, `Cache-Control: no-store`, `Cross-Origin-Opener-Policy` and `Cross-Origin-Resource-Policy`, plus HSTS when reached over HTTPS. |
@@ -361,6 +433,21 @@ Logins are **server-side sessions**: every sign-in is one row in the `user_sessi
 | Roles | Admin endpoints check the role in the database on every request (`@require_admin`), and players can only read their own data. |
 
 Known limits: the rate-limit counts are kept per Gunicorn worker in memory (3 workers, so up to 3 times the stated limit; the per-account lock still applies), and the User-Agent check is a signal, not proof, since a thief can copy it too. Registration does say when an email is already registered, so people can sign in instead.
+
+## Known limitations
+
+- **Simulated demo players.** The 40 demo players are replayed through the app's own selection and scoring code. They show the system working end to end; they are not results from real users.
+- **Rule-based clues and categories.** Warning signs, trust signals and categories come from keyword lists and patterns, not machine learning, so some public-dataset messages land in an odd category. Admin review in Scenario Review is the safeguard.
+- **Mixed public data.** Many dataset drafts fail the automatic checks or need curation, which is why most live demo content is the admin's custom scenarios.
+- **Localhost only.** Campaign clicks, attachment opens and reports are recorded when the email is opened on this computer. Gmail loads images through Google's servers, which cannot reach `localhost`, so Gmail opens may not be recorded.
+- **Rate limits per worker.** The per-address counts live in each Gunicorn worker's memory (3 workers). The lock after 5 wrong passwords applies regardless.
+- **Uploads on local disk.** Uploaded datasets are kept in a Docker volume; a hosted version would use object storage such as S3.
+
+## What git keeps
+
+- **Committed:** all source code, the Alembic migrations in `backend/migrations` (the schema history: every container start and the end-to-end check build the database from them), the baseline question bank, the admin's custom scenarios, and the `.env.example` templates.
+- **Never committed:** `.env` files and keys, uploaded datasets (`backend/uploads/`), database dumps, `node_modules/`, `dist/`, `.venv/` and `__pycache__/` (see `.gitignore`). The pre-commit hook checks this again once it is switched on (`git config core.hooksPath .githooks`).
+- **Branches:** work happens on `development` and is merged into `master` with a merge commit.
 
 ## Important development rules
 
@@ -381,6 +468,8 @@ Backend syntax check and CATCH rule tests:
 .\backend\.venv\Scripts\python.exe -m compileall -q backend\app backend\seed_demo.py
 cd backend; .\.venv\Scripts\python.exe -m unittest discover tests
 ```
+
+That runs 162 unit tests and needs no database.
 
 End-to-end check of the whole API (233 checks across every CATCH stage, sessions, security and the demo data). It builds a fresh throwaway database on your PostgreSQL server from every migration plus the demo data, prints a trace of one test learner, then drops the database; your own database is never touched:
 
