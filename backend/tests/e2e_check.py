@@ -407,6 +407,9 @@ try:
     monitored = items(data_of(api("GET", "/api/analytics/users", atoken)), "users")
     test_user = next((u for u in monitored if u.get("email") == PLAYER_EMAIL), None)
     check("admin: new player appears in user monitoring", test_user is not None)
+    check("admin: every listed address has a display form, and ordinary addresses are shown unchanged",
+          bool(monitored) and all(u.get("email_display") == u.get("email") for u in monitored if "+" not in u.get("email", "")),
+          [u.get("email_display") for u in monitored][:3])
     if test_user:
         check("admin: one user's details", api("GET", f"/api/analytics/users/{test_user['user_id']}", atoken).status_code == 200)
     datasets = items(data_of(api("GET", "/api/datasets", atoken)), "datasets")

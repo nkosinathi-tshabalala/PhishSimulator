@@ -28,6 +28,8 @@ import { PageHeader } from "./PageHeader";
 interface CurrentUser {
   full_name: string;
   email: string;
+  /** The address as shown: a test player's alias of the demo inbox hides that inbox. */
+  email_display?: string;
   age: number | null;
   occupation: string | null;
   it_background: boolean | null;
@@ -80,7 +82,7 @@ export function ProfilePage({
 
     setProfileData({
       fullName: user.full_name ?? "",
-      email: user.email ?? "",
+      email: user.email_display ?? user.email ?? "",
       age: user.age !== null ? user.age.toString() : "",
       itBackground: user.it_background === true ? "yes" : "no",
       occupation: user.occupation ?? "",

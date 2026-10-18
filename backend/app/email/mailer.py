@@ -9,6 +9,7 @@ from ssl import create_default_context
 
 from flask import current_app
 
+from app.utils.emails import shown_email
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +37,7 @@ class Mailer:
         if not Mailer.is_configured():
             return False, "Email sending is not configured. Add SMTP_USERNAME and SMTP_PASSWORD to backend/.env."
         if not Mailer.is_allowed(recipient):
-            return False, f"{recipient} is not on CAMPAIGN_ALLOWED_RECIPIENTS, so nothing was sent."
+            return False, f"{shown_email(recipient)} is not on CAMPAIGN_ALLOWED_RECIPIENTS, so nothing was sent."
 
         sender_address = current_app.config["SMTP_USERNAME"]
         message = EmailMessage()
@@ -64,7 +65,7 @@ class Mailer:
             )
         except smtplib.SMTPRecipientsRefused:
             logger.warning("Gmail refused the address %s", recipient)
-            return False, f"Gmail would not accept the address {recipient}."
+            return False, f"Gmail would not accept the address {shown_email(recipient)}."
         except (OSError, smtplib.SMTPException) as error:
             logger.warning("Email to %s could not be sent: %s", recipient, error)
             return False, f"The mail server could not be reached ({type(error).__name__}). Check SMTP_HOST and SMTP_PORT."

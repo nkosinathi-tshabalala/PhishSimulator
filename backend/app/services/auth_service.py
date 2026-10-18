@@ -15,6 +15,7 @@ from app.extensions import bcrypt, db
 from app.models.authentication import PasswordResetToken, Player, User, UserProfile
 from app.schemas.auth_schema import AuthSchema
 from app.services.session_service import SessionService
+from app.utils.emails import shown_email
 
 # Wrong passwords allowed in a row before the account is locked for LOCK_MINUTES
 MAX_FAILED_LOGINS = 5
@@ -241,6 +242,7 @@ class AuthService:
         # Every admin action is still checked on the server. No ids or security fields are sent.
         return {
             "email": user.email,
+            "email_display": shown_email(user.email),
             "role": user.role,
             "full_name": player.full_name if player else "Administrator",
             "age": profile.age if profile else None,

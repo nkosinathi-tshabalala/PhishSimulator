@@ -48,6 +48,7 @@ export default function App() {
   interface CurrentUser {
     full_name: string;
     email: string;
+    email_display?: string;
     age: number | null;
     occupation: string | null;
     it_background: boolean | null;
@@ -256,7 +257,7 @@ export default function App() {
   const backToTraining = () => handleNavigate("simulations");
 
   return (
-    <ViewerContext.Provider value={currentUser ? { name: currentUser.full_name, email: currentUser.email } : null}>
+    <ViewerContext.Provider value={currentUser ? { name: currentUser.full_name, email: currentUser.email_display ?? currentUser.email } : null}>
       <AppLayout
         currentPage={currentPage}
         backdrop="/assets/backdrop-player.webp"

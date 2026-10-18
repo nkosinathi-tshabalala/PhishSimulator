@@ -24,6 +24,7 @@ from app.services.campaign_service import CampaignService
 from app.services.progress_service import ProgressService
 from app.services.scenario_service import ScenarioService
 from app.utils.clock import local_date, local_today, utc_start_of
+from app.utils.emails import shown_email
 
 
 # How many of the player's latest decisions My Progress lists
@@ -261,7 +262,7 @@ class AnalyticsService:
             last = performance["recent_attempts"][0]["attempted_at"] if performance["recent_attempts"] else ""
             writer.writerow([
                 AnalyticsService._safe_cell(player.full_name),
-                AnalyticsService._safe_cell(player.user.email if player.user else ""),
+                AnalyticsService._safe_cell(shown_email(player.user.email) if player.user else ""),
                 player.profile.occupation.value if player.profile else "",
                 performance["baseline_score"] if performance["baseline_score"] is not None else "",
                 performance["total_attempts"],
@@ -497,6 +498,7 @@ class AnalyticsService:
             "user_id": user.user_id,
             "full_name": player.full_name if player else "Administrator",
             "email": user.email,
+            "email_display": shown_email(user.email),
             "role": user.role,
             "occupation": profile.occupation.value if profile else None,
             "accuracy": accuracy,
@@ -517,7 +519,7 @@ class AnalyticsService:
 
         activity.extend({
             "action": "New user registered",
-            "detail": user.email,
+            "detail": shown_email(user.email),
             "occurred_at": user.created_at,
             "type": "user",
         } for user in User.query.filter(User.created_at.is_not(None))

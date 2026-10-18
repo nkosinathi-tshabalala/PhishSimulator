@@ -7,6 +7,8 @@ import CampaignService from "../../services/campaignService";
 
 interface LandingInfo {
   email: string;
+  /** The address as shown: a test player's alias of the demo inbox hides that inbox. */
+  email_display?: string;
   scenario_title: string;
   sender: string | null;
   subject: string | null;
@@ -205,7 +207,7 @@ export function CaughtPage({ variant }: { variant: "caught" | "reported" }) {
 
         <Button className="mt-6 w-full" onClick={goToLogin}>
           <LogIn className="w-4 h-4" />
-          {info ? `Sign in as ${info.email}` : "Sign in to practise spotting phishing"}
+          {info ? `Sign in as ${info.email_display ?? info.email}` : "Sign in to practise spotting phishing"}
         </Button>
       </div>
     </div>

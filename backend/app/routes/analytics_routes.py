@@ -43,9 +43,11 @@ def get_admin_analytics():
 @require_admin
 def export_player_progress():
     """Admin: every player's progress as a CSV file for tutors."""
+    # The byte-order mark tells Excel the file is UTF-8, so accented names and the "•••" of hidden
+    # addresses open correctly
     return Response(
-        AnalyticsService.export_player_progress_csv(),
-        mimetype="text/csv",
+        "﻿" + AnalyticsService.export_player_progress_csv(),
+        content_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": "attachment; filename=player_progress.csv"},
     )
 
