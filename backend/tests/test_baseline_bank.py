@@ -29,11 +29,12 @@ class BaselineBankTests(unittest.TestCase):
         for t in BANK:
             self.assertEqual(len(t["questions"]), 7, f'{t["occupation"]} {t["name"]}')
 
-    def test_names_are_numbered_and_unique_per_role(self):
+    def test_names_say_what_they_cover_and_are_unique_per_role(self):
         names = [(t["occupation"], t["name"]) for t in BANK]
         self.assertEqual(len(names), len(set(names)))
         for t in BANK:
-            self.assertRegex(t["name"], r"^Baseline assessment \d+$")
+            self.assertNotRegex(t["name"], r"(?i)^baseline assessment \d+$")   # a name, not a number
+            self.assertLessEqual(len(t["name"]), 120)
 
     def test_roles_are_known(self):
         for t in BANK:

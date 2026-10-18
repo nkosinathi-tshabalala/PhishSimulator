@@ -1,6 +1,6 @@
 [
  {
-  "name": "Baseline assessment 1",
+  "name": "Student Money and Campus Accounts",
   "occupation": "Student",
   "active": true,
   "description": "Everyday student risks: NSFAS, social media, university IT, bursaries and accommodation.",
@@ -106,7 +106,7 @@
   ]
  },
  {
-  "name": "Baseline assessment 2",
+  "name": "Prizes, Exams and Free Offers",
   "occupation": "Student",
   "active": false,
   "description": "More student risks: prizes, leaked exams, impersonated lecturers, free offers and fake Wi-Fi.",
@@ -212,7 +212,7 @@
   ]
  },
  {
-  "name": "Baseline assessment 1",
+  "name": "Workplace Email and Payments",
   "occupation": "Employee",
   "active": true,
   "description": "Workplace basics: Microsoft 365, CEO payment fraud, supplier bank changes, attachments and MFA prompts.",
@@ -318,7 +318,7 @@
   ]
  },
  {
-  "name": "Baseline assessment 2",
+  "name": "Shared Files, Calls and QR Codes",
   "occupation": "Employee",
   "active": false,
   "description": "More workplace risks: shared documents, SMS, remote-access calls, QR codes and invoice attachments.",
@@ -424,7 +424,7 @@
   ]
  },
  {
-  "name": "Baseline assessment 1",
+  "name": "Everyday Banking and Delivery Scams",
   "occupation": "Other",
   "active": true,
   "description": "Everyday South African scams: SARS, bank OTPs, WhatsApp codes, prizes and parcel fees.",
@@ -530,7 +530,7 @@
   ]
  },
  {
-  "name": "Baseline assessment 2",
+  "name": "Grants, Marketplaces and Investments",
   "occupation": "Other",
   "active": false,
   "description": "More everyday scams: grants, marketplaces, investments, prepaid electricity and fake jobs.",

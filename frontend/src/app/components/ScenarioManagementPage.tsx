@@ -92,7 +92,10 @@ interface DatasetGroup {
   dataset_id: number | "none";
   name: string;
   uploaded_at: string | null;
+  // At the selected stage (the rows an open group lists)
   count: number;
+  // At every stage
+  total: number;
   by_status: Record<ScenarioStatus, number>;
 }
 
@@ -383,7 +386,15 @@ export function ScenarioManagementPage({ onBack }: ScenarioManagementPageProps) 
 
     if (response.ok && response.data.success) {
       setIsFormOpen(false);
-      await loadScenarios();
+      if (editingId) {
+        await loadScenarios();
+      } else {
+        // A new scenario is a draft in the admin's own group: open that group at the Draft stage to show it
+        // next to the earlier custom ones (the group's total still counts the live ones)
+        setChannel(payload.simulation_type);
+        setFilters({ ...emptyFilters, status: "DRAFT", dataset_id: "none" });
+        setPage(1);
+      }
     }
   };
 
@@ -616,7 +627,9 @@ export function ScenarioManagementPage({ onBack }: ScenarioManagementPageProps) 
                     <Database className="w-4 h-4 shrink-0 text-teal-300" />
                     <span className="font-semibold">{group.name}</span>
                     <span className="text-sm text-muted-foreground">
-                      {group.count.toLocaleString()} scenario{group.count === 1 ? "" : "s"}
+                      {group.total.toLocaleString()} scenario{group.total === 1 ? "" : "s"}
+                      {filters.status && group.count !== group.total
+                        && ` · ${group.count.toLocaleString()} ${filters.status.toLowerCase()} shown`}
                       {group.uploaded_at && ` · uploaded ${formatWhen(group.uploaded_at)}`}
                     </span>
                     <span className="ml-auto flex flex-wrap gap-1.5">
@@ -685,7 +698,10 @@ export function ScenarioManagementPage({ onBack }: ScenarioManagementPageProps) 
           {!scenarios.length && (
             <TableRow>
               <TableCell colSpan={10} className="py-8 text-center text-muted-foreground">
-                {isLoading ? <InlineLoader label="Loading scenarios..." /> : "No scenarios match these filters."}
+                {isLoading ? <InlineLoader label="Loading scenarios..." />
+                  : filters.status && !filters.search
+                    ? `None at the ${filters.status.toLowerCase()} stage here. Pick another stage above, or All stages.`
+                    : "No scenarios match these filters."}
               </TableCell>
             </TableRow>
           )}

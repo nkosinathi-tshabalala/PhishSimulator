@@ -112,7 +112,7 @@ class BaselineSchema:
         """Check a baseline assessment's name, role and description."""
         name = str(data.get("name") or "").strip()
         if require_name and not name:
-            return False, "Give the baseline assessment a name, e.g. Baseline assessment 2."
+            return False, "Give the baseline assessment a name that says what it covers, e.g. Workplace Email and Payments."
         if len(name) > 120:
             return False, "The name can be at most 120 characters."
         occupation = data.get("occupation")

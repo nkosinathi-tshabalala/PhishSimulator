@@ -6,7 +6,7 @@ from app.extensions import db
 
 
 class BaselineTemplate(db.Model):
-    """A baseline assessment such as "Student · Baseline assessment 1". The admin switches it on for its role."""
+    """A baseline assessment such as "Student · Student Money and Campus Accounts". The admin switches it on for its role."""
 
     __tablename__ = "baseline_template"
 

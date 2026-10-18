@@ -23,6 +23,12 @@ from pathlib import Path
 BACKEND = Path(__file__).resolve().parents[1]
 SCRATCH = Path(tempfile.mkdtemp(prefix="phishsim_e2e_"))
 TEST_DB = "phishsim_e2e_check"
+# The template bank's assessment names, by role and position (first switched on, second off)
+BANK = {
+    ("Student", 1): "Student Money and Campus Accounts", ("Student", 2): "Prizes, Exams and Free Offers",
+    ("Employee", 1): "Workplace Email and Payments", ("Employee", 2): "Shared Files, Calls and QR Codes",
+    ("Other", 1): "Everyday Banking and Delivery Scams", ("Other", 2): "Grants, Marketplaces and Investments",
+}
 PASSWORD = "E2eCheck!2026"
 PLAYER_EMAIL = "e2e.player@example.test"
 ADMIN2_EMAIL = "second.admin@example.test"
@@ -147,16 +153,20 @@ try:
         db.session.commit()
         ADMIN_EMAIL, ADMIN_ID, ADMIN2_ID = admin.email, admin.user_id, admin2.user_id
 
-        # The demo-only, author-written genuine messages pair with dataset phishing, so most email categories
-        # hold both answers and can be practised on their own (the public datasets alone allow one)
+        # The admin's custom scenarios are most of what players see; the public datasets add a few balanced pairs
         from app.models.datasets import Dataset
         from app.models.scenario import Scenario
         from app.services.scenario_service import ScenarioService
-        demo_only = [d for d in Dataset.query.all() if d.name.startswith("demo_only_")]
-        check("demo: the author-written genuine emails are imported as their own, clearly named dataset",
-              len(demo_only) == 1 and all(
-                  not Scenario.query.filter_by(dataset_id=d.dataset_id, correct_answer="REPORT").count() for d in demo_only),
-              [d.name for d in demo_only])
+        import seed_demo as _demo
+        check("demo: only the two public dataset files are uploaded (no demo-only dataset)",
+              sorted(d.name for d in Dataset.query.all()) == sorted(Path(name).name for _, name in _demo.DEMO_DATASETS),
+              [d.name for d in Dataset.query.all()])
+        for channel in ("EMAIL", "SMS"):
+            live = Scenario.query.filter(Scenario.status == "ACTIVE", Scenario.simulation_type == channel)
+            custom = live.filter(Scenario.dataset_id.is_(None)).count()
+            from_datasets = live.count() - custom
+            check(f"demo: most live {channel.lower()} scenarios are the admin's custom ones, a few come from datasets",
+                  custom > 2 * from_datasets and from_datasets > 0, f"{custom} custom, {from_datasets} from datasets")
         for channel, least in (("EMAIL", 7), ("SMS", 6)):
             live = ScenarioService._candidates(ScenarioService._active_query(channel))
             focusable = [c for c in {row[1] for row in live} if ScenarioService.is_mixed(live, c)]
@@ -167,7 +177,7 @@ try:
         for scenario in sa_live:
             key = (scenario.simulation_type, scenario.category)
             sa_balance[key] = sa_balance.get(key, 0) + (1 if scenario.correct_answer == "REPORT" else -1)
-        check("demo: the admin's South African scenarios are live, with as many genuine as phishing in each category",
+        check("demo: the admin's custom scenarios are live, with as many genuine as phishing in each category",
               len(sa_live) > 80 and not any(sa_balance.values()), {k: v for k, v in sa_balance.items() if v})
 
     class Browser:
@@ -252,15 +262,15 @@ try:
     offered = available.get("assessments") or []
     check("baseline: a new Student is offered both switched-on Student assessments (1 and 2), marked new",
           [(row["role"], row["name"], row["status"]) for row in offered]
-          == [("Student", "Baseline assessment 1", "new"), ("Student", "Baseline assessment 2", "new")]
+          == [("Student", BANK[("Student", 1)], "new"), ("Student", BANK[("Student", 2)], "new")]
           and available.get("newCount") == 2, offered)
     r = api("POST", "/api/baseline/start", ptoken)
     start = data_of(r)
     questions = start.get("questions") or []
     check("player: baseline quiz starts", r.status_code == 200 and questions, f"{r.status_code} {body(r).get('message')}")
     given_homes = {home_of.get(question.get("id")) for question in questions}
-    check("baseline: it has 7 questions, all from Student · Baseline assessment 1",
-          len(questions) == 7 and given_homes == {("Student", "Baseline assessment 1")}, given_homes)
+    check("baseline: it has 7 questions, all from the first Student assessment",
+          len(questions) == 7 and given_homes == {("Student", BANK[("Student", 1)])}, given_homes)
     assessment_id = start.get("assessment_id") or (start.get("assessment") or {}).get("assessment_id")
     first_template = start.get("template_id")
     answered = 0
@@ -323,8 +333,8 @@ try:
     etoken, _ = login(EMPLOYEE_EMAIL)
     estart = data_of(api("POST", "/api/baseline/start", etoken))
     employee_homes = {home_of.get(question.get("id")) for question in estart.get("questions") or []}
-    check("baseline: an Employee gets Employee · Baseline assessment 1 (7 questions)",
-          len(estart.get("questions") or []) == 7 and employee_homes == {("Employee", "Baseline assessment 1")}, employee_homes)
+    check("baseline: an Employee gets the first Employee assessment (7 questions)",
+          len(estart.get("questions") or []) == 7 and employee_homes == {("Employee", BANK[("Employee", 1)])}, employee_homes)
     r = api("POST", "/api/baseline/start", etoken, json={"template_id": first_template})
     check("baseline: an Employee cannot take a Student assessment", r.status_code == 400, r.status_code)
     one = (estart.get("questions") or [{}])[0]
@@ -411,32 +421,32 @@ try:
     if qid:
         check("admin: one baseline question", api("GET", f"/api/baseline/questions/{qid}", atoken).status_code == 200)
     layout = sorted((t["role"], t["name"], t["isActive"], t["questionCount"]) for t in templates)
-    check("bank: each role has Baseline assessment 1 and 2 (7 questions each); the demo has Student 2 on, the others off",
-          layout == sorted((role, f"Baseline assessment {n}", n == 1 or role == "Student", 7)
+    check("bank: each role has two named assessments (7 questions each); the demo has Student 2 on, the others off",
+          layout == sorted((role, BANK[(role, n)], n == 1 or role == "Student", 7)
                            for role in ("Student", "Employee", "Other") for n in (1, 2)), layout)
     by_name = {(t["role"], t["name"]): t for t in templates}
-    student_2 = by_name.get(("Student", "Baseline assessment 2"), {})
-    student_1 = by_name.get(("Student", "Baseline assessment 1"), {})
+    student_2 = by_name.get(("Student", BANK[("Student", 2)]), {})
+    student_1 = by_name.get(("Student", BANK[("Student", 1)]), {})
     check("bank: times taken and average score are counted per assessment",
           student_1.get("timesTaken", 0) >= 2 and student_1.get("averageScore") is not None, student_1.get("timesTaken"))
 
-    check("demo: about half of the demo students have taken Student · Baseline assessment 2",
+    check("demo: about half of the demo students have taken the second Student assessment",
           5 <= student_2.get("timesTaken", 0) <= 15, student_2.get("timesTaken"))
-    employee_2 = by_name.get(("Employee", "Baseline assessment 2"), {})
+    employee_2 = by_name.get(("Employee", BANK[("Employee", 2)]), {})
     r = api("POST", f"/api/baseline/templates/{employee_2.get('id')}/active", ptoken, json={"active": True})
     check("bank: a player cannot switch assessments on", r.status_code == 403, r.status_code)
     before = {row["name"] for row in data_of(api("GET", "/api/baseline/available", etoken)).get("assessments") or []}
     r = api("POST", f"/api/baseline/templates/{employee_2.get('id')}/active", atoken, json={"active": True})
-    check("bank: admin switches Employee · Baseline assessment 2 on", r.status_code == 200 and data_of(r).get("isActive") is True,
+    check("bank: admin switches the second Employee assessment on", r.status_code == 200 and data_of(r).get("isActive") is True,
           f"{r.status_code} {body(r).get('message')}")
     now_offered = {row["name"]: row["status"] for row in data_of(api("GET", "/api/baseline/available", etoken)).get("assessments") or []}
     check("baseline: the employee is offered it straight away, as new",
-          "Baseline assessment 2" not in before and now_offered.get("Baseline assessment 2") == "new", now_offered)
+          BANK[("Employee", 2)] not in before and now_offered.get(BANK[("Employee", 2)]) == "new", now_offered)
     fresh = data_of(api("GET", "/api/baseline/available", ptoken))
-    check("baseline: the student now sees Baseline assessment 2 as new (and 1 as completed)",
+    check("baseline: the student now sees their second assessment as new (and the first as completed)",
           fresh.get("newCount") == 1
           and {(row["name"], row["status"]) for row in fresh.get("assessments") or []}
-          == {("Baseline assessment 1", "completed"), ("Baseline assessment 2", "new")}, fresh.get("assessments"))
+          == {(BANK[("Student", 1)], "completed"), (BANK[("Student", 2)], "new")}, fresh.get("assessments"))
     check("dashboard: the new baseline shows on the student's home page",
           data_of(api("GET", "/api/analytics/my-performance", ptoken)).get("new_baselines") == 1)
     check("baseline: an employee is not offered the student assessment",
@@ -450,7 +460,7 @@ try:
     r = api("POST", "/api/baseline/complete", ptoken, json={"assessment_id": second.get("assessment_id")})
     latest = data_of(api("GET", "/api/baseline/latest-result", ptoken))
     check("baseline: the student takes the new one; it becomes their latest result",
-          r.status_code == 200 and latest.get("templateName") == "Baseline assessment 2", latest.get("templateName"))
+          r.status_code == 200 and latest.get("templateName") == BANK[("Student", 2)], latest.get("templateName"))
     retrained = data_of(api("GET", "/api/analytics/my-performance", ptoken))
     # (The unit test BaselineInEffectTests proves the rule on a history where the two rules differ.)
     check("baseline: taken after 5+ training decisions, it is saved (100%) but marked as not setting the difficulty",
@@ -461,13 +471,16 @@ try:
     r = api("POST", f"/api/baseline/templates/{student_2.get('id')}/active", atoken, json={"active": False})
     kept = data_of(api("GET", "/api/baseline/available", ptoken))
     check("bank: switched off again, the student's result is kept and still listed",
-          r.status_code == 200 and any(row["name"] == "Baseline assessment 2" and row["status"] == "completed"
+          r.status_code == 200 and any(row["name"] == BANK[("Student", 2)] and row["status"] == "completed"
                                        for row in kept.get("assessments") or []), kept.get("assessments"))
 
     r = api("POST", "/api/baseline/templates", atoken, json={"occupation": "Other", "description": "E2E draft"})
+    check("bank: a new baseline needs a name", r.status_code == 400, r.status_code)
+    r = api("POST", "/api/baseline/templates", atoken, json={
+        "occupation": "Other", "name": "E2E Draft Assessment", "description": "E2E draft"})
     draft = data_of(r)
-    check("bank: admin creates an empty baseline; it gets the next number",
-          r.status_code == 201 and draft.get("name") == "Baseline assessment 3" and draft.get("isActive") is False,
+    check("bank: admin creates an empty, named baseline; it starts switched off",
+          r.status_code == 201 and draft.get("name") == "E2E Draft Assessment" and draft.get("isActive") is False,
           f"{r.status_code} {draft.get('name')}")
     r = api("POST", f"/api/baseline/templates/{draft.get('id')}/active", atoken, json={"active": True})
     check("bank: a baseline with fewer than 5 questions cannot be switched on", r.status_code == 400, r.status_code)
@@ -534,10 +547,10 @@ try:
         import json as _json
         import seed_demo as _seed
         from app.models.scenario import Scenario
-        sa_titles = {item["title"] for item in _json.loads(_seed.SA_ADMIN_SCENARIOS.read_text(encoding="utf-8"))}
+        sa_titles = {item["title"] for item in _json.loads(_seed.ADMIN_CUSTOM_SCENARIOS.read_text(encoding="utf-8"))}
         unknown = [title for title, dataset_id in db.session.query(Scenario.title, Scenario.dataset_id).filter(
             Scenario.status != Scenario.CAMPAIGN_STATUS).all() if dataset_id is None and title not in sa_titles]
-    check("demo: every training scenario comes from an uploaded dataset or the admin's South African set",
+    check("demo: every training scenario comes from an uploaded dataset or the admin's custom set",
           bool(context["scenarios"]) and not unknown, unknown[:5])
     # The demo emails come from a generated dataset with no links, so the link-tracking checks use a phishing
     # email the admin adds by hand and switches on (create -> approve with the full checklist -> activate)
@@ -882,7 +895,16 @@ try:
               str(new_dataset) in groups and groups[str(new_dataset)]["name"] == "e2e.csv"
               and groups[str(new_dataset)]["by_status"]["DRAFT"] == len(drafts) and "none" in groups,
               {key: (group["name"], group["count"]) for key, group in groups.items()})
-        only_hand_made = items(data_of(api("GET", "/api/scenarios?status=&dataset_id=none", atoken)),
+        # With one stage picked, a group still shows its scenarios at every stage (the admin's live ones do not
+        # seem to disappear when a new draft is added)
+        draft_view = {str(group["dataset_id"]): group for group in
+                      data_of(api("GET", "/api/scenarios?status=DRAFT", atoken)).get("groups", [])}
+        custom = draft_view.get("none") or {}
+        check("datasets: the admin's own group is 'admin_custom_scenarios' and its total covers every stage",
+              custom.get("name") == "admin_custom_scenarios" and custom.get("total") == groups["none"]["total"]
+              and custom.get("total") == sum(custom.get("by_status", {}).values()) >= custom.get("count", 0),
+              {k: custom.get(k) for k in ("name", "count", "total")})
+        only_hand_made =items(data_of(api("GET", "/api/scenarios?status=&dataset_id=none", atoken)),
                                "scenarios", "items")
         check("datasets: the 'none' group lists only scenarios that are not from a dataset",
               only_hand_made and all(row["dataset_id"] is None for row in only_hand_made))
@@ -1061,10 +1083,39 @@ try:
           f"{email_only.get('total_simulations')} vs {by_type}")
     check("filters: a player cannot open the admin analytics", api("GET", "/api/analytics/admin", ptoken).status_code == 403)
 
-    balance = data_of(api("GET", "/api/scenarios", atoken)).get("balance") or []
-    check("review: the live answer balance flags categories or difficulties with one answer missing or rare",
-          bool(balance) and all(f["status"] in ("one_sided", "uneven") and min(f["phishing"], f["genuine"])
-                                < 0.25 * (f["phishing"] + f["genuine"]) for f in balance), balance[:3])
+    def expected_flags():
+        """Live (channel, category or difficulty) groups where one answer is missing or under a quarter."""
+        with app.app_context():
+            from app.models.scenario import Scenario
+            counts = {}
+            for channel, category, difficulty, answer in db.session.query(
+                    Scenario.simulation_type, Scenario.category, Scenario.difficulty, Scenario.correct_answer
+            ).filter(Scenario.status == "ACTIVE"):
+                for group, name in (("category", category), ("difficulty", difficulty)):
+                    row = counts.setdefault((channel, group, name), [0, 0])
+                    row[0 if answer == "REPORT" else 1] += 1
+            return {key for key, (phishing, genuine) in counts.items() if min(phishing, genuine) < 0.25 * (phishing + genuine)}
+
+    def flags_shown():
+        return {(f["channel"], f["group"], f["name"]) for f in
+                data_of(api("GET", "/api/scenarios", atoken)).get("balance") or []}
+
+    check("review: the live answer balance flags exactly the groups with one answer missing or under a quarter",
+          flags_shown() == expected_flags(), (sorted(flags_shown()), sorted(expected_flags())))
+    with app.app_context():   # a live, phishing-only test category must be flagged
+        from app.models.scenario import Scenario
+        lopsided = Scenario(title="E2E balance check", simulation_type="SMS", category="E2E Balance Check",
+                            difficulty="Easy", message="Pay now at http://e2e-balance.example", correct_answer="REPORT",
+                            status="ACTIVE")
+        db.session.add(lopsided)
+        db.session.commit()
+        lopsided_id = lopsided.scenario_id
+    check("review: a live category with only phishing is flagged as one-sided",
+          ("SMS", "category", "E2E Balance Check") in flags_shown(), sorted(flags_shown()))
+    with app.app_context():
+        from app.models.scenario import Scenario
+        db.session.delete(db.session.get(Scenario, lopsided_id))
+        db.session.commit()
     rows = items(data_of(api("GET", "/api/scenarios?sort=uses&order=desc", atoken)), "scenarios")
     uses = [row["uses"] for row in rows]
     check("sorting: scenarios sort by a column on the server", bool(uses) and uses == sorted(uses, reverse=True), uses[:10])

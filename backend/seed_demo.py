@@ -12,19 +12,19 @@
 # address, with a couple of finished email campaigns.
 #
 # Scenarios come from two public dataset files, one email and one SMS (DEMO_EMAIL_DATASET and
-# DEMO_SMS_DATASET in DEMO_DATASET_DIR, by default backend/uploads/datasets), plus two DEMO-ONLY files
-# (backend/demo, see its README): a CSV of author-written genuine emails, and South African phishing and
-# genuine scenarios the admin adds by hand. The public email file has phishing about accounts, IT, prizes
-# and government but almost no genuine emails on those topics, so those categories could not be practised on
-# their own. DEMO_AUTHOR_WRITTEN=off leaves the demo-only files out, for figures that come from the public
-# datasets alone (as in the paper). Every CSV is imported exactly as the Datasets page does it, so the quality
-# check, cleaning and draft scenarios are the real ones. An admin review is then replayed per channel: a
-# balanced set of drafts that pass every automatic check is approved and switched on, a few are left
-# approved, a few broken ones are rejected, and the rest wait in review. The South African scenarios are
-# then added live with no dataset, as the "Create scenario" form adds them (unit tests check that each one
-# passes every automatic check). Players only ever practise on live scenarios, and each decision is chosen
-# and scored by the app's own rules (adaptive difficulty and category, clue checking, XP with the level
-# multiplier).
+# DEMO_SMS_DATASET in DEMO_DATASET_DIR, by default backend/uploads/datasets), plus the admin's own custom
+# scenarios (backend/demo/admin_custom_scenarios.json, see backend/demo/README.md): South African phishing and
+# genuine messages written by a security specialist, with real-looking senders, links and attachments. Both
+# dataset files are imported exactly as the Datasets page does it, so the quality check, cleaning and draft
+# scenarios are the real ones. An admin review is then replayed per channel: drafts that pass every automatic
+# check are approved and switched on, a few are left approved, a few broken ones are rejected, and the rest
+# wait in review. The custom scenarios are added live with no dataset, as the "Create scenario" form adds them
+# (unit tests check that each one passes every automatic check), and they make up most of what players see:
+# with them, only a few balanced pairs per category go live from the datasets, whose messages are plainer.
+# DEMO_AUTHOR_WRITTEN=off leaves the custom scenarios out and switches on more dataset drafts instead, for
+# figures that come from the public datasets alone (as in the paper). Players only ever practise on live
+# scenarios, and each decision is chosen and scored by the app's own rules (adaptive difficulty and category,
+# clue checking, XP with the level multiplier).
 #
 # Test players get Gmail plus-aliases of DEMO_EMAIL (you+lerato.mokoena@gmail.com), which all arrive in
 # your own inbox, so campaigns can be demonstrated end to end. Without DEMO_EMAIL they get clearly fake
@@ -104,14 +104,9 @@ DEMO_DATASETS = (
     ("EMAIL", os.getenv("DEMO_EMAIL_DATASET") or "email/phishing_legit_dataset_KD_10000.csv"),
     ("SMS", os.getenv("DEMO_SMS_DATASET") or "sms/Combined-Labeled-Dataset.csv"),
 )
-# Author-written content for the demo only, kept in the repository (backend/demo), left out with
-# DEMO_AUTHOR_WRITTEN=off: genuine emails in the KD format (uploaded as a "demo_only_..." dataset, so they
-# pair with KD phishing), and South African scenarios added by the admin (phishing and genuine, email and SMS).
-DEMO_ONLY_DIR = Path(__file__).parent / "demo"
-DEMO_ONLY_DATASETS = (
-    ("EMAIL", "demo_only_author_written_genuine_email.csv"),
-)
-SA_ADMIN_SCENARIOS = DEMO_ONLY_DIR / "sa_admin_scenarios.json"
+# The admin's own custom scenarios, kept in the repository (backend/demo) and left out with
+# DEMO_AUTHOR_WRITTEN=off: South African phishing and genuine messages, email and SMS
+ADMIN_CUSTOM_SCENARIOS = Path(__file__).parent / "demo" / "admin_custom_scenarios.json"
 INCLUDE_DEMO_ONLY = (os.getenv("DEMO_AUTHOR_WRITTEN") or "on").strip().lower() != "off"
 # The datasets were uploaded and reviewed just before the first players joined
 UPLOADED_DAYS_AGO = DAYS + 6
@@ -123,6 +118,10 @@ UPLOADED_DAYS_AGO = DAYS + 6
 # not yet live, and a few broken ones are rejected. Everything else stays a draft in Scenario Review.
 ACTIVE_PER_CATEGORY = 40
 ONE_SIDED_PER_CATEGORY = 4
+# With the admin's custom scenarios loaded, they are most of what players see: per category, only this many
+# phishing and this many genuine dataset drafts go live, and only where the category has both (no one-sided
+# categories), so every category stays balanced
+ACTIVE_PER_CATEGORY_WITH_CUSTOM = 1
 APPROVED_PER_ANSWER = 2
 REJECTED_PER_CHANNEL = 10
 
@@ -181,13 +180,11 @@ def demo_consent(index):
 
 
 def demo_dataset_files():
-    """The email and SMS files the demo scenarios come from: the public datasets, then the demo-only ones
-    unless DEMO_AUTHOR_WRITTEN=off. Checked before anything is wiped, so a missing file leaves the database
-    as it was."""
+    """The email and SMS dataset files the demo scenarios come from. Checked (with the custom scenarios file,
+    unless DEMO_AUTHOR_WRITTEN=off) before anything is wiped, so a missing file leaves the database as it was."""
     files = [(channel, DEMO_DATASET_DIR / name) for channel, name in DEMO_DATASETS]
-    if INCLUDE_DEMO_ONLY:
-        files += [(channel, DEMO_ONLY_DIR / name) for channel, name in DEMO_ONLY_DATASETS]
-    missing = [str(path) for _, path in files if not path.is_file()]
+    needed = [path for _, path in files] + ([ADMIN_CUSTOM_SCENARIOS] if INCLUDE_DEMO_ONLY else [])
+    missing = [str(path) for path in needed if not path.is_file()]
     if missing:
         raise SystemExit(
             "Demo data not loaded: these dataset files are missing:\n  " + "\n  ".join(missing)
@@ -274,12 +271,13 @@ def _varied(scenarios, rng):
     return chosen
 
 
-def seed_sa_admin_scenarios(reviewed_at):
-    """The admin's own South African scenarios (backend/demo/sa_admin_scenarios.json): common local phishing
-    and smishing with genuine messages of the same kind, the same number of each in every category. Added as
-    the Scenario Review "Create scenario" form adds them (no dataset), then approved and switched on. The
-    category is the admin's; warning signs, difficulty and realism follow the same rules as dataset imports."""
-    items = json.loads(SA_ADMIN_SCENARIOS.read_text(encoding="utf-8"))
+def seed_admin_custom_scenarios(reviewed_at):
+    """The admin's own custom scenarios (backend/demo/admin_custom_scenarios.json): common South African
+    phishing and smishing with genuine messages of the same kind, the same number of each in every category.
+    Added as the Scenario Review "Create scenario" form adds them (no dataset, so they show in the
+    "admin_custom_scenarios" group), then approved and switched on. The category is the admin's; warning
+    signs, difficulty and realism follow the same rules as dataset imports."""
+    items = json.loads(ADMIN_CUSTOM_SCENARIOS.read_text(encoding="utf-8"))
     for index, item in enumerate(items):
         is_phishing = item["answer"] == "phishing"
         fields = ScenarioParser.derive_fields(
@@ -303,8 +301,10 @@ def review_demo_channel(channel, dataset_ids, rng, reviewed_at):
     """Replay the admin's review of one channel in Scenario Review, across all its datasets (so genuine
     messages from one file can balance phishing from another in the same category). Only drafts that pass
     every automatic check (the same checks the review screen shows) can go live. Per category, an equal
-    number of phishing and genuine ones are switched on where the category has both; a one-sided category gets
-    only a few. Then a few more are left approved, and a few of the worst failing ones are rejected."""
+    number of phishing and genuine ones are switched on where the category has both. Without the custom
+    scenarios, a one-sided category also gets a few (topped up until the channel is balanced); with them, only
+    ACTIVE_PER_CATEGORY_WITH_CUSTOM pairs per category go live. Then a few more are left approved, and a few
+    of the worst failing ones are rejected."""
     drafts = Scenario.query.filter(Scenario.dataset_id.in_(dataset_ids)).order_by(Scenario.scenario_id).all()
     passing = {"REPORT": [], "SAFE": []}
     failing = []
@@ -320,14 +320,18 @@ def review_demo_channel(channel, dataset_ids, rng, reviewed_at):
             by_category.setdefault(scenario.category, {"REPORT": [], "SAFE": []})[answer].append(scenario)
     live, taken = [], {}
     one_sided = {"REPORT": [], "SAFE": []}
+    per_category = ACTIVE_PER_CATEGORY_WITH_CUSTOM if INCLUDE_DEMO_ONLY else ACTIVE_PER_CATEGORY
     for category in sorted(by_category):
         lists = by_category[category]
         both = min(len(lists["REPORT"]), len(lists["SAFE"]))
-        count = min(both, ACTIVE_PER_CATEGORY) if both else ONE_SIDED_PER_CATEGORY
+        if both:
+            count = min(both, per_category)
+        else:
+            count = 0 if INCLUDE_DEMO_ONLY else ONE_SIDED_PER_CATEGORY
         for answer, group in lists.items():
             live += group[:count]
             taken[(category, answer)] = min(count, len(group))
-            if group and not both:
+            if group and not both and not INCLUDE_DEMO_ONLY:   # topped up below (public data only)
                 one_sided[answer].append(category)
 
     # Top up the one-sided categories, taking turns, until both answers have the same number live
@@ -337,7 +341,7 @@ def review_demo_channel(channel, dataset_ids, rng, reviewed_at):
     def next_category(answer):
         """The one-sided category of this answer with the fewest live so far that can still take one."""
         open_ones = [c for c in one_sided[answer]
-                     if taken[(c, answer)] < min(len(by_category[c][answer]), ACTIVE_PER_CATEGORY)]
+                     if taken[(c, answer)] < min(len(by_category[c][answer]), per_category)]
         return min(open_ones, key=lambda c: (taken[(c, answer)], c)) if open_ones else None
 
     def add_one(answer):
@@ -382,7 +386,7 @@ def review_demo_channel(channel, dataset_ids, rng, reviewed_at):
 
 
 def seed_baseline_questions():
-    """The template bank: per role, "Baseline assessment 1" switched on and "Baseline assessment 2" off."""
+    """The template bank: per role, the first assessment switched on and the second off."""
     BaselineService.load_templates()
     return BaselineQuestion.query.all()
 
@@ -395,11 +399,11 @@ def role_template(occupation):
 
 
 def seed_second_baseline(rng):
-    """Students: "Baseline assessment 2" was switched on three weeks ago and about half of the students have
+    """Students: their second assessment was switched on three weeks ago and about half of the students have
     taken it, so the Baseline pages show new and completed assessments side by side. The second assessments
     for employees and other players stay off, so switching one on can be shown live."""
     template = BaselineTemplate.query.filter_by(
-        occupation=Occupation.STUDENT.value, name="Baseline assessment 2").first()
+        occupation=Occupation.STUDENT.value, is_active=False).order_by(BaselineTemplate.template_id).first()
     if not template:
         return 0
     now = datetime.utcnow()
@@ -857,8 +861,8 @@ def main():
         for channel, dataset_ids in imported.items():
             review_demo_channel(channel, dataset_ids, rng, last_upload + timedelta(days=1))
         if INCLUDE_DEMO_ONLY:
-            print("Adding the admin's South African scenarios...")
-            seed_sa_admin_scenarios(last_upload + timedelta(days=1, hours=2))
+            print("Adding the admin's custom scenarios...")
+            seed_admin_custom_scenarios(last_upload + timedelta(days=1, hours=2))
         # Loaded again here: each import clears the session as it goes, which detaches earlier objects
         live = Scenario.query.filter(Scenario.status == "ACTIVE").order_by(Scenario.scenario_id).all()
         pool = ScenarioPool(live)
@@ -920,12 +924,12 @@ def main():
             added = Scenario.query.filter(Scenario.dataset_id.is_(None), Scenario.simulation_type == channel,
                                           Scenario.status == "ACTIVE")
             if added.count():
-                print(f"  {channel} added by the admin (South African scenarios): {added.count()} active "
+                print(f"  {channel} admin_custom_scenarios: {added.count()} active "
                       f"({added.filter(Scenario.correct_answer == 'REPORT').count()} phishing)")
         print(f"  {players} players, {BaselineTemplate.query.count()} baseline assessments ({len(questions)} questions), "
               f"{attempts} decisions, {campaigns} campaigns")
-        print(f"  baselines: assessment 1 on for every role; Student assessment 2 on ({second_baseline} students took it); "
-              "Employee and Other assessment 2 off (switch one on live)")
+        print(f"  baselines: each role's first assessment on; the students' second on ({second_baseline} students took it); "
+              "the Employee and Other second ones off (switch one on live)")
 
 
 if __name__ == "__main__":

@@ -51,6 +51,8 @@ class ScenarioService:
 
     # The dataset filter value for scenarios written by hand or loaded with the demo data
     NO_DATASET = "none"
+    # The group in Scenario Review for scenarios the admin wrote (no dataset): the demo's own and any added later
+    CUSTOM_GROUP = "admin_custom_scenarios"
 
     # "When" filter periods, in local days (today counts as one)
     WHEN_DAYS = {"today": 1, "7d": 7, "30d": 30, "90d": 90}
@@ -212,8 +214,9 @@ class ScenarioService:
     @staticmethod
     def _dataset_groups(filters):
         """The datasets that have scenarios under the current filters (ignoring the dataset filter itself),
-        newest upload first, with scenarios added by hand or with the demo data as the last group.
-        `count` follows the selected stage; `by_status` shows every stage."""
+        newest upload first, with the admin's custom scenarios as the last group. `total` and `by_status` cover
+        every stage, so a group never seems to lose scenarios when a stage is picked; `count` is how many are at
+        the selected stage (the rows the open group lists)."""
         without_dataset = {**filters, "dataset_id": ""}
         query = ScenarioService._filtered_query(without_dataset, include_status=False)
         rows = query.with_entities(
@@ -224,9 +227,10 @@ class ScenarioService:
         groups = {}
         for dataset_id, row_status, count in rows:
             group = groups.setdefault(dataset_id, {
-                "by_status": {name: 0 for name in ScenarioService.STATUSES}, "count": 0,
+                "by_status": {name: 0 for name in ScenarioService.STATUSES}, "count": 0, "total": 0,
             })
             group["by_status"][row_status] = group["by_status"].get(row_status, 0) + count
+            group["total"] += count
             if not status or row_status == status:
                 group["count"] += count
 
@@ -239,7 +243,7 @@ class ScenarioService:
             dataset = datasets.get(dataset_id)
             return {
                 "dataset_id": dataset_id if dataset_id is not None else ScenarioService.NO_DATASET,
-                "name": dataset.name if dataset else "Added by hand or demo data",
+                "name": dataset.name if dataset else ScenarioService.CUSTOM_GROUP,
                 "uploaded_at": iso_utc(dataset.uploaded_at) if dataset else None,
                 **groups[dataset_id],
             }
@@ -252,7 +256,7 @@ class ScenarioService:
         ordered = [describe(i) for i in uploaded]
         if None in groups:
             ordered.append(describe(None))
-        return [group for group in ordered if group["count"]]
+        return [group for group in ordered if group["total"]]
 
     @staticmethod
     def live_balance(simulation_type=None):

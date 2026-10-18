@@ -47,7 +47,7 @@ interface BaselineQuestion {
   confidenceThreshold: number;
 }
 
-/** A named baseline assessment for one role, e.g. "Student · Baseline assessment 1". */
+/** A named baseline assessment for one role, e.g. "Student · Student Money and Campus Accounts". */
 interface BaselineTemplate {
   id: number;
   name: string;
@@ -587,7 +587,7 @@ export function BaselineManagementPage() {
               <Input
                 id="template-name"
                 value={templateForm.name}
-                placeholder={editingTemplateId !== null ? "" : "Leave empty for the next number, e.g. Baseline assessment 3"}
+                placeholder="What it covers, e.g. Workplace Email and Payments"
                 onChange={(e) => setTemplateForm({ ...templateForm, name: e.target.value })}
               />
             </div>
@@ -607,7 +607,7 @@ export function BaselineManagementPage() {
               <Button
                 className="flex-1"
                 onClick={saveTemplate}
-                disabled={editingTemplateId !== null && !templateForm.name.trim()}
+                disabled={!templateForm.name.trim()}
               >
                 {editingTemplateId !== null ? "Save changes" : "Create baseline"}
               </Button>
