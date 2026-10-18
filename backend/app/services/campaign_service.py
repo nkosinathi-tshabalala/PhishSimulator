@@ -21,6 +21,7 @@ from app.models.analytics import PerformanceTracker
 from app.models.email import EmailCampaign, EmailCampaignRecipient
 from app.models.scenario import Scenario
 from app.models.simulation import SimulationAttempt, UserAction
+from app.security import setting_up
 from app.services.scenario_service import ScenarioService
 from app.utils.labels import message_label
 
@@ -848,6 +849,8 @@ def start_sweeper(app):
     def loop():
         while True:
             time.sleep(60)
+            if setting_up():
+                continue   # the demo data is still loading
             # The session clean-up must happen inside the app context: outside it, it raises and the error
             # would end this thread after its first sweep
             with app.app_context():

@@ -1,6 +1,7 @@
 # Security for every API request: login checks against the session table, cross-site request checks,
 # rate limits, response headers and safe error replies
 
+import os
 import threading
 import time
 from collections import defaultdict, deque
@@ -41,6 +42,13 @@ ERROR_MESSAGES = {
 
 SIGNED_OUT = "Please sign in to continue."
 STATE_CHANGING = {"POST", "PUT", "PATCH", "DELETE"}
+GETTING_READY = "PhishSimulator is still getting ready. Please try again in a few minutes."
+
+
+def setting_up():
+    """True while the container's first start is still loading the demo data (entrypoint.sh holds the file)."""
+    marker = os.getenv("SETUP_MARKER_FILE")
+    return bool(marker) and os.path.exists(marker)
 
 
 def _reply(message, status):
@@ -109,6 +117,14 @@ def register_security(app):
         # Behind nginx: take the client address and https from the proxy's headers (only that many hops)
         count = app.config["TRUSTED_PROXY_COUNT"]
         app.wsgi_app = ProxyFix(app.wsgi_app, x_for=count, x_proto=count)
+
+    @app.before_request
+    def wait_for_setup():
+        """While the demo data loads, every request gets a plain 'getting ready' reply and nothing touches
+        the database."""
+        if setting_up():
+            return _reply(GETTING_READY, 503)
+        return None
 
     @app.before_request
     def reject_cross_site_changes():
