@@ -154,6 +154,7 @@ class ScenarioService:
             "dataset_id": scenario.dataset_id,
             "quality_score": scenario.quality_score,
             "has_attachment": bool(scenario.attachment),
+            "has_link": bool(find_urls(scenario.message or "")),
             "uses": uses.get(scenario.scenario_id, 0),
             "approved_at": iso_utc(scenario.approved_at),
             "updated_at": iso_utc(scenario.updated_at),

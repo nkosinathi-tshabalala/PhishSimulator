@@ -11,6 +11,7 @@ import {
   Database,
   Edit,
   Layers,
+  Link2,
   Mail,
   MessageSquare,
   Paperclip,
@@ -70,12 +71,14 @@ interface ScenarioSummary {
   dataset_id: number | null;
   quality_score: number | null;
   has_attachment: boolean;
+  /** The message contains a web address (plain or behind link text). */
+  has_link: boolean;
   uses: number;
   approved_at: string | null;
   updated_at: string | null;
 }
 
-interface ScenarioDetail extends Omit<ScenarioSummary, "uses" | "has_attachment"> {
+interface ScenarioDetail extends Omit<ScenarioSummary, "uses" | "has_attachment" | "has_link"> {
   sender: string | null;
   subject: string | null;
   message: string;
@@ -729,8 +732,15 @@ export function ScenarioManagementPage({ onBack }: ScenarioManagementPageProps) 
                 <span className="flex items-center gap-1.5">
                   {busy === `open-${scenario.scenario_id}` && <Spinner className="w-3.5 h-3.5 shrink-0" />}
                   <span className="truncate">{scenario.title}</span>
+                  {scenario.has_link && (
+                    <span title="Has a link" className="shrink-0">
+                      <Link2 className="w-3.5 h-3.5 text-muted-foreground" aria-label="Has a link" />
+                    </span>
+                  )}
                   {scenario.has_attachment && (
-                    <Paperclip className="w-3.5 h-3.5 text-muted-foreground shrink-0" aria-label="Has attachment" />
+                    <span title="Has an attachment" className="shrink-0">
+                      <Paperclip className="w-3.5 h-3.5 text-muted-foreground" aria-label="Has an attachment" />
+                    </span>
                   )}
                 </span>
               </TableCell>
