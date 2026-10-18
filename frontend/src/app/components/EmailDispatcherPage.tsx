@@ -89,6 +89,8 @@ interface Campaign {
 /** One recipient's delivery and result, shown in the campaign details. */
 interface Recipient {
   email: string;
+  /** The address as shown: a test player's alias of the demo inbox hides that inbox. */
+  email_display?: string;
   delivery_status: string;
   outcome: string;
   /** They opened the attachment rather than the link. */
@@ -106,6 +108,8 @@ interface PlayerOption {
   player_id: number;
   full_name: string;
   email: string;
+  /** The address as shown: a test player's alias of the demo inbox hides that inbox. */
+  email_display?: string;
   occupation: string;
   /** True when the player agreed to campaign emails (on registration or in their profile). */
   consented: boolean;
@@ -388,7 +392,7 @@ function RecipientPicker({
   const visible = players.filter((player) => {
     if (occupation !== "All" && player.occupation !== occupation) return false;
     if (!term) return true;
-    return player.full_name.toLowerCase().includes(term) || player.email.toLowerCase().includes(term);
+    return player.full_name.toLowerCase().includes(term) || (player.email_display ?? player.email).toLowerCase().includes(term);
   });
 
   // "Select all" only ever picks players who consented and whose address the allow-list permits
@@ -456,7 +460,7 @@ function RecipientPicker({
             return (
               <label
                 key={player.player_id}
-                title={player.blocked_reason ?? player.email}
+                title={player.blocked_reason ?? player.email_display ?? player.email}
                 className={`flex items-center gap-3 px-3 py-2 ${
                   player.selectable ? "cursor-pointer hover:bg-muted/40" : "opacity-45 cursor-not-allowed"
                 }`}
@@ -470,7 +474,7 @@ function RecipientPicker({
                 />
                 <div className="min-w-0 flex-1">
                   <p className="font-normal truncate">{player.full_name}</p>
-                  <p className="text-xs text-muted-foreground truncate">{player.email}</p>
+                  <p className="text-xs text-muted-foreground truncate">{player.email_display ?? player.email}</p>
                   {player.blocked_reason && <p className="text-xs text-amber-300/90 truncate">{player.blocked_reason}</p>}
                 </div>
                 <span className="text-xs text-muted-foreground shrink-0">{player.occupation}</span>
@@ -983,7 +987,7 @@ function CampaignDetails({ report, points, onClose, onRefresh }: {
   // Clicking or reporting means they opened it, even if the tracking pixel was blocked
   const openedAt = (recipient: Recipient) => recipient.opened_at ?? recipient.clicked_at ?? recipient.reported_at;
   const recipients = useSort(report?.recipient_details ?? [], {
-    email: (recipient) => recipient.email,
+    email: (recipient) => recipient.email_display ?? recipient.email,
     result: (recipient) => recipient.outcome,
     xp: (recipient) => recipient.xp_awarded,
     opened: openedAt,
@@ -1060,7 +1064,7 @@ function CampaignDetails({ report, points, onClose, onRefresh }: {
                     const outcome = outcomeStyle(recipient.outcome, report.is_phishing);
                     return (
                       <tr key={recipient.email} className="border-b last:border-0">
-                        <td className="p-3">{recipient.email}</td>
+                        <td className="p-3">{recipient.email_display ?? recipient.email}</td>
                         <td className="p-3">
                           <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs whitespace-nowrap ${outcome.tone}`}>
                             <outcome.icon className="w-3 h-3" />

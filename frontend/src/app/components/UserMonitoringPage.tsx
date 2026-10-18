@@ -30,6 +30,8 @@ interface MonitoredUser {
   user_id: number;
   full_name: string;
   email: string;
+  /** The address as shown: a test player's alias of the demo inbox hides that inbox. */
+  email_display?: string;
   role: string;
   occupation: string | null;
   accuracy: number;
@@ -134,7 +136,7 @@ export function UserMonitoringPage({ onBack }: UserMonitoringPageProps) {
 
   const filteredUsers = (monitoringData?.users || []).filter((user) => {
     const query = searchTerm.toLowerCase();
-    const matchesSearch = user.full_name.toLowerCase().includes(query) || user.email.toLowerCase().includes(query);
+    const matchesSearch = user.full_name.toLowerCase().includes(query) || (user.email_display ?? user.email).toLowerCase().includes(query);
     return matchesSearch
       && (!filters.role || user.role === filters.role)
       && (!filters.occupation || (user.occupation || 'Administrator') === filters.occupation)
@@ -244,7 +246,7 @@ export function UserMonitoringPage({ onBack }: UserMonitoringPageProps) {
                     <TableCell>
                       <div>
                         <div className="font-medium">{user.full_name}</div>
-                        <div className="text-sm text-muted-foreground">{user.email}</div>
+                        <div className="text-sm text-muted-foreground">{user.email_display ?? user.email}</div>
                       </div>
                     </TableCell>
                     <TableCell>{user.role}</TableCell>
@@ -311,7 +313,7 @@ export function UserMonitoringPage({ onBack }: UserMonitoringPageProps) {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{selectedUser?.full_name}</DialogTitle>
-            <DialogDescription>{selectedUser?.email}</DialogDescription>
+            <DialogDescription>{selectedUser?.email_display ?? selectedUser?.email}</DialogDescription>
           </DialogHeader>
           {selectedUser && <div className="grid grid-cols-2 gap-4 text-sm">
             <div><span className="text-muted-foreground">Role: </span>{selectedUser.role}</div>

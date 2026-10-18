@@ -63,6 +63,7 @@ from app.services.progress_service import ProgressService
 from app.services.scenario_service import ScenarioService
 from app.services.simulation_service import SimulationService
 from app.utils.clues import TRUST_SIGNALS, WARNING_SIGNS, clue_options, evaluate_justification, real_clues
+from app.utils.emails import shown_email
 from app.utils.links import find_urls
 
 RANDOM_SEED = 2026
@@ -914,7 +915,7 @@ def main():
         if owner:
             print(f"  you:   {OWNER_EMAIL}  (campaigns can be sent here)")
         consenting = UserProfile.query.filter(UserProfile.campaign_consent.is_(True)).count()
-        print(f"  test players: {demo_email(PLAYERS[0][0])} ...  ({consenting} of {players} consented)")
+        print(f"  test players: {shown_email(demo_email(PLAYERS[0][0]))} ...  ({consenting} of {players} consented)")
         for dataset in Dataset.query.order_by(Dataset.uploaded_at).all():
             counts = dict(db.session.query(Scenario.status, db.func.count()).filter(
                 Scenario.dataset_id == dataset.dataset_id).group_by(Scenario.status).all())

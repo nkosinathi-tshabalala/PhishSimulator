@@ -13,6 +13,8 @@ import { LIMITS, passwordProblem } from "../../services/validation";
 interface CurrentUser {
   full_name: string;
   email: string;
+  /** The address as shown: a test player's alias of the demo inbox hides that inbox. */
+  email_display?: string;
   role: string;
 }
 
@@ -81,7 +83,7 @@ export function AdminProfilePage({ user, onBack }: AdminProfilePageProps) {
             <CardContent className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label htmlFor="email">Email</Label>
-                <Input id="email" type="email" value={user?.email ?? ""} disabled />
+                <Input id="email" type="email" value={user?.email_display ?? user?.email ?? ""} disabled />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="role">Role</Label>

@@ -23,6 +23,7 @@ from app.models.scenario import Scenario
 from app.models.simulation import SimulationAttempt, UserAction
 from app.security import setting_up
 from app.services.scenario_service import ScenarioService
+from app.utils.emails import shown_email
 from app.utils.labels import message_label
 
 TRACKING_PIXEL = bytes.fromhex(
@@ -117,6 +118,7 @@ class CampaignService:
                 "player_id": player.player_id,
                 "full_name": player.full_name,
                 "email": player.user.email,
+                "email_display": shown_email(player.user.email),
                 "occupation": player.profile.occupation.value if player.profile else "Other",
                 "consented": consented,
                 "allowed": allowed,
@@ -294,7 +296,7 @@ class CampaignService:
         # Consent is checked again at send time: a player may have withdrawn it after the draft was made
         if CampaignService._without_consent([recipient.recipient_email]):
             recipient.delivery_status = "NO_CONSENT"
-            return f"{recipient.recipient_email} withdrew consent to campaign emails, so nothing was sent to them."
+            return f"{shown_email(recipient.recipient_email)} withdrew consent to campaign emails, so nothing was sent to them."
 
         base = f"{_public_backend_url()}/api/campaigns"
         token = recipient.tracking_token
@@ -486,6 +488,7 @@ class CampaignService:
         campaign = recipient.campaign
         return {
             "email": recipient.recipient_email,
+            "email_display": shown_email(recipient.recipient_email),
             "scenario_title": campaign.title,
             "sender": campaign.sender,
             "subject": campaign.subject,
@@ -758,6 +761,7 @@ class CampaignService:
             }
             data["recipient_details"] = [{
                 "email": recipient.recipient_email,
+                "email_display": shown_email(recipient.recipient_email),
                 "delivery_status": recipient.delivery_status,
                 "outcome": outcomes[recipient.campaign_recipient_id],
                 "via_attachment": recipient.clicked_kind == "ATTACHMENT",

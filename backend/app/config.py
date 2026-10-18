@@ -108,5 +108,7 @@ class Config:
     SMTP_PASSWORD = "".join((os.getenv("SMTP_PASSWORD") or "").split()) or None
 
     CAMPAIGN_ALLOWED_RECIPIENTS = _list("CAMPAIGN_ALLOWED_RECIPIENTS")
+    # The inbox the demo's test players are plus-aliases of; the app hides it when showing their addresses
+    DEMO_EMAIL = (os.getenv("DEMO_EMAIL") or "").strip().lower()
     # A delivered email with no click or report after this long counts as ignored
     CAMPAIGN_IGNORE_MINUTES = int(os.getenv("CAMPAIGN_IGNORE_MINUTES", "10"))
