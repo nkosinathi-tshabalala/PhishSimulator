@@ -39,16 +39,6 @@ class DatasetService {
       null
     );
   }
-
-  /** One dataset's details. */
-  async getDataset(datasetId: number) {
-    return await apiRequest(
-      `/datasets/${datasetId}`,
-      "GET",
-      null
-    );
-  }
-
 }
 
 export default new DatasetService();

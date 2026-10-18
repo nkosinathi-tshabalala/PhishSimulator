@@ -1,4 +1,4 @@
-# Risky actions a player can take on a message
+# A player's answer to a message: report it, or treat it as safe
 
 from enum import Enum
 

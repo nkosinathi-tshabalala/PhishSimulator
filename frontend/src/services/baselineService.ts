@@ -65,11 +65,6 @@ class BaselineService {
         return await apiRequest(`/baseline/assessments/${assessmentId}`, "GET", null);
     }
 
-    /** The player's last completed assessment. */
-    async getLatestResult() {
-        return await apiRequest("/baseline/latest-result", "GET", null);
-    }
-
     /** Start a baseline assessment (the chosen one, or the first one not taken yet). */
     async startAssessment(data: { template_id?: number } = {}) {
         return await apiRequest("/baseline/start", "POST", data);

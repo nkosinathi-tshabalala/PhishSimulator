@@ -82,6 +82,7 @@ HABITS = [
 HABIT_WEIGHTS = [2, 3, 3, 2, 1, 1]
 
 ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "admin@phishsimulator.com")
+# The defaults are printed in the README, so they suit a demo on this computer only
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "Admin#2026")
 DEMO_PASSWORD = os.getenv("DEMO_PASSWORD", "Player#2026")
 # Only create an owner player when OWNER_EMAIL is set explicitly. Left unset, you register your own
@@ -107,7 +108,7 @@ DEMO_DATASETS = (
 # The admin's own custom scenarios, kept in the repository (backend/demo) and left out with
 # DEMO_AUTHOR_WRITTEN=off: South African phishing and genuine messages, email and SMS
 ADMIN_CUSTOM_SCENARIOS = Path(__file__).parent / "demo" / "admin_custom_scenarios.json"
-INCLUDE_DEMO_ONLY = (os.getenv("DEMO_AUTHOR_WRITTEN") or "on").strip().lower() != "off"
+INCLUDE_CUSTOM = (os.getenv("DEMO_AUTHOR_WRITTEN") or "on").strip().lower() != "off"
 # The datasets were uploaded and reviewed just before the first players joined
 UPLOADED_DAYS_AGO = DAYS + 6
 # The replayed admin review, per channel (all its datasets together) and category: where a category has both
@@ -183,7 +184,7 @@ def demo_dataset_files():
     """The email and SMS dataset files the demo scenarios come from. Checked (with the custom scenarios file,
     unless DEMO_AUTHOR_WRITTEN=off) before anything is wiped, so a missing file leaves the database as it was."""
     files = [(channel, DEMO_DATASET_DIR / name) for channel, name in DEMO_DATASETS]
-    needed = [path for _, path in files] + ([ADMIN_CUSTOM_SCENARIOS] if INCLUDE_DEMO_ONLY else [])
+    needed = [path for _, path in files] + ([ADMIN_CUSTOM_SCENARIOS] if INCLUDE_CUSTOM else [])
     missing = [str(path) for path in needed if not path.is_file()]
     if missing:
         raise SystemExit(
@@ -320,18 +321,18 @@ def review_demo_channel(channel, dataset_ids, rng, reviewed_at):
             by_category.setdefault(scenario.category, {"REPORT": [], "SAFE": []})[answer].append(scenario)
     live, taken = [], {}
     one_sided = {"REPORT": [], "SAFE": []}
-    per_category = ACTIVE_PER_CATEGORY_WITH_CUSTOM if INCLUDE_DEMO_ONLY else ACTIVE_PER_CATEGORY
+    per_category = ACTIVE_PER_CATEGORY_WITH_CUSTOM if INCLUDE_CUSTOM else ACTIVE_PER_CATEGORY
     for category in sorted(by_category):
         lists = by_category[category]
         both = min(len(lists["REPORT"]), len(lists["SAFE"]))
         if both:
             count = min(both, per_category)
         else:
-            count = 0 if INCLUDE_DEMO_ONLY else ONE_SIDED_PER_CATEGORY
+            count = 0 if INCLUDE_CUSTOM else ONE_SIDED_PER_CATEGORY
         for answer, group in lists.items():
             live += group[:count]
             taken[(category, answer)] = min(count, len(group))
-            if group and not both and not INCLUDE_DEMO_ONLY:   # topped up below (public data only)
+            if group and not both and not INCLUDE_CUSTOM:   # topped up below (public data only)
                 one_sided[answer].append(category)
 
     # Top up the one-sided categories, taking turns, until both answers have the same number live
@@ -860,7 +861,7 @@ def main():
             imported.setdefault(channel, []).append(import_demo_dataset(channel, source, last_upload).dataset_id)
         for channel, dataset_ids in imported.items():
             review_demo_channel(channel, dataset_ids, rng, last_upload + timedelta(days=1))
-        if INCLUDE_DEMO_ONLY:
+        if INCLUDE_CUSTOM:
             print("Adding the admin's custom scenarios...")
             seed_admin_custom_scenarios(last_upload + timedelta(days=1, hours=2))
         # Loaded again here: each import clears the session as it goes, which detaches earlier objects
@@ -907,12 +908,13 @@ def main():
 
         players = Player.query.count()
         attempts = SimulationAttempt.query.count()
-        print("\nDemo data loaded:")
-        print(f"  admin: {ADMIN_EMAIL} / {ADMIN_PASSWORD}")
+        # This goes to the container log, so it says where the passwords are set, never what they are
+        print("\nDemo data loaded (passwords: ADMIN_PASSWORD and DEMO_PASSWORD in backend/.env):")
+        print(f"  admin: {ADMIN_EMAIL}")
         if owner:
-            print(f"  you:   {OWNER_EMAIL} / {DEMO_PASSWORD}  (campaigns can be sent here)")
+            print(f"  you:   {OWNER_EMAIL}  (campaigns can be sent here)")
         consenting = UserProfile.query.filter(UserProfile.campaign_consent.is_(True)).count()
-        print(f"  test players: {demo_email(PLAYERS[0][0])} ... / {DEMO_PASSWORD}  ({consenting} of {players} consented)")
+        print(f"  test players: {demo_email(PLAYERS[0][0])} ...  ({consenting} of {players} consented)")
         for dataset in Dataset.query.order_by(Dataset.uploaded_at).all():
             counts = dict(db.session.query(Scenario.status, db.func.count()).filter(
                 Scenario.dataset_id == dataset.dataset_id).group_by(Scenario.status).all())

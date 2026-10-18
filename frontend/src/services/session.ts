@@ -6,14 +6,6 @@
 const CSRF_COOKIE = "ps_csrf";
 const CSRF_REFRESH_COOKIE = "ps_csrf_refresh";
 
-// Older versions kept the login token in browser storage. Remove any that is left.
-try {
-  localStorage.removeItem("access_token");
-  sessionStorage.removeItem("access_token");
-} catch {
-  // Storage can be blocked (private mode); there is then nothing to clean up
-}
-
 let idleEndsAt = 0;
 
 /** A cookie's value, or "" (only the readable CSRF cookies; the tokens themselves are HttpOnly). */

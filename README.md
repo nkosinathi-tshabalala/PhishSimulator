@@ -78,7 +78,7 @@ Nothing is hard-coded in `docker-compose.yml`; every setting comes from one of t
 
 | File | Holds |
 | --- | --- |
-| `.env` (next to `docker-compose.yml`) | Database name, user and password (shared by the `db` and `backend` containers), `FLASK_ENV`, `HOST_IP` (`127.0.0.1` = only this computer), ports, the URLs the browser uses, the frontend's API path, `MAX_UPLOAD_MB`, `REQUEST_TIMEOUT_SECONDS` and `DEMO_DATASETS_HOST_DIR` (the folder holding the demo's dataset files) |
+| `.env` (next to `docker-compose.yml`) | Database name, user and password (shared by the `db` and `backend` containers), `HOST_IP` (`127.0.0.1` = only this computer), ports, the URLs the browser uses, the frontend's API path, `MAX_UPLOAD_MB`, `REQUEST_TIMEOUT_SECONDS` and `DEMO_DATASETS_HOST_DIR` (the folder holding the demo's dataset files) |
 | `backend/.env` | Secrets, Gmail, the campaign allow-list, and the demo data settings (`SEED_DEMO`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `DEMO_PASSWORD`, `DEMO_EMAIL`, `OWNER_EMAIL`, `DEMO_EMAIL_DATASET`, `DEMO_SMS_DATASET`, `DEMO_AUTHOR_WRITTEN`) |
 
 Both are ignored by git, and neither is copied into an image.
@@ -309,7 +309,7 @@ An admin can send a real phishing-awareness email, built from an approved email 
 1. Turn on 2-Step Verification on the Google account, then create an **App Password** (Google Account → Security → App passwords).
 2. In `backend/.env`, set `SMTP_USERNAME` to the Gmail address and `SMTP_PASSWORD` to the 16-character app password.
 3. Set `CAMPAIGN_ALLOWED_RECIPIENTS` to your own addresses. `*` is a wildcard, so `you+*@gmail.com` lets you send to any Gmail plus-alias of your own address (each alias arrives in your inbox but looks like a separate recipient).
-4. For tracking to work from a real device (opening the email on your phone), set `PUBLIC_BACKEND_URL` to a URL that reaches the backend from outside your machine — for a demo, a tunnel such as `ngrok http 5000` gives you an https address to paste in.
+4. Open campaign emails on this computer. The app runs on `localhost` only, and the links in each email point to `PUBLIC_BACKEND_URL` (`http://localhost:5000`), which only this computer can reach.
 
 **Building a campaign:** pick an active email scenario, or write your own (sender, subject, body, phishing or genuine, warning signs, and an optional look-alike attachment such as `Invoice_2026.pdf`). Choose recipients from the registered players — the picker greys out anyone not on the allow-list. Save the draft, then Send.
 
@@ -321,7 +321,7 @@ Every final result:
 - **counts as a real decision** in the player's accuracy, missed-phishing, risky-clicks, streak, skill rank, badges and history, tagged "Campaign";
 - appears in the player's **Inbox** on Home with a "Get feedback" panel.
 
-The admin report shows opens, clicks, attachment opens, reports and ignored per recipient; once every result is final the campaign is **Completed** and read-only (launched campaigns are kept as a record and cannot be deleted). For tracking and links to work on a real device (Gmail loads images through Google, which cannot reach `localhost`), set `PUBLIC_BACKEND_URL` to a public URL — a tunnel such as `ngrok http 5000` works for a demo.
+The admin report shows opens, clicks, attachment opens, reports and ignored per recipient; once every result is final the campaign is **Completed** and read-only (launched campaigns are kept as a record and cannot be deleted). Clicks, attachment opens and reports are recorded when the email is opened on this computer. Opens are recorded only by mail apps that load images directly: Gmail loads them through Google's servers, which cannot reach `localhost`, so a Gmail open may not show (the click, report or ignore still counts).
 
 **Safety:** nothing is sent unless Gmail is configured, and only to allow-listed addresses. This is why demo players' `@phishsimulator.test` addresses are never emailed — they are not real inboxes, and they are not on the allow-list. Only send to inboxes you own.
 
@@ -357,7 +357,7 @@ Logins are **server-side sessions**: every sign-in is one row in the `user_sessi
 | Data leaks | Replies carry only what the page shows: no ids or security fields in `/me`, no tokens in any body. Errors are logged on the server; the browser only sees a plain message. The CSV export makes any cell that would run as a spreadsheet formula plain text. |
 | Headers | The API sends a `default-src 'none'` Content-Security-Policy, `X-Frame-Options: DENY`, `nosniff`, `no-referrer`, `Cache-Control: no-store`, `Cross-Origin-Opener-Policy` and `Cross-Origin-Resource-Policy`, plus HSTS when reached over HTTPS. |
 | Uploads | CSV or JSON only, saved under a random name, and capped at `MAX_UPLOAD_MB` by both nginx and Flask. |
-| Containers | The backend runs as a normal user, not root. Ports listen on `127.0.0.1` unless `HOST_IP` says otherwise, and the database port is never published. In Docker `FLASK_ENV=production`, so the debugger is off. `TRUSTED_PROXY_COUNT=1` lets the API see each visitor's address behind nginx. |
+| Containers | The backend runs as a normal user, not root. The frontend port listens on `127.0.0.1` unless `HOST_IP` says otherwise; the API port always listens on `127.0.0.1` only (other devices go through nginx), and the database port is never published. `docker-compose.yml` fixes `FLASK_ENV=production` (Gunicorn, never the debugger) and `TRUSTED_PROXY_COUNT=1` (the API sees each visitor's address behind nginx), so neither can be changed from `.env` or the shell. |
 | Roles | Admin endpoints check the role in the database on every request (`@require_admin`), and players can only read their own data. |
 
 Known limits: the rate-limit counts are kept per Gunicorn worker in memory (3 workers, so up to 3 times the stated limit; the per-account lock still applies), and the User-Agent check is a signal, not proof, since a thief can copy it too. Registration does say when an email is already registered, so people can sign in instead.
