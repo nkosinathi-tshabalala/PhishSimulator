@@ -14,7 +14,7 @@ class BaselineSchema:
         """Check a quiz answer submission."""
         assessment_id = data.get("assessment_id")
         question_id = data.get("question_id")
-        answer_text = data.get("answer_text", "").strip()
+        answer_text = str(data.get("answer_text") or "").strip()
 
         if not assessment_id:
             return False, "Assessment ID is required."
@@ -27,6 +27,9 @@ class BaselineSchema:
 
         if len(answer_text) < 10:
             return False, "Answer must contain at least 10 characters."
+
+        if len(answer_text) > 2000:
+            return False, "Answer must be at most 2000 characters."
 
         if not BaselineAssessment.query.get(assessment_id):
             return False, "Assessment not found."
@@ -109,7 +112,7 @@ class BaselineSchema:
         """Check a baseline assessment's name, role and description."""
         name = str(data.get("name") or "").strip()
         if require_name and not name:
-            return False, "Give the baseline assessment a name, e.g. Baseline assessment 2."
+            return False, "Give the baseline assessment a name that says what it covers, e.g. Workplace Email and Payments."
         if len(name) > 120:
             return False, "The name can be at most 120 characters."
         occupation = data.get("occupation")

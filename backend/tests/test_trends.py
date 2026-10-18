@@ -40,9 +40,9 @@ class TrendTests(unittest.TestCase):
 
     def test_categories_are_sorted_by_decisions(self):
         rows = trends.by_category([attempt(28, True, scenario_id=2), attempt(28, False, scenario_id=2), attempt(28, True)],
-                                  {1: "Banking", 2: "Delivery"})
+                                  {1: "Banking & Money", 2: "Delivery"})
         self.assertEqual([(row["category"], row["decisions"], row["accuracy"]) for row in rows],
-                         [("Delivery", 2, 50), ("Banking", 1, 100)])
+                         [("Delivery", 2, 50), ("Banking & Money", 1, 100)])
 
 
 if __name__ == "__main__":

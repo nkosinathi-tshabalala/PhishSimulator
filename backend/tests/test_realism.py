@@ -40,8 +40,8 @@ class LinkMaskingTests(unittest.TestCase):
         self.assertEqual(mask_links(sms, "Delivery", "SMS"), sms)
 
     def test_masking_twice_changes_nothing(self):
-        once = mask_links("Login:\nhttps://m1crosoft.com/reset", "Password Reset", "EMAIL")
-        self.assertEqual(mask_links(once, "Password Reset", "EMAIL"), once)
+        once = mask_links("Login:\nhttps://m1crosoft.com/reset", "Account Security", "EMAIL")
+        self.assertEqual(mask_links(once, "Account Security", "EMAIL"), once)
 
     def test_link_targets_find_hidden_and_visible_addresses(self):
         text = "[Sign in](https://fake.example/login) or visit https://real.example."
@@ -80,8 +80,8 @@ class QualityReviewTests(unittest.TestCase):
         self.assertEqual(find_urls("Email jane@company.co.za for help"), [])
 
     def test_account_alone_does_not_mean_banking(self):
-        self.assertEqual(ScenarioParser.infer_category("Please login to re-confirm your account"), "Password Reset")
-        self.assertEqual(ScenarioParser.infer_category("Your bank card transaction of R300 was declined"), "Banking")
+        self.assertEqual(ScenarioParser.infer_category("Please login to re-confirm your account"), "Account Security")
+        self.assertEqual(ScenarioParser.infer_category("Your bank card transaction of R300 was declined"), "Banking & Money")
 
 
 class SenderAndAttachmentTests(unittest.TestCase):
@@ -100,14 +100,14 @@ class SenderAndAttachmentTests(unittest.TestCase):
 
     def test_attachment_type_depends_on_label(self):
         text = "Please see the attached statement."
-        risky = attachment_for(text, "Banking", True, "EMAIL")
-        safe = attachment_for(text, "Banking", False, "EMAIL")
+        risky = attachment_for(text, "Banking & Money", True, "EMAIL")
+        safe = attachment_for(text, "Banking & Money", False, "EMAIL")
         self.assertTrue(risky.endswith((".htm", ".zip", ".docm", ".iso")))
         self.assertTrue(safe.endswith((".pdf", ".docx", ".xlsx")))
-        self.assertIsNone(attachment_for("No files here.", "Banking", True, "EMAIL"))
+        self.assertIsNone(attachment_for("No files here.", "Banking & Money", True, "EMAIL"))
 
     def test_risky_attachment_adds_the_clue(self):
-        fields = enrich("EMAIL", "Banking", "a@b.com", "Invoice", "Invoice attached, pay today.", True, [])
+        fields = enrich("EMAIL", "Banking & Money", "a@b.com", "Invoice", "Invoice attached, pay today.", True, [])
         self.assertIn("Unexpected attachment", fields["phishing_cues"])
 
     def test_quality_prefers_complete_clean_messages(self):

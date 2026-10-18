@@ -8,9 +8,9 @@ class FeedbackGenerator:
     """CATCH "Correct" stage: explains the result straight after each decision."""
 
     CATEGORY_GUIDANCE = {
-        "Banking": (
-            "Fake bank messages try to steal card details or trick you into paying.",
-            "Open your banking app yourself instead of using links in a message.",
+        "Banking & Money": (
+            "Money scams try to steal card details, or talk you into paying, lending or 'releasing' funds.",
+            "Open your banking app yourself, and never send money because a message asks you to.",
         ),
         "Delivery": (
             "Parcel scams use small 'redelivery fees' to capture your card details.",
@@ -28,17 +28,21 @@ class FeedbackGenerator:
             "Student scams imitate campus IT or bursaries to steal university logins.",
             "Log in through the university portal you normally use, not an emailed link.",
         ),
-        "Password Reset": (
-            "Fake reset messages capture your password on a look-alike login page.",
-            "If you didn't ask for a reset, ignore it and change your password from the real site.",
+        "Account Security": (
+            "Fake account alerts ('unusual sign-in', 'account locked') capture your password on a look-alike page.",
+            "If you didn't expect it, don't use the message: open the app or site yourself and check your account.",
         ),
-        "Microsoft 365": (
-            "Fake Microsoft alerts harvest work credentials to break into company email.",
-            "Report suspicious Microsoft alerts to IT and sign in only at office.com.",
+        "Email & IT": (
+            "Fake IT and mailbox alerts harvest work email passwords or get you to install malware.",
+            "Report odd IT or Microsoft alerts to your IT team, and sign in only through the usual portal.",
         ),
         "Social Media": (
-            "Social media scams hijack accounts or lure you with prizes and messages.",
+            "Social media scams hijack accounts or lure you with friend requests, dates and messages.",
             "Check alerts inside the app itself rather than through links you're sent.",
+        ),
+        "Prizes & Offers": (
+            "Prize and offer scams promise something for nothing, then ask for fees, card details or a premium-rate call.",
+            "You can't win a competition you never entered. Ignore it, or check on the company's own site.",
         ),
     }
 

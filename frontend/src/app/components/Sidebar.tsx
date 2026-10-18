@@ -16,7 +16,7 @@ interface SidebarProps extends SidebarLayoutProps {
 const PLAYER_ITEMS: NavItem[] = [
   { id: "dashboard", label: "Home", icon: Home, description: "Your progress at a glance" },
   { id: "quiz", label: "Baseline", icon: ClipboardList, description: "Assessments that set your starting level" },
-  { id: "simulations", label: "Training", icon: Mail, description: "Email, SMS and Inbox Rush" },
+  { id: "simulations", label: "Training", icon: Mail, description: "Email and SMS" },
   { id: "performance", label: "My Progress", icon: Activity, description: "XP, badges, skill rank and history" },
   { id: "profile", label: "Profile", icon: User, description: "Manage your account details" },
 ];

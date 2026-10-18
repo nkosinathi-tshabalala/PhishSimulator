@@ -5,29 +5,20 @@ import { Clock, LogIn, LogOut, ShieldCheck } from "lucide-react";
 import { Button } from "./ui/button";
 import AuthService from "../../services/authService";
 import { SESSION_EXPIRED_EVENT } from "../../services/api";
-import { getToken } from "../../services/session";
+import { sessionSecondsLeft } from "../../services/session";
 
 interface SessionWatcherProps {
   onSignInAgain: () => void;
   onLogout: () => void;
 }
 
-// Warn idle users when the login has less than 5 minutes left
+// Warn idle users when the session has less than 5 minutes left
 const WARN_SECONDS = 5 * 60;
 // Clicking, typing or scrolling in the last 5 minutes counts as active
 const ACTIVE_WINDOW_MS = 5 * 60 * 1000;
 
-/** Seconds until the stored login expires (0 if there is none). */
-function secondsLeft() {
-  const token = getToken();
-  if (!token) return 0;
-  try {
-    const payload = JSON.parse(atob(token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")));
-    return Math.max(0, Math.round(payload.exp - Date.now() / 1000));
-  } catch {
-    return 0;
-  }
-}
+/** Seconds until the server ends the session if it is not renewed (the tokens themselves are unreadable). */
+const secondsLeft = sessionSecondsLeft;
 
 /** Seconds as m:ss. */
 function formatCountdown(seconds: number) {
@@ -44,8 +35,9 @@ export function SessionWatcher({ onSignInAgain, onLogout }: SessionWatcherProps)
   const renew = async () => {
     if (isRenewing.current) return;
     isRenewing.current = true;
-    await AuthService.getCurrentUser();
+    const renewed = await AuthService.refresh();
     isRenewing.current = false;
+    if (!renewed) setIsExpired(true);
     setRemaining(secondsLeft());
   };
 

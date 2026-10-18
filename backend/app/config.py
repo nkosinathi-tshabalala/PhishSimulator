@@ -47,7 +47,45 @@ class Config:
     """Settings for Flask, the database, logins and email campaigns."""
     SECRET_KEY = _secret("SECRET_KEY")
     JWT_SECRET_KEY = _secret("JWT_SECRET_KEY")
-    JWT_ACCESS_TOKEN_EXPIRES = timedelta(minutes=15)
+
+    # ---- Logins: server-side sessions (the user_session table) with two signed tokens in cookies ----
+    # The access token proves which session a request belongs to, for a few minutes. The refresh token
+    # (sent only to /api/auth/refresh) gets a new access token and is replaced every time it is used.
+    # Neither carries the user id, email or role: only a random session key the server looks up.
+    SESSION_IDLE_MINUTES = int(os.getenv("SESSION_IDLE_MINUTES", "30"))     # signed out after this long idle
+    SESSION_MAX_HOURS = int(os.getenv("SESSION_MAX_HOURS", "12"))           # and after this long, however active
+    JWT_ACCESS_TOKEN_EXPIRES = timedelta(minutes=int(os.getenv("ACCESS_TOKEN_MINUTES", "10")))
+    JWT_REFRESH_TOKEN_EXPIRES = timedelta(hours=SESSION_MAX_HOURS)
+    JWT_TOKEN_LOCATION = ["cookies"]
+    JWT_ALGORITHM = "HS256"
+    JWT_DECODE_ALGORITHMS = ["HS256"]          # never accept another algorithm (or "none")
+    JWT_ENCODE_ISSUER = JWT_DECODE_ISSUER = "phishsimulator-api"
+    JWT_ENCODE_AUDIENCE = JWT_DECODE_AUDIENCE = "phishsimulator-web"
+    # HttpOnly (page scripts cannot read them), sent only to this site (SameSite=Strict), and only over
+    # HTTPS or to localhost, unless COOKIE_SECURE=false (plain http to another address, e.g. a phone on the LAN)
+    JWT_COOKIE_SECURE = os.getenv("COOKIE_SECURE", "true").strip().lower() != "false"
+    JWT_COOKIE_SAMESITE = "Strict"
+    JWT_SESSION_COOKIE = True                  # the cookies go when the browser closes
+    JWT_ACCESS_COOKIE_NAME = "ps_access"
+    JWT_REFRESH_COOKIE_NAME = "ps_refresh"
+    JWT_ACCESS_COOKIE_PATH = "/api/"
+    JWT_REFRESH_COOKIE_PATH = "/api/auth/refresh"
+    # Cross-site request forgery: every change (POST, PUT, PATCH, DELETE) must repeat the readable CSRF
+    # cookie in the X-CSRF-Token header, which another site cannot do
+    JWT_COOKIE_CSRF_PROTECT = True
+    JWT_CSRF_IN_COOKIES = True
+    JWT_ACCESS_CSRF_COOKIE_NAME = "ps_csrf"
+    JWT_REFRESH_CSRF_COOKIE_NAME = "ps_csrf_refresh"
+    JWT_ACCESS_CSRF_COOKIE_PATH = "/"
+    JWT_REFRESH_CSRF_COOKIE_PATH = "/"
+    JWT_ACCESS_CSRF_HEADER_NAME = "X-CSRF-Token"
+    JWT_REFRESH_CSRF_HEADER_NAME = "X-CSRF-Token"
+
+    # How many proxies sit in front of the API (1 behind nginx in Docker), so the client's real address
+    # is used for rate limits. 0 when the API is reached directly.
+    TRUSTED_PROXY_COUNT = int(os.getenv("TRUSTED_PROXY_COUNT", "0"))
+    # Per-address limits on sign-in, registration and password resets (off only for automated checks)
+    RATE_LIMITS = os.getenv("RATE_LIMITS", "on").strip().lower() != "off"
 
     # Largest file the API accepts (dataset uploads). nginx uses the same limit in Docker.
     MAX_CONTENT_LENGTH = int(os.getenv("MAX_UPLOAD_MB", "50")) * 1024 * 1024

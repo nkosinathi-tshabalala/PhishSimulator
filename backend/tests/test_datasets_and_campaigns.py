@@ -26,6 +26,79 @@ class ParserCleaningTests(unittest.TestCase):
         self.assertEqual(ScenarioParser.extract_urls("Go to http://evil.example/pay."), ["http://evil.example/pay"])
 
 
+class ExtractionAccuracyTests(unittest.TestCase):
+    """Categories, senders and warning signs come from the message itself, the same way for both answers."""
+
+    ACCOUNT_THREAT = ("Notice, final warning. Failure to respond will block your account. Immediate action is "
+                      "required to avoid fine. Your case will be referred to the judge if unresolved.\n\n"
+                      "Account Services,\nJordan Garcia")
+
+    def test_an_account_threat_is_account_security_not_government(self):
+        record = ScenarioParser.parse_row({"text": self.ACCOUNT_THREAT, "label": "1", "phishing_type": "threats"}, "EMAIL")
+        self.assertEqual(record["category"], "Account Security")
+        self.assertEqual(set(record["phishing_cues"]), {"Urgency", "Generic greeting", "Threat or penalty"})
+        self.assertEqual(record["difficulty"], "Easy")   # three plain warning signs: an obvious scam
+
+    def test_the_dataset_phishing_type_column_is_ignored(self):
+        # Only phishing rows have a type, so using it would sort the two answers by different rules
+        parcel = "Your parcel is held at the depot. Pay the R25 redelivery fee today."
+        phishing = ScenarioParser.parse_row({"text": parcel, "label": "1", "phishing_type": "romance_dating"}, "EMAIL")
+        genuine = ScenarioParser.parse_row({"text": parcel, "label": "0", "phishing_type": "legitimate"}, "EMAIL")
+        self.assertEqual(phishing["category"], "Delivery")
+        self.assertEqual(genuine["category"], phishing["category"])
+
+    def test_scam_types_land_in_the_category_they_are_about(self):
+        cases = {
+            "URGENT! You have won a £1000 cash prize. Call 09061701461 to claim": "Prizes & Offers",
+            "The IT department detected a malware infection on your workstation. Install the patch.": "Email & IT",
+            "My wallet was stolen on my trip. Could you help me with a temporary loan?": "Banking & Money",
+            "Your SARS eFiling tax refund is ready.": "Government",
+            "Meeting follow-up: thanks for attending the workshop.": "General",
+        }
+        for text, category in cases.items():
+            self.assertEqual(ScenarioParser.infer_category(text), category, text)
+
+    def test_a_strong_word_in_the_subject_decides_a_close_call(self):
+        self.assertEqual(ScenarioParser.infer_category("Please check the details below.", "Parcel waiting"), "Delivery")
+
+    def test_mime_encoded_sender_and_subject_are_decoded(self):
+        row = {"sender": "=?utf-8?Q?Support?= <paypal@support.com>", "body": "Log in to restore your account.",
+               "subject": "=?utf-8?Q?We=27re=20making=20your=20account=20safer?=", "label": "1"}
+        record = ScenarioParser.parse_row(row, "EMAIL")
+        self.assertEqual(record["sender"], "Support <paypal@support.com>")
+        self.assertEqual(record["subject"], "We're making your account safer")
+        self.assertIn("Fake sender", record["phishing_cues"])   # "paypal" mailbox on someone else's domain
+
+    def test_sender_formats_are_written_one_way(self):
+        self.assertEqual(ScenarioParser.normalise_sender("gward@python.net (Greg Ward)"), "Greg Ward <gward@python.net>")
+        self.assertEqual(ScenarioParser.normalise_sender('"PayPal" <service@paypal.com>'), "PayPal <service@paypal.com>")
+        self.assertEqual(ScenarioParser.normalise_sender("YourPeach21@hotmail.com ()"), "YourPeach21@hotmail.com")
+
+    def test_a_sender_is_read_from_the_signature_when_the_dataset_has_none(self):
+        genuine = ScenarioParser.parse_row({"text": "Subject: Notes\n\nNotes are in the doc.\n\nBest,\nAlex Singh", "label": "0"}, "EMAIL")
+        phishing = ScenarioParser.parse_row({"text": self.ACCOUNT_THREAT, "label": "1"}, "EMAIL")
+        sms = ScenarioParser.parse_row({"v1": "ham", "v2": "See you at 6\nThanks,\nAlex"}, "SMS")
+        self.assertEqual(genuine["sender"], "Alex Singh")
+        self.assertEqual(phishing["sender"], "Account Services")   # signs off as a team
+        self.assertEqual(sms["sender"], "")                       # texts have no signature to read
+
+    def test_senders_that_pretend_to_be_a_brand(self):
+        self.assertTrue(ScenarioParser.is_suspicious_sender("American Express <mlholland1@cox.net>"))
+        self.assertTrue(ScenarioParser.is_suspicious_sender("example.com <noreply@aegfuels.co>"))
+        self.assertTrue(ScenarioParser.is_suspicious_sender("support@paypal.com <x@evil.ru>"))
+        self.assertFalse(ScenarioParser.is_suspicious_sender("Microsoft <account-security@accountprotection.microsoft.com>"))
+        self.assertFalse(ScenarioParser.is_suspicious_sender("Pineapple Farm <hi@pineapple.co.za>"))
+
+    def test_warning_signs_need_the_right_sense_of_a_word(self):
+        self.assertNotIn("Threat or penalty", ScenarioParser.extract_cues("I'm fine, see you later"))
+        self.assertIn("Threat or penalty", ScenarioParser.extract_cues("Pay now to avoid a fine"))
+        self.assertIn("Urgency", ScenarioParser.extract_cues("Your password expires tonight"))
+        self.assertIn("Unexpected attachment", ScenarioParser.extract_cues("Open invoice_2291.zip"))
+
+    def test_tunnel_links_are_suspicious(self):
+        self.assertIn("Suspicious link", ScenarioParser.extract_cues("Get cashback: http://8629a7f1.ngrok.io"))
+
+
 class LabelLeakTests(unittest.TestCase):
     """Datasets whose formatting gives the answer away are caught."""
 
@@ -111,3 +184,172 @@ class CampaignPointsTests(unittest.TestCase):
         self.assertEqual(POINTS[(True, "CLICKED")], 0)     # fell for the phish
         self.assertEqual(POINTS[(False, "REPORTED")], 0)   # false alarm
         self.assertGreater(POINTS[(True, "REPORTED")], POINTS[(True, "IGNORED")])
+
+
+class DatasetFormatTests(unittest.TestCase):
+    """Common public dataset layouts are read correctly, and generator artefacts never give the answer away."""
+
+    def test_generator_keywords_line_is_removed(self):
+        row = {"text": "Your profile has been locked. Use the secure link.\n\nKeywords: pin update password\n\nSincerely,\nRiley",
+               "label": "1", "phishing_type": "credential_harvesting"}
+        record = ScenarioParser.parse_row(row, "EMAIL")
+        self.assertNotIn("Keywords", record["message"])
+        self.assertEqual(record["label"], "PHISHING")
+        self.assertEqual(record["category"], "Account Security")
+
+    def test_subject_header_in_the_body_becomes_the_subject(self):
+        row = {"text": "Subject: Office maintenance\n\nThanks for your help on the analysis.", "label": "0"}
+        record = ScenarioParser.parse_row(row, "EMAIL")
+        self.assertEqual(record["subject"], "Office maintenance")
+        self.assertFalse(record["message"].lower().startswith("subject"))
+        self.assertFalse(record["subject_from_text"])
+
+    def test_one_line_message_starting_with_subject_is_left_alone(self):
+        row = {"text": "Subject: naturally irresistible your corporate identity is really hard to recollect", "spam": "1"}
+        record = ScenarioParser.parse_row(row, "EMAIL")
+        self.assertTrue(record["message"].startswith("Subject:"))
+        self.assertEqual(record["label"], "PHISHING")
+
+    def test_email_without_subject_gets_one_from_its_first_sentence(self):
+        row = {"text": "Hello, your profile has been locked. Use the secure link to restore access.", "label": "1"}
+        record = ScenarioParser.parse_row(row, "EMAIL")
+        self.assertEqual(record["subject"], "Your profile has been locked")
+        self.assertTrue(record["subject_from_text"])
+
+    def test_sms_never_gets_a_subject(self):
+        row = {"v1": "ham", "v2": "Subject: hi\nAre we still meeting at 6?"}
+        record = ScenarioParser.parse_row(row, "SMS")
+        self.assertEqual(record["subject"], "")
+        self.assertEqual(record["label"], "LEGITIMATE")
+
+    def test_common_label_values(self):
+        self.assertEqual(ScenarioParser.normalize_label("Phishing Email"), "PHISHING")
+        self.assertEqual(ScenarioParser.normalize_label("Safe Email"), "LEGITIMATE")
+        self.assertEqual(ScenarioParser.normalize_label("Smishing"), "PHISHING")
+        self.assertIsNone(ScenarioParser.normalize_label("spam"))   # marketing spam is not phishing
+
+    def test_common_column_layouts(self):
+        twente = ScenarioParser.parse_row({"Email Text": "Your mailbox is full, verify now at the link", "Email Type": "Phishing Email"}, "EMAIL")
+        uci = ScenarioParser.parse_row({"v1": "ham", "v2": "Ok lar... Joking wif u oni..."}, "SMS")
+        mendeley = ScenarioParser.parse_row({"LABEL": "Smishing", "TEXT": "Your parcel is held, pay the fee", "URL": "No"}, "SMS")
+        combined = ScenarioParser.parse_row({"text_combined": "account suspended verify your details now", "label": "1"}, "EMAIL")
+        self.assertEqual([twente["label"], uci["label"], mendeley["label"], combined["label"]],
+                         ["PHISHING", "LEGITIMATE", "PHISHING", "PHISHING"])
+
+    def test_a_malformed_link_does_not_break_the_import(self):
+        record = ScenarioParser.parse_row({"body": "See http://[broken and http://micr0soft.com/login now", "label": "1"}, "EMAIL")
+        self.assertIn("Suspicious link", record["phishing_cues"])
+
+    def test_latin1_csv_files_are_read(self):
+        import os, tempfile
+        path = os.path.join(tempfile.mkdtemp(), "uci.csv")
+        with open(path, "wb") as handle:
+            handle.write("v1,v2\nspam,Win £1000 cash now\nham,See you later\n".encode("cp1252"))
+        rows = DatasetService._read_rows(path, "csv")
+        self.assertEqual(rows[0]["v2"], "Win £1000 cash now")
+
+    def test_the_formatting_leak_check_still_catches_real_leaks(self):
+        records = [{"label": "PHISHING", "message": "Ref: 12\nPay now"}] * 10 + [{"label": "LEGITIMATE", "message": "Hi there"}] * 10
+        self.assertEqual(DatasetService.find_label_leaks(records), ["Ref:"])
+
+
+class DemoSeedTests(unittest.TestCase):
+    """The demo data is built from real dataset files with the app's own rules."""
+
+    def test_broken_characters_lower_the_quality_score(self):
+        from app.datasets.scenario_realism import quality_review
+        text = "Your parcel is waiting at the depot{} collect it before Friday."
+        clean, _ = quality_review("SMS", "+27 82 000 0000", "", text.format(","), False, [])
+        broken, problems = quality_review("SMS", "+27 82 000 0000", "", text.format("\ufffd"), False, [])
+        self.assertEqual(clean - broken, 20)
+        self.assertTrue(any("broken characters" in reason for _, reason in problems))
+
+    def test_category_pick_repeats_with_a_seeded_random(self):
+        from random import Random
+        from app.adaptive.adaptive_engine import AdaptiveEngine
+        unpractised = {"Banking & Money": [], "Delivery": [], "Government": []}
+        picks = {AdaptiveEngine.recommend_category(unpractised, rng=Random(7))[0] for _ in range(5)}
+        self.assertEqual(len(picks), 1)
+
+    def test_near_copies_differ_only_in_greeting_and_sign_off(self):
+        import seed_demo
+        first = "Dear customer, your account has been restricted. Verify now.\n\nSincerely,\nRiley Khan"
+        second = "Hello, your account has been restricted. Verify now.\n\nSupport Desk,\nAlex Lee"
+        self.assertEqual(seed_demo._core_text(first), seed_demo._core_text(second))
+        self.assertNotEqual(seed_demo._core_text(first), seed_demo._core_text("Your parcel is waiting at the depot."))
+
+
+class AnswerFirstSelectionTests(unittest.TestCase):
+    """Phishing or genuine is chosen first, so difficulty and category never give the answer away."""
+
+    class FixedRandom:
+        """A random source whose random() is fixed and whose choice() takes the first item."""
+        def __init__(self, value):
+            self.value = value
+
+        def random(self):
+            return self.value
+
+        def choice(self, items):
+            return items[0]
+
+    @staticmethod
+    def attempt(answer, correct=True, campaign=None):
+        from types import SimpleNamespace
+        given = answer if correct else ("SAFE" if answer == "REPORT" else "REPORT")
+        return SimpleNamespace(player_answer=given, correct=correct, campaign_recipient_id=campaign)
+
+    def test_the_answer_leans_away_from_what_came_recently_but_is_never_certain(self):
+        from app.adaptive.adaptive_engine import AdaptiveEngine
+        all_phishing = [self.attempt("REPORT") for _ in range(10)]
+        all_genuine = [self.attempt("SAFE", correct=False) for _ in range(10)]   # a wrong answer still counts
+        # After 10 phishing, phishing is still possible (25%) but genuine is likelier, and the other way round
+        self.assertEqual(AdaptiveEngine.recommend_answer(all_phishing, rng=self.FixedRandom(0.2)), "REPORT")
+        self.assertEqual(AdaptiveEngine.recommend_answer(all_phishing, rng=self.FixedRandom(0.3)), "SAFE")
+        self.assertEqual(AdaptiveEngine.recommend_answer(all_genuine, rng=self.FixedRandom(0.7)), "REPORT")
+        self.assertEqual(AdaptiveEngine.recommend_answer(all_genuine, rng=self.FixedRandom(0.8)), "SAFE")
+        self.assertEqual(AdaptiveEngine.recommend_answer([], rng=self.FixedRandom(0.49)), "REPORT")
+
+    def test_campaign_results_do_not_count_toward_the_mix(self):
+        from app.adaptive.adaptive_engine import AdaptiveEngine
+        campaigns = [self.attempt("REPORT", campaign=index + 1) for index in range(10)]
+        self.assertEqual(AdaptiveEngine.recommend_answer(campaigns, rng=self.FixedRandom(0.49)), "REPORT")
+
+    # (id, category, difficulty, answer): Government holds only phishing; genuine exists only as Easy
+    ROWS = [(1, "Government", "Hard", "REPORT"), (2, "Banking & Money", "Hard", "REPORT"),
+            (3, "Banking & Money", "Easy", "SAFE"), (4, "Social Media", "Easy", "SAFE")]
+
+    def pick(self, answer, category, difficulty, exclusions=(set(),), strict=False):
+        from app.services.scenario_service import ScenarioService
+        return ScenarioService.pick(self.ROWS, answer, category, difficulty, list(exclusions), strict, self.FixedRandom(0))
+
+    def test_the_answer_comes_before_the_category_and_the_difficulty(self):
+        self.assertEqual(self.pick("SAFE", "Government", "Hard"), 3)    # genuine from another category, nearest level
+        self.assertEqual(self.pick("REPORT", "Banking & Money", "Hard"), 2)
+        self.assertEqual(self.pick("SAFE", "Banking & Money", "Hard"), 3)       # same category, nearest difficulty
+
+    def test_a_player_chosen_category_is_kept(self):
+        self.assertEqual(self.pick("SAFE", "Government", "Hard", strict=True), 1)   # only phishing there
+
+    def test_the_other_answer_only_when_none_of_the_chosen_one_is_left(self):
+        self.assertEqual(self.pick("SAFE", "Banking & Money", "Easy", exclusions=({3, 4},)), 2)
+        self.assertIsNone(self.pick("SAFE", "Banking & Money", "Easy", exclusions=({1, 2, 3, 4},)))
+
+    def test_dataset_severity_is_not_used_as_difficulty(self):
+        row = {"text": "Hello, please verify your password at the link below within 24 hours.",
+               "label": "1", "severity": "high"}
+        record = ScenarioParser.parse_row(row, "EMAIL")
+        self.assertEqual(record["difficulty"], ScenarioParser.infer_difficulty(record["phishing_cues"], True))
+        self.assertNotEqual(record["difficulty"], "Hard")
+
+    def test_a_campaign_email_needs_something_to_click(self):
+        self.assertFalse(CampaignService.is_clickable("Use the secure link to restore access.", None))
+        self.assertTrue(CampaignService.is_clickable("Restore access at https://example.test/restore", None))
+        self.assertTrue(CampaignService.is_clickable("Notes attached.", "Notes.pdf"))
+
+    def test_a_message_matching_no_category_is_general(self):
+        self.assertEqual(ScenarioParser.infer_category("Thanks for the notes from today's sync."), "General")
+        self.assertEqual(ScenarioParser.infer_category("Someone commented on your Instagram photo."), "Social Media")
+        from app.services.progress_service import ProgressService
+        all_rounder = next(badge for badge in ProgressService.BADGES if badge[0] == "all_rounder")
+        self.assertEqual(all_rounder[4], 9)   # General is not one of the phishing categories the badge asks for

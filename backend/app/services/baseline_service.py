@@ -22,7 +22,7 @@ TEMPLATE_FILE = Path(__file__).resolve().parent.parent / "seed" / "baseline_ques
 class BaselineService:
     """CATCH "Check" stage: keyword-scored baseline assessments that set the starting difficulty.
 
-    Questions belong to named baseline assessments (e.g. "Student · Baseline assessment 1"). The admin
+    Questions belong to named baseline assessments (e.g. "Student · Student Money and Campus Accounts"). The admin
     switches an assessment on for its role; every player of that role can then take it, once. The most
     recent completed assessment sets the starting difficulty."""
 
@@ -328,7 +328,8 @@ class BaselineService:
         if assessment.template_id and question.template_id != assessment.template_id:
             return False, "That question is not part of this assessment.", None
 
-        answer = data["answer_text"].lower()
+        answer_text = str(data["answer_text"]).strip()
+        answer = answer_text.lower()
         matched_keywords = [
             keyword for keyword in question.get_expected_keywords()
             if keyword.lower() in answer
@@ -342,7 +343,7 @@ class BaselineService:
             assessment_id=assessment.assessment_id,
             question_id=question.question_id,
         )
-        response.answer_text = data["answer_text"]
+        response.answer_text = answer_text
         response.matched_keywords = ",".join(matched_keywords)
         response.score = score
         response.passed = score >= question.confidence_threshold
@@ -432,24 +433,14 @@ class BaselineService:
         }
 
     @staticmethod
-    def _next_name(occupation):
-        """The next free "Baseline assessment N" name for a role."""
-        names = {name for (name,) in db.session.query(BaselineTemplate.name).filter(
-            BaselineTemplate.occupation.is_(None) if not occupation else BaselineTemplate.occupation == occupation
-        )}
-        number = 1
-        while f"Baseline assessment {number}" in names:
-            number += 1
-        return f"Baseline assessment {number}"
-
-    @staticmethod
     def create_template(data):
-        """Add an empty baseline assessment for a role (admin). It starts switched off."""
-        is_valid, error = BaselineSchema.validate_template(data, require_name=False)
+        """Add an empty baseline assessment for a role (admin). It starts switched off. It needs a name that says
+        what it covers (e.g. "Workplace Email and Payments"), unique within its role."""
+        is_valid, error = BaselineSchema.validate_template(data)
         if not is_valid:
             return False, error, None
         occupation = data.get("occupation") or None
-        name = (data.get("name") or "").strip() or BaselineService._next_name(occupation)
+        name = data["name"].strip()
         if BaselineService._name_taken(name, occupation):
             return False, f"{BaselineService._role_label(occupation)} already has a baseline called \"{name}\".", None
         template = BaselineTemplate(name=name, occupation=occupation,

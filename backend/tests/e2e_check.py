@@ -23,6 +23,12 @@ from pathlib import Path
 BACKEND = Path(__file__).resolve().parents[1]
 SCRATCH = Path(tempfile.mkdtemp(prefix="phishsim_e2e_"))
 TEST_DB = "phishsim_e2e_check"
+# The template bank's assessment names, by role and position (first switched on, second off)
+BANK = {
+    ("Student", 1): "Student Money and Campus Accounts", ("Student", 2): "Prizes, Exams and Free Offers",
+    ("Employee", 1): "Workplace Email and Payments", ("Employee", 2): "Shared Files, Calls and QR Codes",
+    ("Other", 1): "Everyday Banking and Delivery Scams", ("Other", 2): "Grants, Marketplaces and Investments",
+}
 PASSWORD = "E2eCheck!2026"
 PLAYER_EMAIL = "e2e.player@example.test"
 ADMIN2_EMAIL = "second.admin@example.test"
@@ -108,6 +114,7 @@ try:
     os.environ["SMTP_PASSWORD"] = "abcd efgh ijkl mnop"   # Gmail's display format, with spaces
     os.environ["CAMPAIGN_ALLOWED_RECIPIENTS"] = PLAYER_EMAIL
     os.environ["CAMPAIGN_SWEEPER"] = "off"   # the test drives the sweep itself
+    os.environ["RATE_LIMITS"] = "off"        # many sign-ins from one address; one check turns limits back on
 
     from app import create_app
     from app.extensions import bcrypt, db
@@ -146,13 +153,57 @@ try:
         db.session.commit()
         ADMIN_EMAIL, ADMIN_ID, ADMIN2_ID = admin.email, admin.user_id, admin2.user_id
 
-    client = app.test_client()
+        # The admin's custom scenarios are most of what players see; the public datasets add a few balanced pairs
+        from app.models.datasets import Dataset
+        from app.models.scenario import Scenario
+        from app.services.scenario_service import ScenarioService
+        import seed_demo as _demo
+        check("demo: only the two public dataset files are uploaded (no demo-only dataset)",
+              sorted(d.name for d in Dataset.query.all()) == sorted(Path(name).name for _, name in _demo.DEMO_DATASETS),
+              [d.name for d in Dataset.query.all()])
+        for channel in ("EMAIL", "SMS"):
+            live = Scenario.query.filter(Scenario.status == "ACTIVE", Scenario.simulation_type == channel)
+            custom = live.filter(Scenario.dataset_id.is_(None)).count()
+            from_datasets = live.count() - custom
+            check(f"demo: most live {channel.lower()} scenarios are the admin's custom ones, a few come from datasets",
+                  custom > 2 * from_datasets and from_datasets > 0, f"{custom} custom, {from_datasets} from datasets")
+        for channel, least in (("EMAIL", 7), ("SMS", 6)):
+            live = ScenarioService._candidates(ScenarioService._active_query(channel))
+            focusable = [c for c in {row[1] for row in live} if ScenarioService.is_mixed(live, c)]
+            check(f"demo: at least {least} {channel.lower()} categories can be picked for focused practice",
+                  len(focusable) >= least, sorted(focusable))
+        sa_live = Scenario.query.filter(Scenario.dataset_id.is_(None), Scenario.status == "ACTIVE").all()
+        sa_balance = {}
+        for scenario in sa_live:
+            key = (scenario.simulation_type, scenario.category)
+            sa_balance[key] = sa_balance.get(key, 0) + (1 if scenario.correct_answer == "REPORT" else -1)
+        check("demo: the admin's custom scenarios are live, with as many genuine as phishing in each category",
+              len(sa_live) > 80 and not any(sa_balance.values()), {k: v for k, v in sa_balance.items() if v})
+
+    class Browser:
+        """One person's browser: its own cookie jar (the login cookies), so several people can be signed in
+        side by side during the check, as in separate browsers."""
+
+        def __init__(self):
+            self.client = app.test_client()
+
+        def cookie(self, name, path="/"):
+            found = self.client.get_cookie(name, path=path)
+            return found.value if found else ""
+
+        def csrf(self, refresh=False):
+            return self.cookie("ps_csrf_refresh" if refresh else "ps_csrf")
+
+    anonymous = app.test_client()
+    CHANGES = {"POST", "PUT", "PATCH", "DELETE"}
 
     def api(method, path, token=None, **kwargs):
+        """A request as `token` (a signed-in Browser) or as nobody. Changes repeat the CSRF cookie in the
+        X-CSRF-Token header, as the page does."""
         headers = kwargs.pop("headers", {})
-        if token:
-            headers["Authorization"] = f"Bearer {token}"
-        return client.open(path, method=method, headers=headers, **kwargs)
+        if token and method.upper() in CHANGES:
+            headers.setdefault("X-CSRF-Token", token.csrf(refresh=path.endswith("/auth/refresh")))
+        return (token.client if token else anonymous).open(path, method=method, headers=headers, **kwargs)
 
     def body(response):
         try:
@@ -163,9 +214,11 @@ try:
     def data_of(response):
         return body(response).get("data") or {}
 
-    def login(email):
-        response = api("POST", "/api/auth/login", json={"email": email, "password": PASSWORD})
-        return data_of(response).get("access_token"), response
+    def login(email, password=PASSWORD):
+        """Sign in from a new browser. Returns (Browser, response), or (None, response) when it failed."""
+        browser = Browser()
+        response = browser.client.post("/api/auth/login", json={"email": email, "password": password})
+        return (browser if response.status_code == 200 and browser.cookie("ps_access", "/api/") else None), response
 
     def items(value, *keys):
         if isinstance(value, list):
@@ -209,15 +262,15 @@ try:
     offered = available.get("assessments") or []
     check("baseline: a new Student is offered both switched-on Student assessments (1 and 2), marked new",
           [(row["role"], row["name"], row["status"]) for row in offered]
-          == [("Student", "Baseline assessment 1", "new"), ("Student", "Baseline assessment 2", "new")]
+          == [("Student", BANK[("Student", 1)], "new"), ("Student", BANK[("Student", 2)], "new")]
           and available.get("newCount") == 2, offered)
     r = api("POST", "/api/baseline/start", ptoken)
     start = data_of(r)
     questions = start.get("questions") or []
     check("player: baseline quiz starts", r.status_code == 200 and questions, f"{r.status_code} {body(r).get('message')}")
     given_homes = {home_of.get(question.get("id")) for question in questions}
-    check("baseline: it has 7 questions, all from Student · Baseline assessment 1",
-          len(questions) == 7 and given_homes == {("Student", "Baseline assessment 1")}, given_homes)
+    check("baseline: it has 7 questions, all from the first Student assessment",
+          len(questions) == 7 and given_homes == {("Student", BANK[("Student", 1)])}, given_homes)
     assessment_id = start.get("assessment_id") or (start.get("assessment") or {}).get("assessment_id")
     first_template = start.get("template_id")
     answered = 0
@@ -280,8 +333,8 @@ try:
     etoken, _ = login(EMPLOYEE_EMAIL)
     estart = data_of(api("POST", "/api/baseline/start", etoken))
     employee_homes = {home_of.get(question.get("id")) for question in estart.get("questions") or []}
-    check("baseline: an Employee gets Employee · Baseline assessment 1 (7 questions)",
-          len(estart.get("questions") or []) == 7 and employee_homes == {("Employee", "Baseline assessment 1")}, employee_homes)
+    check("baseline: an Employee gets the first Employee assessment (7 questions)",
+          len(estart.get("questions") or []) == 7 and employee_homes == {("Employee", BANK[("Employee", 1)])}, employee_homes)
     r = api("POST", "/api/baseline/start", etoken, json={"template_id": first_template})
     check("baseline: an Employee cannot take a Student assessment", r.status_code == 400, r.status_code)
     one = (estart.get("questions") or [{}])[0]
@@ -322,10 +375,18 @@ try:
           and perf_after.get("baseline_score") is not None,
           {k: perf_after.get(k) for k in ("total_attempts", "today_attempts", "daily_streak", "baseline_score")})
 
-    r = api("GET", "/api/scenarios/triage/EMAIL", ptoken)
-    messages = data_of(r).get("messages") or []
-    check("player: Inbox Rush batch", r.status_code == 200 and len(messages) >= 2
-          and not any("correct_answer" in m for m in messages), r.status_code)
+    picker = data_of(api("GET", "/api/scenarios/random/EMAIL", ptoken)).get("practice_categories") or []
+    with app.app_context():
+        from app.models.scenario import Scenario
+        expected = {}
+        for row in picker:
+            answers = [a for (a,) in db.session.query(Scenario.correct_answer).filter(
+                Scenario.status == "ACTIVE", Scenario.simulation_type == "EMAIL", Scenario.category == row["name"])]
+            phishing = answers.count("REPORT")
+            expected[row["name"]] = bool(answers) and min(phishing, len(answers) - phishing) / len(answers) >= 0.25
+    check("practice picker: only categories with both answers (neither under a quarter) can be practised on their own",
+          picker and all(row["focusable"] == expected[row["name"]] for row in picker),
+          [(row["name"], row["focusable"]) for row in picker])
     r = api("GET", "/api/scenarios/review/EMAIL", ptoken)
     check("player: mistake review (a scenario, or 'no mistakes')",
           r.status_code == 200 or data_of(r).get("no_mistakes"), f"{r.status_code} {body(r).get('message')}")
@@ -360,32 +421,32 @@ try:
     if qid:
         check("admin: one baseline question", api("GET", f"/api/baseline/questions/{qid}", atoken).status_code == 200)
     layout = sorted((t["role"], t["name"], t["isActive"], t["questionCount"]) for t in templates)
-    check("bank: each role has Baseline assessment 1 and 2 (7 questions each); the demo has Student 2 on, the others off",
-          layout == sorted((role, f"Baseline assessment {n}", n == 1 or role == "Student", 7)
+    check("bank: each role has two named assessments (7 questions each); the demo has Student 2 on, the others off",
+          layout == sorted((role, BANK[(role, n)], n == 1 or role == "Student", 7)
                            for role in ("Student", "Employee", "Other") for n in (1, 2)), layout)
     by_name = {(t["role"], t["name"]): t for t in templates}
-    student_2 = by_name.get(("Student", "Baseline assessment 2"), {})
-    student_1 = by_name.get(("Student", "Baseline assessment 1"), {})
+    student_2 = by_name.get(("Student", BANK[("Student", 2)]), {})
+    student_1 = by_name.get(("Student", BANK[("Student", 1)]), {})
     check("bank: times taken and average score are counted per assessment",
           student_1.get("timesTaken", 0) >= 2 and student_1.get("averageScore") is not None, student_1.get("timesTaken"))
 
-    check("demo: about half of the demo students have taken Student · Baseline assessment 2",
+    check("demo: about half of the demo students have taken the second Student assessment",
           5 <= student_2.get("timesTaken", 0) <= 15, student_2.get("timesTaken"))
-    employee_2 = by_name.get(("Employee", "Baseline assessment 2"), {})
+    employee_2 = by_name.get(("Employee", BANK[("Employee", 2)]), {})
     r = api("POST", f"/api/baseline/templates/{employee_2.get('id')}/active", ptoken, json={"active": True})
     check("bank: a player cannot switch assessments on", r.status_code == 403, r.status_code)
     before = {row["name"] for row in data_of(api("GET", "/api/baseline/available", etoken)).get("assessments") or []}
     r = api("POST", f"/api/baseline/templates/{employee_2.get('id')}/active", atoken, json={"active": True})
-    check("bank: admin switches Employee · Baseline assessment 2 on", r.status_code == 200 and data_of(r).get("isActive") is True,
+    check("bank: admin switches the second Employee assessment on", r.status_code == 200 and data_of(r).get("isActive") is True,
           f"{r.status_code} {body(r).get('message')}")
     now_offered = {row["name"]: row["status"] for row in data_of(api("GET", "/api/baseline/available", etoken)).get("assessments") or []}
     check("baseline: the employee is offered it straight away, as new",
-          "Baseline assessment 2" not in before and now_offered.get("Baseline assessment 2") == "new", now_offered)
+          BANK[("Employee", 2)] not in before and now_offered.get(BANK[("Employee", 2)]) == "new", now_offered)
     fresh = data_of(api("GET", "/api/baseline/available", ptoken))
-    check("baseline: the student now sees Baseline assessment 2 as new (and 1 as completed)",
+    check("baseline: the student now sees their second assessment as new (and the first as completed)",
           fresh.get("newCount") == 1
           and {(row["name"], row["status"]) for row in fresh.get("assessments") or []}
-          == {("Baseline assessment 1", "completed"), ("Baseline assessment 2", "new")}, fresh.get("assessments"))
+          == {(BANK[("Student", 1)], "completed"), (BANK[("Student", 2)], "new")}, fresh.get("assessments"))
     check("dashboard: the new baseline shows on the student's home page",
           data_of(api("GET", "/api/analytics/my-performance", ptoken)).get("new_baselines") == 1)
     check("baseline: an employee is not offered the student assessment",
@@ -399,7 +460,7 @@ try:
     r = api("POST", "/api/baseline/complete", ptoken, json={"assessment_id": second.get("assessment_id")})
     latest = data_of(api("GET", "/api/baseline/latest-result", ptoken))
     check("baseline: the student takes the new one; it becomes their latest result",
-          r.status_code == 200 and latest.get("templateName") == "Baseline assessment 2", latest.get("templateName"))
+          r.status_code == 200 and latest.get("templateName") == BANK[("Student", 2)], latest.get("templateName"))
     retrained = data_of(api("GET", "/api/analytics/my-performance", ptoken))
     # (The unit test BaselineInEffectTests proves the rule on a history where the two rules differ.)
     check("baseline: taken after 5+ training decisions, it is saved (100%) but marked as not setting the difficulty",
@@ -410,13 +471,16 @@ try:
     r = api("POST", f"/api/baseline/templates/{student_2.get('id')}/active", atoken, json={"active": False})
     kept = data_of(api("GET", "/api/baseline/available", ptoken))
     check("bank: switched off again, the student's result is kept and still listed",
-          r.status_code == 200 and any(row["name"] == "Baseline assessment 2" and row["status"] == "completed"
+          r.status_code == 200 and any(row["name"] == BANK[("Student", 2)] and row["status"] == "completed"
                                        for row in kept.get("assessments") or []), kept.get("assessments"))
 
     r = api("POST", "/api/baseline/templates", atoken, json={"occupation": "Other", "description": "E2E draft"})
+    check("bank: a new baseline needs a name", r.status_code == 400, r.status_code)
+    r = api("POST", "/api/baseline/templates", atoken, json={
+        "occupation": "Other", "name": "E2E Draft Assessment", "description": "E2E draft"})
     draft = data_of(r)
-    check("bank: admin creates an empty baseline; it gets the next number",
-          r.status_code == 201 and draft.get("name") == "Baseline assessment 3" and draft.get("isActive") is False,
+    check("bank: admin creates an empty, named baseline; it starts switched off",
+          r.status_code == 201 and draft.get("name") == "E2E Draft Assessment" and draft.get("isActive") is False,
           f"{r.status_code} {draft.get('name')}")
     r = api("POST", f"/api/baseline/templates/{draft.get('id')}/active", atoken, json={"active": True})
     check("bank: a baseline with fewer than 5 questions cannot be switched on", r.status_code == 400, r.status_code)
@@ -464,11 +528,50 @@ try:
     check("picker: each locked player says why (no consent, or off the allow-list)",
           all(p["blocked_reason"] == ("Not on the safety allow-list" if p["consented"] else "Has not agreed to campaign emails")
               for p in players if not p["selectable"]))
+    unclickable = next((s for s in context["scenarios"] if not s["clickable"]), None)
+    check("campaign: emails with no link and no attachment are marked as having nothing to click",
+          unclickable is not None and all(
+              s["clickable"] == bool(s["attachment"] or re.search(r"https?://|www\.", s["message"] or ""))
+              for s in context["scenarios"]))
+    if unclickable:
+        # Like a scam that asks for a reply: it can still be sent, and its result is a report or an ignore
+        r = api("POST", "/api/campaigns", atoken, json={
+            "scenario_id": unclickable["scenario_id"], "name": "E2E nothing to click", "recipients": [PLAYER_EMAIL]})
+        check("campaign: an email with nothing to click can still be a campaign (report or ignore)",
+              r.status_code == 201, f"{r.status_code} {body(r).get('message')}")
+        if r.status_code == 201:
+            api("DELETE", f"/api/campaigns/{data_of(r).get('campaign_id')}", atoken)
     check("picker: occupations are Student/Employee/Other",
           {p["occupation"] for p in players} <= {"Student", "Employee", "Other"}, {p["occupation"] for p in players})
     check("campaign: scenario list offers phishing and genuine emails",
           {s["is_phishing"] for s in context["scenarios"]} == {True, False}, {s["is_phishing"] for s in context["scenarios"]})
-    scenario_id = next(s["scenario_id"] for s in context["scenarios"] if s["is_phishing"])
+    with app.app_context():
+        import json as _json
+        import seed_demo as _seed
+        from app.models.scenario import Scenario
+        sa_titles = {item["title"] for item in _json.loads(_seed.ADMIN_CUSTOM_SCENARIOS.read_text(encoding="utf-8"))}
+        unknown = [title for title, dataset_id in db.session.query(Scenario.title, Scenario.dataset_id).filter(
+            Scenario.status != Scenario.CAMPAIGN_STATUS).all() if dataset_id is None and title not in sa_titles]
+    check("demo: every training scenario comes from an uploaded dataset or the admin's custom set",
+          bool(context["scenarios"]) and not unknown, unknown[:5])
+    # The demo emails come from a generated dataset with no links, so the link-tracking checks use a phishing
+    # email the admin adds by hand and switches on (create -> approve with the full checklist -> activate)
+    r = api("POST", "/api/scenarios", atoken, json={
+        "title": "E2E campaign email", "simulation_type": "EMAIL", "category": "Banking & Money", "difficulty": "Medium",
+        "sender": "Standard Bank <alerts@standardbank-verify.co>", "subject": "Unusual sign-in on your account",
+        "correct_answer": "REPORT", "phishing_cues": ["Suspicious link", "Urgency"],
+        "message": "We noticed an unusual sign-in. Confirm your details within 24 hours at "
+                   "http://standardbank-verify.co/secure or your account will be locked.",
+    })
+    scenario_id = data_of(r).get("scenario_id")
+    every_item = {key: True for key in (
+        "label_correct", "clues_accurate", "category_difficulty_fit", "text_complete", "no_personal_data", "links_safe",
+    )}
+    approved = api("POST", f"/api/scenarios/{scenario_id}/review", atoken, json={"action": "approve", "checklist": every_item})
+    activated = api("POST", f"/api/scenarios/{scenario_id}/review", atoken, json={"action": "activate"})
+    check("campaign: an admin-added email with a link is switched on for the campaign checks",
+          r.status_code == 201 and approved.status_code == 200 and activated.status_code == 200,
+          (r.status_code, approved.status_code, activated.status_code))
     locked = next(p["email"] for p in players if not p["selectable"])
 
     r = api("POST", "/api/campaigns", atoken, json={"scenario_id": scenario_id, "name": "E2E blocked", "recipients": [locked]})
@@ -615,7 +718,10 @@ try:
     check("custom: missing subject is refused", r.status_code == 400, body(r).get("message"))
     r = api("POST", "/api/campaigns", atoken, json={"name": "E2E nothing to click", "recipients": [PLAYER_EMAIL],
                                                      "custom": {"sender": "IT <it@example.test>", "subject": "Hello", "message": "No link here"}})
-    check("custom: an email with no link and no attachment is refused", r.status_code == 400, body(r).get("message"))
+    check("custom: an email with no link and no attachment is accepted (report or ignore only)",
+          r.status_code == 201, f"{r.status_code} {body(r).get('message')}")
+    if r.status_code == 201:
+        api("DELETE", f"/api/campaigns/{data_of(r).get('campaign_id')}", atoken)
 
     def launch_custom(name, is_phishing, attachment=None):
         response = api("POST", "/api/campaigns", atoken, json={
@@ -787,13 +893,23 @@ try:
         check("datasets: uploaded rows become drafts awaiting review, not live scenarios",
               drafts and all(scenario.get("status") == "DRAFT" for scenario in drafts),
               [scenario.get("status") for scenario in drafts])
-        listing = data_of(api("GET", "/api/scenarios?simulation_type=SMS&status=", atoken))
+        # Every channel: the demo scenarios are all from datasets, and the hand-added campaign email is the rest
+        listing = data_of(api("GET", "/api/scenarios?status=", atoken))
         groups = {str(group["dataset_id"]): group for group in listing.get("groups", [])}
         check("datasets: scenario review groups scenarios under their dataset, plus one group for the rest",
               str(new_dataset) in groups and groups[str(new_dataset)]["name"] == "e2e.csv"
               and groups[str(new_dataset)]["by_status"]["DRAFT"] == len(drafts) and "none" in groups,
               {key: (group["name"], group["count"]) for key, group in groups.items()})
-        only_hand_made = items(data_of(api("GET", "/api/scenarios?simulation_type=SMS&status=&dataset_id=none", atoken)),
+        # With one stage picked, a group still shows its scenarios at every stage (the admin's live ones do not
+        # seem to disappear when a new draft is added)
+        draft_view = {str(group["dataset_id"]): group for group in
+                      data_of(api("GET", "/api/scenarios?status=DRAFT", atoken)).get("groups", [])}
+        custom = draft_view.get("none") or {}
+        check("datasets: the admin's own group is 'admin_custom_scenarios' and its total covers every stage",
+              custom.get("name") == "admin_custom_scenarios" and custom.get("total") == groups["none"]["total"]
+              and custom.get("total") == sum(custom.get("by_status", {}).values()) >= custom.get("count", 0),
+              {k: custom.get(k) for k in ("name", "count", "total")})
+        only_hand_made =items(data_of(api("GET", "/api/scenarios?status=&dataset_id=none", atoken)),
                                "scenarios", "items")
         check("datasets: the 'none' group lists only scenarios that are not from a dataset",
               only_hand_made and all(row["dataset_id"] is None for row in only_hand_made))
@@ -815,16 +931,33 @@ try:
           f"{r.status_code} {body(r).get('message')}")
 
     # ---------- review lifecycle: only ACTIVE scenarios reach a learner ----------
-    REVIEW_CATEGORY = "E2E Review Check"   # its own category, so the player can ask for it directly
+    # Its own category, so the player can ask for it directly. The API only accepts the real training
+    # categories, so the test sets this one straight in the database after each save.
+    REVIEW_CATEGORY = "E2E Review Check"
     full_checklist = {key: True for key in (
         "label_correct", "clues_accurate", "category_difficulty_fit", "text_complete", "no_personal_data", "links_safe",
     )}
     r = api("POST", "/api/scenarios", atoken, json={
-        "title": "E2E review check", "simulation_type": "SMS", "category": REVIEW_CATEGORY, "difficulty": "Easy",
+        "title": "E2E made-up category", "simulation_type": "SMS", "category": "Not A Category", "difficulty": "Easy",
+        "correct_answer": "SAFE", "message": "Hello, this is a test.",
+    })
+    check("review: a scenario with a made-up category is refused", r.status_code == 400
+          and "category must be one of" in (body(r).get("message") or ""), r.status_code)
+    r = api("POST", "/api/scenarios", atoken, json={
+        "title": "E2E review check", "simulation_type": "SMS", "category": "Delivery", "difficulty": "Easy",
         "sender": "+27 82 000 0000", "correct_answer": "REPORT", "phishing_cues": ["Suspicious link", "Urgency"],
         "message": "Your parcel is waiting. Confirm delivery today at http://parcel-check.example or it is returned.",
     })
     review_id = data_of(r).get("scenario_id")
+
+    def own_category():
+        with app.app_context():
+            from app.models.scenario import Scenario
+            db.session.get(Scenario, review_id).category = REVIEW_CATEGORY
+            db.session.commit()
+
+    if review_id:
+        own_category()
 
     def review(action, checklist=None):
         return api("POST", f"/api/scenarios/{review_id}/review", atoken, json={"action": action, "checklist": checklist})
@@ -859,10 +992,11 @@ try:
           r.status_code == 200 and served and not any(key in scenario for key in ("correct_answer", "phishing_cues")),
           f"{r.status_code} {review_status()} {sorted(scenario)}")
     r = api("PUT", f"/api/scenarios/{review_id}", atoken, json={
-        "title": "E2E review check", "simulation_type": "SMS", "category": REVIEW_CATEGORY, "difficulty": "Easy",
+        "title": "E2E review check", "simulation_type": "SMS", "category": "Delivery", "difficulty": "Easy",
         "sender": "+27 82 000 0000", "correct_answer": "REPORT", "phishing_cues": ["Suspicious link", "Urgency"],
         "message": "Your parcel is waiting. Confirm delivery within 2 hours at http://parcel-check.example.",
     })
+    own_category()
     check("review: editing a live scenario sends it back to draft and off the learner's queue",
           r.status_code == 200 and review_status() == "DRAFT" and not served_to_player()[0], review_status())
     detail = data_of(api("GET", f"/api/scenarios/{review_id}", atoken))
@@ -954,12 +1088,194 @@ try:
           f"{email_only.get('total_simulations')} vs {by_type}")
     check("filters: a player cannot open the admin analytics", api("GET", "/api/analytics/admin", ptoken).status_code == 403)
 
+    def expected_flags():
+        """Live (channel, category or difficulty) groups where one answer is missing or under a quarter."""
+        with app.app_context():
+            from app.models.scenario import Scenario
+            counts = {}
+            for channel, category, difficulty, answer in db.session.query(
+                    Scenario.simulation_type, Scenario.category, Scenario.difficulty, Scenario.correct_answer
+            ).filter(Scenario.status == "ACTIVE"):
+                for group, name in (("category", category), ("difficulty", difficulty)):
+                    row = counts.setdefault((channel, group, name), [0, 0])
+                    row[0 if answer == "REPORT" else 1] += 1
+            return {key for key, (phishing, genuine) in counts.items() if min(phishing, genuine) < 0.25 * (phishing + genuine)}
+
+    def flags_shown():
+        return {(f["channel"], f["group"], f["name"]) for f in
+                data_of(api("GET", "/api/scenarios", atoken)).get("balance") or []}
+
+    check("review: the live answer balance flags exactly the groups with one answer missing or under a quarter",
+          flags_shown() == expected_flags(), (sorted(flags_shown()), sorted(expected_flags())))
+    with app.app_context():   # a live, phishing-only test category must be flagged
+        from app.models.scenario import Scenario
+        lopsided = Scenario(title="E2E balance check", simulation_type="SMS", category="E2E Balance Check",
+                            difficulty="Easy", message="Pay now at http://e2e-balance.example", correct_answer="REPORT",
+                            status="ACTIVE")
+        db.session.add(lopsided)
+        db.session.commit()
+        lopsided_id = lopsided.scenario_id
+    check("review: a live category with only phishing is flagged as one-sided",
+          ("SMS", "category", "E2E Balance Check") in flags_shown(), sorted(flags_shown()))
+    with app.app_context():
+        from app.models.scenario import Scenario
+        db.session.delete(db.session.get(Scenario, lopsided_id))
+        db.session.commit()
     rows = items(data_of(api("GET", "/api/scenarios?sort=uses&order=desc", atoken)), "scenarios")
     uses = [row["uses"] for row in rows]
     check("sorting: scenarios sort by a column on the server", bool(uses) and uses == sorted(uses, reverse=True), uses[:10])
     rows = items(data_of(api("GET", "/api/scenarios?sort=title&order=asc", atoken)), "scenarios")
-    titles = [row["title"].lower() for row in rows]
-    check("sorting: ascending by title", titles == sorted(titles), titles[:5])
+    # Compared with the database's own text order: PostgreSQL's collation skips punctuation such as a leading
+    # "!" or quote (common in SMS datasets), so Python's sorted() is not the right yardstick
+    with app.app_context():
+        from app.models.scenario import Scenario
+        expected_ids = [scenario_id for (scenario_id,) in db.session.query(Scenario.scenario_id).filter(
+            db.func.upper(Scenario.status) != Scenario.CAMPAIGN_STATUS,
+        ).order_by(Scenario.title.asc().nulls_last(), Scenario.scenario_id).limit(len(rows)).all()]
+    check("sorting: ascending by title", bool(rows) and [row["scenario_id"] for row in rows] == expected_ids,
+          [row["title"] for row in rows[:5]])
+
+
+    # ================= SESSIONS, COOKIES AND HARDENING =================
+    import base64
+    import json as json_module
+    from datetime import timedelta as _timedelta
+
+    def payload_of(jwt_text):
+        part = jwt_text.split(".")[1]
+        return json_module.loads(base64.urlsafe_b64decode(part + "=" * (-len(part) % 4)))
+
+    def set_cookie_attrs(response):
+        return {header.split("=", 1)[0]: header for header in response.headers.getlist("Set-Cookie")}
+
+    sec, r = login(ADMIN_EMAIL)
+    cookies = set_cookie_attrs(r)
+    check("session: the login reply carries no token, user id or role, only the session timing",
+          set(data_of(r)) == {"session"} and "access_token" not in r.get_data(as_text=True), data_of(r))
+    check("session: both tokens are HttpOnly, Secure, SameSite=Strict cookies",
+          all(name in cookies and "HttpOnly" in cookies[name] and "Secure" in cookies[name]
+              and "SameSite=Strict" in cookies[name] for name in ("ps_access", "ps_refresh")), list(cookies))
+    check("session: the refresh cookie is only sent to /api/auth/refresh",
+          "Path=/api/auth/refresh" in cookies.get("ps_refresh", ""), cookies.get("ps_refresh"))
+    claims = payload_of(sec.cookie("ps_access", "/api/"))
+    check("session: the access token names only a random session key (no user id, email or role)",
+          not {"role", "email", "user_id", "session_id"} & set(claims) and len(claims["sub"]) >= 40
+          and ADMIN_EMAIL not in json_module.dumps(claims) and claims.get("iss") == "phishsimulator-api", sorted(claims))
+    me_sec = data_of(api("GET", "/api/auth/me", sec))
+    check("session: /me gives no internal ids", "user_id" not in me_sec and me_sec.get("role") == "ADMIN", sorted(me_sec))
+
+    r = sec.client.put("/api/auth/update-profile", json={})
+    check("csrf: a change without the CSRF token is refused (403)", r.status_code == 403, r.status_code)
+    r = api("PUT", "/api/auth/update-profile", sec, json={}, headers={"Origin": "https://evil.example"})
+    check("csrf: a change sent from another website is refused (403)", r.status_code == 403, r.status_code)
+    r = api("POST", "/api/auth/logout", sec, headers={"X-CSRF-Token": "wrong"})
+    check("csrf: a wrong CSRF token is refused", r.status_code == 403, r.status_code)
+
+    old_refresh = sec.cookie("ps_refresh", "/api/auth/refresh")
+    old_refresh_csrf = sec.csrf(refresh=True)
+    old_access = sec.cookie("ps_access", "/api/")
+    r = api("POST", "/api/auth/refresh", sec)
+    check("refresh: renewing gives new cookies (rotation)", r.status_code == 200
+          and sec.cookie("ps_refresh", "/api/auth/refresh") != old_refresh, body(r))
+    stale = Browser()
+    stale.client.set_cookie("ps_access", old_access, path="/api/")
+    check("refresh: the access token from before the renewal stops working at once",
+          stale.client.get("/api/auth/me").status_code == 401)
+    with app.app_context():
+        from app.models.authentication import UserSession
+        row = UserSession.query.filter(UserSession.status == "ACTIVE").order_by(UserSession.session_id.desc()).first()
+        row.rotated_at = row.rotated_at - _timedelta(minutes=5)   # past the grace for two tabs
+        db.session.commit()
+    thief = Browser()
+    thief.client.set_cookie("ps_refresh", old_refresh, path="/api/auth/refresh")
+    # A thief who copied the cookies before the renewal has the old refresh token and its CSRF value
+    thief.client.set_cookie("ps_csrf_refresh", old_refresh_csrf)
+    r = thief.client.post("/api/auth/refresh", headers={"X-CSRF-Token": old_refresh_csrf})
+    check("refresh: a copied old refresh token is refused", r.status_code == 401, r.status_code)
+    check("refresh: ...and the whole session is revoked (the real user must sign in again)",
+          api("GET", "/api/auth/me", sec).status_code == 401)
+    with app.app_context():
+        reason = UserSession.query.order_by(UserSession.session_id.desc()).first().ended_reason
+    check("refresh: the session records why it ended", reason == "refresh_reuse", reason)
+
+    sec, _ = login(ADMIN_EMAIL)
+    other = Browser()
+    other.client.set_cookie("ps_access", sec.cookie("ps_access", "/api/"), path="/api/")
+    r = other.client.get("/api/auth/me", headers={"User-Agent": "curl/8.0"})
+    check("hijack: a stolen access cookie used from another browser is refused", r.status_code == 401, r.status_code)
+    check("hijack: ...and that session ends", api("GET", "/api/auth/me", sec).status_code == 401)
+
+    first, _ = login(ADMIN_EMAIL)
+    second, _ = login(ADMIN_EMAIL)
+    r = api("PUT", "/api/auth/change-password", first, json={
+        "current_password": PASSWORD, "new_password": "Changed#2026x", "confirm_password": "Changed#2026x"})
+    check("password change: signs out the account's other sessions, keeps this one",
+          r.status_code == 200 and api("GET", "/api/auth/me", second).status_code == 401
+          and api("GET", "/api/auth/me", first).status_code == 200, (r.status_code, body(r).get("message")))
+    api("PUT", "/api/auth/change-password", first, json={
+        "current_password": "Changed#2026x", "new_password": PASSWORD, "confirm_password": PASSWORD})
+    with app.app_context():
+        from app.models.authentication import User as _User
+        _User.query.filter_by(email=ADMIN_EMAIL).first().failed_logins = 0
+        db.session.commit()
+    atoken, _ = login(ADMIN_EMAIL)   # the admin's earlier session was ended by the password change
+
+    idle_browser, _ = login(PLAYER_EMAIL)
+    with app.app_context():
+        from datetime import datetime as _datetime
+        newest = UserSession.query.order_by(UserSession.session_id.desc()).first()
+        newest.idle_expires_at = _datetime.utcnow() - _timedelta(seconds=1)
+        db.session.commit()
+    r = api("GET", "/api/auth/me", idle_browser)
+    with app.app_context():
+        expired = UserSession.query.order_by(UserSession.session_id.desc()).first()
+        expired_state = (expired.status.value, expired.ended_reason)
+    check("idle: a session not renewed within the idle time ends", r.status_code == 401
+          and expired_state == ("EXPIRED", "idle_timeout"), expired_state)
+
+    r = api("POST", "/api/auth/login", json={"email": PLAYER_EMAIL, "password": "x" * 100})
+    check("passwords: a very long password gets a normal reply, not a server error", r.status_code == 401, r.status_code)
+    r = api("POST", "/api/auth/register", json={
+        "full_name": "<script>alert(1)</script>", "email": "xss@example.test", "password": "Valid#2026",
+        "confirm_password": "Valid#2026", "age": 20, "occupation": "STUDENT", "it_background": False})
+    check("validation: a name with markup is refused at registration", r.status_code == 400, body(r).get("message"))
+    r = api("POST", "/api/auth/register", json={
+        "full_name": "Robert'); DROP TABLE player;--", "email": "bobby@example.test", "password": "Valid#2026",
+        "confirm_password": "Valid#2026", "age": 20, "occupation": "STUDENT", "it_background": False})
+    with app.app_context():
+        from sqlalchemy import inspect as _inspect
+        player_table_alive = "player" in _inspect(db.engine).get_table_names()
+    check("validation: an SQL-injection style name is refused, and the tables are untouched",
+          r.status_code == 400 and player_table_alive, body(r).get("message"))
+    r = api("POST", "/api/auth/login", json={"email": "' OR '1'='1", "password": "' OR '1'='1"})
+    check("injection: SQL in the login fields is just a wrong login", r.status_code == 401, r.status_code)
+
+    with app.app_context():
+        from app.models.authentication import Player as _Player
+        victim = _Player.query.order_by(_Player.player_id).first()
+        victim_id, original_name = victim.player_id, victim.full_name
+        victim.full_name = "=HYPERLINK(\"http://evil.example\")"
+        db.session.commit()
+    csv_text = api("GET", "/api/analytics/export/players.csv", atoken).get_data(as_text=True)
+    with app.app_context():
+        db.session.get(_Player, victim_id).full_name = original_name
+        db.session.commit()
+    check("export: a cell that would run as a spreadsheet formula is made plain text",
+          "'=HYPERLINK" in csv_text and "\n=HYPERLINK" not in csv_text and ",=HYPERLINK" not in csv_text)
+
+    r = api("GET", "/api/auth/me", atoken)
+    check("headers: API replies forbid framing, sniffing, caching and loading anything",
+          r.headers.get("X-Frame-Options") == "DENY" and r.headers.get("X-Content-Type-Options") == "nosniff"
+          and r.headers.get("Cache-Control") == "no-store" and "default-src 'none'" in r.headers.get("Content-Security-Policy", ""),
+          dict(r.headers))
+    check("errors: an unknown address gives a plain JSON reply (no stack trace)",
+          api("GET", "/api/does-not-exist").status_code == 404 and "Traceback" not in api("GET", "/api/does-not-exist").get_data(as_text=True))
+
+    app.config["RATE_LIMITS"] = True
+    statuses = [api("POST", "/api/auth/forgot-password", json={"email": "limit@example.test"}).status_code for _ in range(7)]
+    app.config["RATE_LIMITS"] = False
+    check("rate limit: repeated password-reset requests from one address are slowed down (429)",
+          statuses[:5] == [200] * 5 and 429 in statuses[5:], statuses)
 
     for _ in range(5):
         api("POST", "/api/auth/login", json={"email": PLAYER_EMAIL, "password": "wrong-password-1"})
@@ -971,7 +1287,7 @@ try:
     SENT.clear()
     r = api("POST", "/api/auth/forgot-password", json={"email": PLAYER_EMAIL.upper()})
     check("reset: request a link (email matched in any case)", r.status_code == 200 and len(SENT) == 1, f"{r.status_code} sent={len(SENT)}")
-    found = re.search(r"reset-password\?token=([\w-]+)", SENT[-1].get_body(("plain",)).get_content()) if SENT else None
+    found = re.search(r"reset-password#token=([\w-]+)", SENT[-1].get_body(("plain",)).get_content()) if SENT else None
     reset_token = found.group(1) if found else ""
     with app.app_context():
         from app.models.authentication import PasswordResetToken
@@ -989,9 +1305,8 @@ try:
     r = api("POST", "/api/auth/reset-password", json={"token": reset_token, "new_password": new_password, "confirm_password": new_password})
     check("reset: the link only works once", r.status_code == 400, body(r))
     check("reset: every old session is signed out", api("GET", "/api/auth/me", ptoken).status_code == 401)
-    r = api("POST", "/api/auth/login", json={"email": PLAYER_EMAIL, "password": new_password})
-    check("reset: sign in with the new password (lock cleared)", r.status_code == 200, body(r))
-    ptoken = data_of(r).get("access_token")
+    ptoken, r = login(PLAYER_EMAIL, new_password)
+    check("reset: sign in with the new password (lock cleared)", r.status_code == 200 and ptoken, body(r))
 
     check("security: log out", api("POST", "/api/auth/logout", ptoken).status_code == 200)
     check("security: a logged-out token is rejected straight away", api("GET", "/api/auth/me", ptoken).status_code == 401)

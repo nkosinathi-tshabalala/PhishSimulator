@@ -3,6 +3,7 @@
 import { useState } from "react";
 
 import AuthService from "../../services/authService";
+import { LIMITS, ageProblem, emailProblem, firstProblem, nameProblem, passwordProblem, tidy } from "../../services/validation";
 
 import { ArrowLeft, Fish, CheckCircle2, AlertCircle } from "lucide-react";
 
@@ -57,12 +58,26 @@ export function RegisterPage({ onNavigate, onRegister }: RegisterPageProps) {
 
     setErrorMessage("");
     setSuccessMessage("");
+
+    // The same rules the server enforces, shown before sending
+    const problem = firstProblem(
+      nameProblem(formData.fullName),
+      emailProblem(formData.email),
+      passwordProblem(formData.password),
+      formData.password !== formData.confirmPassword ? "Passwords do not match." : "",
+      ageProblem(formData.age),
+      formData.role ? "" : "Choose your occupation.",
+    );
+    if (problem) {
+      setErrorMessage(problem);
+      return;
+    }
     setIsLoading(true);
 
     try {
       const response = await AuthService.register({
-        full_name: formData.fullName,
-        email: formData.email,
+        full_name: tidy(formData.fullName),
+        email: formData.email.trim(),
         password: formData.password,
         confirm_password: formData.confirmPassword,
         age: Number(formData.age),
@@ -154,6 +169,8 @@ export function RegisterPage({ onNavigate, onRegister }: RegisterPageProps) {
                 id="fullName"
                 type="text"
                 placeholder="John Doe"
+                maxLength={LIMITS.name}
+                autoComplete="name"
                 value={formData.fullName}
                 onChange={(e) =>
                   setFormData({
@@ -172,6 +189,8 @@ export function RegisterPage({ onNavigate, onRegister }: RegisterPageProps) {
                 id="email"
                 type="email"
                 placeholder="john@example.com"
+                maxLength={LIMITS.email}
+                autoComplete="email"
                 value={formData.email}
                 onChange={(e) =>
                   setFormData({
@@ -190,6 +209,7 @@ export function RegisterPage({ onNavigate, onRegister }: RegisterPageProps) {
                 id="password"
                 type="password"
                 placeholder="Enter your password"
+                maxLength={LIMITS.passwordMax}
                 value={formData.password}
                 onChange={(e) =>
                   setFormData({
@@ -210,6 +230,8 @@ export function RegisterPage({ onNavigate, onRegister }: RegisterPageProps) {
                 id="confirmPassword"
                 type="password"
                 placeholder="Confirm your password"
+                maxLength={LIMITS.passwordMax}
+                autoComplete="new-password"
                 value={formData.confirmPassword}
                 onChange={(e) =>
                   setFormData({
@@ -228,6 +250,9 @@ export function RegisterPage({ onNavigate, onRegister }: RegisterPageProps) {
                 id="age"
                 type="number"
                 placeholder="25"
+                min={LIMITS.ageMin}
+                max={LIMITS.ageMax}
+                step={1}
                 value={formData.age}
                 onChange={(e) =>
                   setFormData({

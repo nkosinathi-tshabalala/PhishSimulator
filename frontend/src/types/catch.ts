@@ -13,6 +13,8 @@ export interface PracticeCategory {
   available: number;
   attempts: number;
   accuracy: number | null;
+  /** Holds enough phishing and genuine messages to practise on its own (a one-sided one would give the answer away). */
+  focusable: boolean;
 }
 
 /** The message itself, as a player sees it before deciding (never the answer). */
@@ -126,12 +128,6 @@ export interface AttemptResult {
     rank_change: "up" | "down" | null;
     rating_before: number;
   };
-}
-
-export interface TriageBatch {
-  difficulty: Difficulty;
-  difficulty_reason: string;
-  messages: MessageView[];
 }
 
 /** Activity per day for one year (decisions plus finished baseline quizzes). */

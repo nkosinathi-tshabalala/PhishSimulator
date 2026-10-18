@@ -5,16 +5,16 @@ import secrets
 from datetime import datetime, timedelta
 from math import ceil
 
-from flask import current_app
-from flask_jwt_extended import create_access_token, get_jwt, get_jwt_identity
+from flask import current_app, g
+from flask_jwt_extended import current_user
 
 from app.email.mailer import Mailer
 from app.enums.occupation import Occupation
 from app.enums.role import Role
-from app.enums.session_status import SessionStatus
 from app.extensions import bcrypt, db
-from app.models.authentication import PasswordResetToken, Player, User, UserProfile, UserSession
-from app.schemas.auth_schema import MIN_AGE, AuthSchema
+from app.models.authentication import PasswordResetToken, Player, User, UserProfile
+from app.schemas.auth_schema import AuthSchema
+from app.services.session_service import SessionService
 
 # Wrong passwords allowed in a row before the account is locked for LOCK_MINUTES
 MAX_FAILED_LOGINS = 5
@@ -31,9 +31,19 @@ def hash_token(token):
     return hashlib.sha256(token.encode()).hexdigest()
 
 
-def issue_token(user_id, role, session_id):
-    """A login token carrying the user's role and the login session it belongs to."""
-    return create_access_token(identity=str(user_id), additional_claims={"role": role, "session_id": session_id})
+_dummy_hash = None
+
+
+def _check_password(user, password):
+    """Check a password with bcrypt. For an unknown email a dummy hash is checked instead, so the reply takes
+    as long either way and its timing does not reveal which emails have accounts."""
+    global _dummy_hash
+    if user is None:
+        if _dummy_hash is None:
+            _dummy_hash = bcrypt.generate_password_hash(secrets.token_urlsafe(16)).decode("utf-8")
+        bcrypt.check_password_hash(_dummy_hash, password)
+        return False
+    return bcrypt.check_password_hash(user.password_hash, password)
 
 
 class AuthService:
@@ -53,13 +63,13 @@ class AuthService:
         user = User(email=email, password_hash=AuthService._hash(data["password"]), role=Role.PLAYER.value)
         db.session.add(user)
         db.session.flush()
-        player = Player(user_id=user.user_id, full_name=data["full_name"].strip())
+        player = Player(user_id=user.user_id, full_name=" ".join(str(data["full_name"]).split()))
         db.session.add(player)
         db.session.flush()
         db.session.add(UserProfile(
             player_id=player.player_id,
             age=int(data["age"]),
-            it_background=bool(data["it_background"]),
+            it_background=AuthService._flag(data["it_background"]),
             occupation=data["occupation"],
             **AuthService._consent_fields(data.get("campaign_consent")),
         ))
@@ -68,43 +78,33 @@ class AuthService:
 
     @staticmethod
     def login(data):
-        """Check the email and password, then start a login session."""
+        """Check the email and password, then start a new server-side session.
+        Returns (success, message, (access token, refresh token, session timing) or None)."""
         is_valid, error = AuthSchema.validate_login(data)
         if not is_valid:
             return False, error, None
 
         user = User.query.filter_by(email=AuthSchema.clean_email(data["email"])).first()
-        if not user:
-            return False, WRONG_LOGIN, None
-
         now = datetime.utcnow()
-        if user.locked_until and user.locked_until > now:
+        if user and user.locked_until and user.locked_until > now:
             minutes = ceil((user.locked_until - now).total_seconds() / 60)
             return False, f"Too many failed attempts. Try again in {minutes} minute(s).", None
 
-        if not bcrypt.check_password_hash(user.password_hash, data["password"]):
-            AuthService._record_failed_login(user, now)
+        if not _check_password(user, data["password"]):
+            if user:
+                AuthService._record_failed_login(user, now)
             return False, WRONG_LOGIN, None
 
         user.failed_logins = 0
         user.locked_until = None
-        session = UserSession(user_id=user.user_id, status=SessionStatus.ACTIVE)
-        db.session.add(session)
-        db.session.commit()
-        return True, "Login successful.", {
-            "access_token": issue_token(user.user_id, user.role, session.session_id),
-            "user_id": user.user_id,
-            "role": user.role,
-        }
+        session, access, refresh = SessionService.start(user)
+        return True, "Login successful.", (access, refresh, SessionService.timing(session))
 
     @staticmethod
     def logout():
-        """End this login session, so its token stops working straight away."""
-        session = db.session.get(UserSession, get_jwt().get("session_id") or 0)
-        if session and session.status == SessionStatus.ACTIVE:
-            session.status = SessionStatus.LOGGED_OUT
-            session.logout_time = datetime.utcnow()
-            db.session.commit()
+        """End this login session, so its tokens stop working straight away."""
+        SessionService.end(g.auth_session, "logout")
+        db.session.commit()
         return True, "Logged out successfully."
 
     @staticmethod
@@ -124,7 +124,9 @@ class AuthService:
         ))
         db.session.commit()
 
-        reset_url = f"{current_app.config['FRONTEND_URL']}/reset-password?token={token}"
+        # The token goes after "#", which browsers never send to a server, so it stays out of web server
+        # logs and Referer headers; the page reads it and clears the address bar
+        reset_url = f"{current_app.config['FRONTEND_URL']}/reset-password#token={token}"
         Mailer.send(
             user.email,
             "Reset your PhishSimulator password",
@@ -150,17 +152,14 @@ class AuthService:
         user.failed_logins = 0
         user.locked_until = None
         reset.used = True
-        UserSession.query.filter_by(user_id=user.user_id, status=SessionStatus.ACTIVE).update({
-            UserSession.status: SessionStatus.LOGGED_OUT,
-            UserSession.logout_time: datetime.utcnow(),
-        })
+        SessionService.end_all(user.user_id, "password_reset")
         db.session.commit()
         return True, "Password updated. You can now sign in."
 
     @staticmethod
     def get_current_user():
         """The signed-in user's account and profile details."""
-        user = db.session.get(User, int(get_jwt_identity()))
+        user = current_user
         if not user:
             return False, "User not found.", None
         if user.role == Role.ADMIN.value:
@@ -174,27 +173,28 @@ class AuthService:
     @staticmethod
     def update_profile(data):
         """Save a player's name, age, occupation, IT background and campaign consent."""
-        user = db.session.get(User, int(get_jwt_identity()))
+        user = current_user
         if not user or not user.player or not user.player.profile:
             return False, "Only players have profile details to edit.", None
 
         error = AuthSchema.missing_field(data, ("full_name", "age", "occupation"))
         if error:
             return False, error, None
-        if not str(data["age"]).isdigit() or int(data["age"]) < MIN_AGE:
-            return False, f"Age must be at least {MIN_AGE}.", None
+        error = AuthSchema.name_problem(data["full_name"]) or AuthSchema.age_problem(data["age"])
+        if error:
+            return False, error, None
         try:
             occupation = Occupation(data["occupation"])
         except ValueError:
             return False, "Invalid occupation selected.", None
 
         player, profile = user.player, user.player.profile
-        player.full_name = data["full_name"].strip()
+        player.full_name = " ".join(str(data["full_name"]).split())
         profile.age = int(data["age"])
-        profile.it_background = bool(data.get("it_background"))
+        profile.it_background = AuthService._flag(data.get("it_background"))
         profile.occupation = occupation
         if "campaign_consent" in data:
-            consent = bool(data["campaign_consent"])
+            consent = AuthService._flag(data["campaign_consent"])
             if consent != profile.campaign_consent:
                 for name, value in AuthService._consent_fields(consent).items():
                     setattr(profile, name, value)
@@ -204,17 +204,19 @@ class AuthService:
     @staticmethod
     def change_password(data):
         """Change the signed-in user's password after checking the current one."""
-        user = db.session.get(User, int(get_jwt_identity()))
+        user = current_user
         if not user:
             return False, "User not found."
 
         is_valid, error = AuthSchema.validate_new_password(data, ("current_password", "new_password", "confirm_password"))
         if not is_valid:
             return False, error
-        if not bcrypt.check_password_hash(user.password_hash, data["current_password"]):
+        if AuthSchema.too_long_for_bcrypt(data["current_password"]) or not _check_password(user, data["current_password"]):
             return False, "Current password is incorrect."
 
         user.password_hash = AuthService._hash(data["new_password"])
+        # Anyone signed in elsewhere with the old password is signed out; this browser stays signed in
+        SessionService.end_all(user.user_id, "password_changed", keep=g.auth_session)
         db.session.commit()
         return True, "Password updated successfully."
 
@@ -235,8 +237,9 @@ class AuthService:
     @staticmethod
     def _details(user, player=None, profile=None):
         """The account fields the frontend shows. Admins have no player profile."""
+        # Only for the signed-in user, about themselves: the page needs the role to show the right menu.
+        # Every admin action is still checked on the server. No ids or security fields are sent.
         return {
-            "user_id": user.user_id,
             "email": user.email,
             "role": user.role,
             "full_name": player.full_name if player else "Administrator",
@@ -248,7 +251,12 @@ class AuthService:
         }
 
     @staticmethod
+    def _flag(value):
+        """A yes/no field: only true (or the text "true") means yes, so "false" sent as text is not a yes."""
+        return value is True or (isinstance(value, str) and value.strip().lower() == "true")
+
+    @staticmethod
     def _consent_fields(consent):
         """Profile fields for a campaign-email consent choice: when it was given, or none once withdrawn."""
-        consent = bool(consent)
+        consent = AuthService._flag(consent)
         return {"campaign_consent": consent, "campaign_consent_at": datetime.utcnow() if consent else None}

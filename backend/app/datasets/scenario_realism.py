@@ -12,27 +12,29 @@ from app.utils.links import find_urls, suspicious_links
 LINK_MARKUP = re.compile(r"\[([^\]\n]{1,80})\]\(((?:https?://|www\.)[^\s)]+)\)")
 
 CALL_TO_ACTION = {
-    "Banking": ("Review transaction", "Secure my account", "View account activity"),
+    "Banking & Money": ("Review transaction", "View statement", "View payment details"),
     "Delivery": ("Track your parcel", "Reschedule delivery", "Manage delivery"),
     "Government": ("View your notice", "Check your status", "Open the notice"),
     "Employment": ("View the offer", "Complete your application", "Book an interview"),
     "University": ("Open student portal", "View your results", "Confirm registration"),
-    "Password Reset": ("Reset password", "Review sign-in activity", "Keep my password"),
-    "Microsoft 365": ("Open document", "View in SharePoint", "Review in Outlook"),
+    "Account Security": ("Review sign-in activity", "Secure my account", "Reset password"),
+    "Email & IT": ("Open document", "View in SharePoint", "Review in Outlook"),
     "Social Media": ("View message", "Review login", "See what's new"),
+    "Prizes & Offers": ("View offer", "Claim now", "See details"),
 }
 DEFAULT_CALL_TO_ACTION = ("Open link", "View details", "Learn more")
 
 ATTACHMENT_WORDS = ("attached", "attachment", "see attached", "enclosed", "find the file")
 ATTACHMENT_STEMS = {
-    "Banking": "Statement",
+    "Banking & Money": "Statement",
     "Delivery": "Waybill",
     "Government": "Tax_Notice",
     "Employment": "Offer_Letter",
     "University": "Academic_Record",
-    "Password Reset": "Security_Report",
-    "Microsoft 365": "Shared_Document",
+    "Account Security": "Security_Report",
+    "Email & IT": "Shared_Document",
     "Social Media": "Photos",
+    "Prizes & Offers": "Voucher",
 }
 RISKY_EXTENSIONS = (".htm", ".zip", ".docm", ".iso")
 SAFE_EXTENSIONS = (".pdf", ".docx", ".xlsx")
@@ -175,6 +177,9 @@ def quality_review(channel, sender, subject, message, is_phishing, cues):
         lose(20, "big gaps between words (copied from a web page layout): re-process or edit the text")
     if RAW_TEXT_PATTERN.search(message):
         lose(20, "leftover HTML or email code in the text")
+    # Some published files already hold "�" where a character was lost, so players would see broken text
+    if "�" in message:
+        lose(20, "broken characters (�) from the original file: fix the text or skip it")
     if ScenarioParser.drop_repeated_text(" ".join(plain.split())) != " ".join(plain.split()):
         lose(20, "the same text appears twice")
     if sum(phrase in lowered for phrase in FOOTER_PHRASES) >= 2:

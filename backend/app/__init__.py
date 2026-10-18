@@ -25,16 +25,13 @@ def create_app():
     app = Flask(__name__)
     app.config.from_object(Config)
 
-    # Only the React app may call the API from a browser. In development any local
-    # port is allowed, because Vite moves to 5174 when 5173 is already in use.
-    allowed_origins = [app.config["FRONTEND_URL"]]
-    if app.config["FLASK_ENV"] == "development":
-        allowed_origins.append(r"http://(localhost|127\.0\.0\.1):\d+")
-
+    # The page and the API share one address (nginx in Docker, the Vite proxy in development), so browsers
+    # need no cross-origin access. Only FRONTEND_URL may call it from elsewhere, with its cookies.
     CORS(
         app,
-        resources={r"/api/*": {"origins": allowed_origins}},
-        expose_headers=["X-New-Token"],
+        resources={r"/api/*": {"origins": [app.config["FRONTEND_URL"]]}},
+        supports_credentials=True,
+        allow_headers=["Content-Type", "X-CSRF-Token"],
     )
 
     db.init_app(app)

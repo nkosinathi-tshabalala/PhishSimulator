@@ -28,7 +28,7 @@ interface NavSidebarProps extends SidebarLayoutProps {
 }
 
 // Pages opened from Training keep the Training tab highlighted
-const TRAINING_PAGES = ["email", "sms", "triage"];
+const TRAINING_PAGES = ["email", "sms"];
 
 /** Sidebar shared by the player and admin areas; collapses to icons only.
  * Same navy as the pages; the open page is marked with the cyan accent (bar, icon and tint). */

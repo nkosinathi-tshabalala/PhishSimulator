@@ -21,6 +21,7 @@ from app.models.analytics import PerformanceTracker
 from app.models.email import EmailCampaign, EmailCampaignRecipient
 from app.models.scenario import Scenario
 from app.models.simulation import SimulationAttempt, UserAction
+from app.security import setting_up
 from app.services.scenario_service import ScenarioService
 from app.utils.labels import message_label
 
@@ -98,6 +99,7 @@ class CampaignService:
                 "difficulty": scenario.difficulty,
                 "is_phishing": (scenario.correct_answer or "").upper() == "REPORT",
                 "cues": scenario.get_phishing_cues(),
+                "clickable": CampaignService.is_clickable(scenario.message, scenario.attachment),
             } for scenario in scenarios],
             "campaigns": [CampaignService._summary(campaign) for campaign in campaigns],
         }
@@ -151,16 +153,7 @@ class CampaignService:
             ).first()
             if not scenario:
                 return False, "Choose an active email scenario, or write a custom email.", None
-            email = {
-                "scenario_id": scenario.scenario_id,
-                "sender": scenario.sender,
-                # A real inbox must never see the admin's title (it may say "training")
-                "subject": scenario.subject or message_label(None, scenario.message),
-                "message": scenario.message,
-                "is_phishing": (scenario.correct_answer or "").upper() == "REPORT",
-                "phishing_cues": scenario.phishing_cues,
-                "attachment": scenario.attachment,
-            }
+            email = CampaignService.scenario_email(scenario)
 
         default_name = f"{email['subject']} campaign"
         name = str(data.get("name") or default_name).strip()[:150]
@@ -198,6 +191,27 @@ class CampaignService:
         return True, f"Draft created for {len(recipients)} recipient(s).", CampaignService._summary(campaign)
 
     @staticmethod
+    def scenario_email(scenario):
+        """The campaign fields for an active email scenario."""
+        return {
+            "scenario_id": scenario.scenario_id,
+            "sender": scenario.sender,
+            # A real inbox must never see the admin's title (it may say "training")
+            "subject": scenario.subject or message_label(None, scenario.message),
+            "message": scenario.message,
+            "is_phishing": (scenario.correct_answer or "").upper() == "REPORT",
+            "phishing_cues": scenario.phishing_cues,
+            "attachment": scenario.attachment,
+        }
+
+    @staticmethod
+    def is_clickable(message, attachment):
+        """True when the email has something to click (a link in the body, or an attachment). An email without
+        one can still be sent: its result is a report or ignore (like a scam that asks for a reply), and it can
+        never be "clicked". The picker shows which kind each email is."""
+        return bool(attachment) or bool(LINK_PATTERN.search(message or ""))
+
+    @staticmethod
     def _custom_email(custom):
         """Check an admin-written email. Returns (valid, message, email fields)."""
         if not isinstance(custom, dict):
@@ -222,10 +236,6 @@ class CampaignService:
         attachment = str(custom.get("attachment") or "").strip()
         if attachment and not ATTACHMENT_PATTERN.match(attachment):
             return False, "The attachment name must look like a file, e.g. Invoice_2026.pdf.", None
-
-        # The email must have something to click: a link in the body, or an attachment
-        if not attachment and not LINK_PATTERN.search(message):
-            return False, "Add a link in the body (e.g. [Verify](https://...)) or an attachment to track.", None
 
         return True, "", {
             "scenario_id": None,
@@ -295,7 +305,9 @@ class CampaignService:
             "report": f"{base}/report/{token}",
         }
 
-        text_lines = [campaign.message, "", f"Open: {urls['link']}"]
+        text_lines = [campaign.message]
+        if LINK_PATTERN.search(campaign.message or ""):
+            text_lines += ["", f"Open: {urls['link']}"]   # only an email that has a link offers one
         if campaign.attachment:
             text_lines += ["", f"Attachment {campaign.attachment}: {urls['attachment']}"]
         text_lines += ["", f"{REPORT_NOTICE} {urls['report']}"]
@@ -831,12 +843,22 @@ def start_sweeper(app):
     def loop():
         while True:
             time.sleep(60)
-            try:
-                with app.app_context():
+            if setting_up():
+                continue   # the demo data is still loading
+            # The session clean-up must happen inside the app context: outside it, it raises and the error
+            # would end this thread after its first sweep
+            with app.app_context():
+                try:
                     CampaignService.sweep()
-            except Exception:
-                logger.exception("Campaign sweep failed")
-            finally:
-                db.session.remove()
+                except Exception:
+                    logger.exception("Campaign sweep failed")
+                try:
+                    # Close login sessions that ran out without signing out
+                    from app.services.session_service import SessionService
+                    SessionService.expire_idle()
+                except Exception:
+                    logger.exception("Session clean-up failed")
+                finally:
+                    db.session.remove()
 
     threading.Thread(target=loop, name="campaign-sweeper", daemon=True).start()

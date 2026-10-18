@@ -81,9 +81,11 @@ export function SimulationShell({
             </Badge>
           )}
           {round.mode !== "review" && scenario.already_completed && <Badge variant="outline">Retake</Badge>}
+          {/* The player's level, not this message's own difficulty: when no message of the other answer
+              exists at their level, one from a nearby level is used, and its label would hint at the answer */}
           <DifficultyBadge
-            difficulty={scenario.difficulty}
-            title={scenario.adaptive_context.difficulty_reason}
+            difficulty={scenario.adaptive_context.recommended_difficulty}
+            title={`Your level. ${scenario.adaptive_context.difficulty_reason}`}
           />
           <CategoryBadge category={scenario.category} />
         </div>
@@ -206,10 +208,13 @@ function PracticeTrack({ round }: { round: SimulationRound }) {
           key={category.name}
           size="sm"
           variant={round.focusCategory === category.name ? "default" : "outline"}
+          disabled={!category.focusable && round.focusCategory !== category.name}
           onClick={() => round.chooseFocus(category.name)}
-          title={`${category.available} available${
-            category.accuracy === null ? "" : ` · ${category.accuracy}% accuracy`
-          }`}
+          title={
+            category.focusable
+              ? `${category.available} available${category.accuracy === null ? "" : ` · ${category.accuracy}% accuracy`}`
+              : "Not enough variety to practise on its own yet. It still comes up in the Adaptive mix."
+          }
         >
           {category.name}
         </Button>

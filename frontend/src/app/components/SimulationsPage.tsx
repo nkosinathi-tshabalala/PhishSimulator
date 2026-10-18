@@ -1,4 +1,4 @@
-// Player page: Training, choose email, SMS or Inbox Rush
+// Player page: Training, choose email or SMS
 
 import { useEffect, useState } from "react";
 import {
@@ -10,7 +10,6 @@ import {
   MessageSquare,
   ShieldQuestion,
   Sparkles,
-  Zap,
 } from "lucide-react";
 import { Button } from "./ui/button";
 import { Skeleton } from "./ui/skeleton";
@@ -35,7 +34,7 @@ const STEPS = [
   { icon: Lightbulb, title: "Learn", text: "See what you spotted and missed, earn XP and level up.", color: "text-green-300 bg-green-500/15" },
 ];
 
-/** Training page: pick email, SMS or Inbox Rush. */
+/** Training page: pick email or SMS. */
 export function SimulationsPage({ onNavigate }: SimulationsPageProps) {
   const [summary, setSummary] = useState<TrainingSummary | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -90,31 +89,6 @@ export function SimulationsPage({ onNavigate }: SimulationsPageProps) {
             onStart={() => onNavigate("sms")}
           />
         </div>
-
-        <button
-          type="button"
-          onClick={() => onNavigate("triage")}
-          className="group w-full relative overflow-hidden rounded-2xl border border-orange-400/30 bg-linear-to-r from-orange-500/25 via-pink-500/15 to-violet-600/15 p-5 text-left transition-transform hover:-translate-y-0.5"
-        >
-          <div className="absolute inset-0 shine opacity-60" aria-hidden />
-          <div className="relative flex flex-col sm:flex-row sm:items-center gap-4">
-            <div className="w-14 h-14 rounded-2xl bg-black/25 flex items-center justify-center shrink-0">
-              <Zap className="w-7 h-7 text-orange-300" />
-            </div>
-            <div className="flex-1">
-              <div className="flex items-center gap-2">
-                <h3 className="text-xl font-bold text-white">Inbox Rush</h3>
-                <span className="rounded-full bg-orange-400/25 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-orange-100">
-                  Challenge
-                </span>
-              </div>
-              <p className="text-sm text-slate-200/80">
-                A full inbox of mixed messages. Sort them all against the clock and beat your best time.
-              </p>
-            </div>
-            <ArrowRight className="w-6 h-6 text-orange-200 transition-transform group-hover:translate-x-1" />
-          </div>
-        </button>
 
         <div>
           <h2 className="text-lg font-semibold mb-3 flex items-center gap-2">

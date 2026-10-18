@@ -34,6 +34,7 @@ import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Textarea } from "./ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "./ui/dialog";
+import { InlineLoader } from "./Loading";
 
 interface BaselineQuestion {
   id: number;
@@ -46,7 +47,7 @@ interface BaselineQuestion {
   confidenceThreshold: number;
 }
 
-/** A named baseline assessment for one role, e.g. "Student · Baseline assessment 1". */
+/** A named baseline assessment for one role, e.g. "Student · Student Money and Campus Accounts". */
 interface BaselineTemplate {
   id: number;
   name: string;
@@ -103,6 +104,7 @@ const emptyQuestion = (templateId: number | null): QuestionForm => ({
 /** Admin page: baseline assessments by role. Switch one on and every player of that role can take it, once. */
 export function BaselineManagementPage() {
   const [templates, setTemplates] = useState<BaselineTemplate[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   // Fewest questions an assessment needs before it can be switched on (there is no maximum)
   const [minQuestions, setMinQuestions] = useState(5);
   const [searchQuery, setSearchQuery] = useState("");
@@ -132,6 +134,8 @@ export function BaselineManagementPage() {
       }
     } catch (error) {
       console.error("Failed to load baseline assessments:", error);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -160,13 +164,14 @@ export function BaselineManagementPage() {
       .filter((section) => section.items.length);
   }, [visible]);
 
-  const stats: Array<{ label: string; value: string; icon: LucideIcon; tone: StatTone; hint: string }> = [
+  // Figures stay empty (a loading bar in the card) until the bank has loaded
+  const stats: Array<{ label: string; value: string | undefined; icon: LucideIcon; tone: StatTone; hint: string }> = [
     ...ROLES.map((role) => {
       const mine = templates.filter((t) => t.role === role);
       const on = mine.filter((t) => t.isActive).length;
       return {
         label: `${role} baselines on`,
-        value: String(on),
+        value: isLoading ? undefined : String(on),
         icon: ROLE_ICONS[role],
         tone: ROLE_TONES[role],
         hint: on ? `${mine.length} in the bank · each taken once` : `${mine.length} in the bank · none on yet`,
@@ -174,7 +179,7 @@ export function BaselineManagementPage() {
     }),
     {
       label: "Questions in the bank",
-      value: String(templates.reduce((total, t) => total + t.questionCount, 0)),
+      value: isLoading ? undefined : String(templates.reduce((total, t) => total + t.questionCount, 0)),
       icon: Library,
       tone: "green",
       hint: `${templates.length} baseline assessments`,
@@ -530,7 +535,9 @@ export function BaselineManagementPage() {
               );
             })}
 
-            {!sections.length && (
+            {!sections.length && isLoading && <InlineLoader label="Loading baseline assessments..." />}
+
+            {!sections.length && !isLoading && (
               <div className="flex flex-col items-center justify-center py-16 text-center">
                 <ClipboardList className="w-8 h-8 mb-3 text-sky-400" />
                 <p className="font-semibold mb-1 text-foreground">
@@ -580,7 +587,7 @@ export function BaselineManagementPage() {
               <Input
                 id="template-name"
                 value={templateForm.name}
-                placeholder={editingTemplateId !== null ? "" : "Leave empty for the next number, e.g. Baseline assessment 3"}
+                placeholder="What it covers, e.g. Workplace Email and Payments"
                 onChange={(e) => setTemplateForm({ ...templateForm, name: e.target.value })}
               />
             </div>
@@ -600,7 +607,7 @@ export function BaselineManagementPage() {
               <Button
                 className="flex-1"
                 onClick={saveTemplate}
-                disabled={editingTemplateId !== null && !templateForm.name.trim()}
+                disabled={!templateForm.name.trim()}
               >
                 {editingTemplateId !== null ? "Save changes" : "Create baseline"}
               </Button>

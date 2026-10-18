@@ -45,13 +45,13 @@ class ProgressService:
         ("streak_30", "streak", "Month Streak", "Practise 30 days in a row", 30,
          "A whole month of daily practice. Even one scenario a day keeps it alive."),
         ("decisions_10", "milestone", "Getting Started", "Complete 10 simulations", 10,
-         "Answer 10 scenarios in email, SMS or Inbox Rush training. Campaign emails count too."),
+         "Answer 10 scenarios in email or SMS training. Campaign emails count too."),
         ("decisions_50", "milestone", "Committed", "Complete 50 simulations", 50,
          "Answer 50 scenarios in total."),
         ("decisions_100", "milestone", "Centurion", "Complete 100 simulations", 100,
          "Answer 100 scenarios in total."),
         ("first_catch", "skill", "First Catch", "First phishing message reported correctly", 1,
-         "Report a phishing message correctly. Every mode counts, including Inbox Rush."),
+         "Report a phishing message correctly, in email or SMS training or a campaign email."),
         ("clue_hunter", "skill", "Clue Hunter", "Spot every clue in 5 scenarios", 5,
          "Answer correctly and tick every warning sign in the message, with no wrong picks. Do it 5 times."),
         ("sharp_eye", "skill", "Sharp Eye", "Catch 5 Hard phishing messages", 5,
@@ -59,10 +59,11 @@ class ProgressService:
         ("zero_misses", "skill", "Zero Misses", "10 in a row with no missed phishing", 10,
          "Make 10 decisions in a row without marking a phishing message as safe. False alarms don't break the run."),
         ("category_master", "skill", "Category Master", "90%+ over 10 scenarios in one category", 10,
-         "Answer 10 scenarios in one category, like Banking, and get at least 90% of them right. Retakes count."),
+         "Answer 10 scenarios in one category, like Banking & Money, and get at least 90% of them right. "
+         "Retakes count."),
         ("all_rounder", "skill", "All-Rounder", "A correct decision in every category", len(ScenarioParser.CATEGORY_KEYWORDS),
-         "Get at least one scenario right in each category: banking, delivery, government, jobs, university, "
-         "passwords, Microsoft 365 and social media."),
+         "Get at least one scenario right in each category: delivery, university, jobs, government, social media, "
+         "email and IT, prizes and offers, account security, and banking and money."),
         ("comeback", "skill", "Comeback", "Skill rank rises after a drop", 1,
          "Your skill rank has to drop and then climb back up. Keep training after a bad run."),
         ("real_world_catch", "skill", "Real-World Catch", "Report a phishing campaign email", 1,
@@ -366,9 +367,19 @@ class ProgressService:
         rating and then XP; players not yet rated follow, by XP. Only the position and the player count
         leave this method: never anyone else's name or score."""
         attempts_by_player = {player: [] for (player,) in db.session.query(Player.player_id)}
-        for attempt in SimulationAttempt.query.all():
+        # Only the columns attempt_facts reads, and only the scenarios someone has answered: loading every
+        # scenario (tens of thousands of drafts with their full text) made this take seconds
+        attempt_columns = db.session.query(
+            SimulationAttempt.attempt_id, SimulationAttempt.player_id, SimulationAttempt.scenario_id,
+            SimulationAttempt.attempted_at, SimulationAttempt.correct, SimulationAttempt.difficulty,
+            SimulationAttempt.clue_score, SimulationAttempt.score, SimulationAttempt.campaign_recipient_id,
+        )
+        for attempt in attempt_columns:
             attempts_by_player.setdefault(attempt.player_id, []).append(attempt)
-        scenarios = {scenario.scenario_id: scenario for scenario in Scenario.query.all()}
+        answered = db.session.query(SimulationAttempt.scenario_id).distinct()
+        scenarios = {scenario.scenario_id: scenario for scenario in db.session.query(
+            Scenario.scenario_id, Scenario.correct_answer, Scenario.difficulty, Scenario.category,
+        ).filter(Scenario.scenario_id.in_(answered))}
 
         scores = {}
         for other_id, attempts in attempts_by_player.items():

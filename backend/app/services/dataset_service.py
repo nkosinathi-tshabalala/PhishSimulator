@@ -1,6 +1,7 @@
 # Dataset upload and processing (CATCH "Approve")
 
 import csv
+import io
 import json
 import os
 import re
@@ -10,7 +11,7 @@ from werkzeug.utils import secure_filename
 
 from app.extensions import db
 from app.datasets.scenario_parser import ScenarioParser
-from app.datasets.scenario_realism import enrich_scenario, quality_score
+from app.datasets.scenario_realism import LINK_MARKUP, enrich_scenario, quality_score
 from app.schemas.dataset_schema import DatasetSchema
 from app.models.datasets import Dataset, DatasetRecord
 from app.models.email import EmailCampaign
@@ -30,6 +31,8 @@ csv.field_size_limit(10_000_000)
 MAX_REJECTED_SHARE = 0.5
 
 BATCH_SIZE = 500
+# Longest single CSV field accepted (characters); long mail bodies are later dropped as "too long" anyway
+MAX_FIELD_CHARACTERS = 10_000_000
 
 REPROCESS_STATUSES = {"DRAFT", "REJECTED"}
 
@@ -91,11 +94,19 @@ class DatasetService:
     def _read_rows(filepath, extension):
         """Return the rows of a CSV or JSON file as a list of dictionaries."""
         if extension == "csv":
-            with open(filepath, newline="", encoding="utf-8-sig", errors="replace") as csv_file:
-                reader = csv.DictReader(csv_file)
-                if not reader.fieldnames:
-                    raise ValueError("CSV files must include a header row.")
-                return list(reader)
+            # Mail corpora can hold very long bodies, beyond the csv module's default field limit
+            csv.field_size_limit(MAX_FIELD_CHARACTERS)
+            with open(filepath, "rb") as raw:
+                data = raw.read()
+            try:
+                content = data.decode("utf-8-sig")
+            except UnicodeDecodeError:
+                # Older datasets (e.g. the UCI SMS Spam Collection) are saved as Windows-1252 / Latin-1
+                content = data.decode("cp1252", errors="replace")
+            reader = csv.DictReader(io.StringIO(content, newline=""))
+            if not reader.fieldnames:
+                raise ValueError("CSV files must include a header row.")
+            return list(reader)
 
         with open(filepath, encoding="utf-8-sig") as json_file:
             rows = json.load(json_file)
@@ -135,7 +146,8 @@ class DatasetService:
         total = len(records)
         lengths = sorted(len(record["message"]) for record in records)
         median_length = lengths[total // 2]
-        with_subject = sum(bool(record["subject"]) for record in records) / total
+        # Only subjects the dataset really had: one made from the first sentence says nothing about the channel
+        with_subject = sum(bool(record["subject"]) and not record.get("subject_from_text") for record in records) / total
         with_email_sender = sum("@" in (record["sender"] or "") for record in records) / total
         multi_line = sum("\n" in record["message"].strip() for record in records) / total
 
@@ -351,8 +363,24 @@ class DatasetService:
         return generated_by_category
 
     @staticmethod
+    def _rederive(scenario):
+        """Work out a draft's sender, category, warning signs and difficulty again with the current rules.
+        Links the importer hid behind button text are read as their address only, since that button text
+        was chosen by category and would otherwise feed back into the category and the clues."""
+        message = LINK_MARKUP.sub(r"\2", scenario.message or "")
+        fields = ScenarioParser.derive_fields(
+            scenario.simulation_type, scenario.sender, scenario.subject or "", message,
+            scenario.correct_answer.upper() == "REPORT",
+        )
+        scenario.sender = fields["sender"][:255] or scenario.sender
+        scenario.category = fields["category"]
+        scenario.difficulty = fields["difficulty"]
+        scenario.set_phishing_cues(fields["phishing_cues"])
+
+    @staticmethod
     def reprocess(dataset_id):
-        """Re-apply the realism rules to a dataset's unreviewed drafts."""
+        """Re-apply the import rules to a dataset's unreviewed drafts: sender, category, warning signs,
+        difficulty and realism. Reviewed scenarios keep what the admin approved and are only re-scored."""
         dataset = db.session.get(Dataset, dataset_id)
         if not dataset:
             return False, "Dataset not found.", None
@@ -365,6 +393,7 @@ class DatasetService:
             ).all()
             for scenario in batch:
                 if (scenario.status or "DRAFT").upper() in REPROCESS_STATUSES:
+                    DatasetService._rederive(scenario)
                     enrich_scenario(scenario)
                     updated += 1
                 else:

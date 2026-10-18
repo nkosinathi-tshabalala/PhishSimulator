@@ -48,6 +48,9 @@ interface Scenario {
   is_phishing: boolean;
   cues: string[];
   attachment: string | null;
+  /** Has a link or an attachment. Without one it can still be sent, but its result can only be reported or
+   * ignored (like a scam that asks for a reply), never clicked. */
+  clickable: boolean;
 }
 
 interface Campaign {
@@ -150,7 +153,8 @@ export function EmailDispatcherPage({ onBack }: EmailDispatcherPageProps) {
     if (response.ok && response.data.success) {
       const data = response.data.data as Context;
       setContext(data);
-      setScenarioId((current) => current ?? data.scenarios[0]?.scenario_id ?? null);
+      setScenarioId((current) => current ?? data.scenarios.find((item) => item.clickable)?.scenario_id
+        ?? data.scenarios[0]?.scenario_id ?? null);
     } else {
       toast.error(response.data.message || "Unable to load campaigns.");
     }
@@ -163,7 +167,7 @@ export function EmailDispatcherPage({ onBack }: EmailDispatcherPageProps) {
   const scenario = context?.scenarios.find((item) => item.scenario_id === scenarioId);
   const customEmail = toCustomEmail(custom);
   const customReady = Boolean(custom.senderName.trim() && custom.senderAddress.trim() && custom.subject.trim() && custom.message.trim());
-  const emailReady = source === "scenario" ? Boolean(scenarioId) : customReady;
+  const emailReady = source === "scenario" ? Boolean(scenario) : customReady;
 
   // What the preview shows: the chosen scenario, or the custom email as it is being written
   const preview: EmailPreviewData | null = source === "scenario"
@@ -292,12 +296,32 @@ export function EmailDispatcherPage({ onBack }: EmailDispatcherPageProps) {
                           onChange={(event) => setScenarioId(Number(event.target.value))}
                         >
                           {!context.scenarios.length && <option value="">No active email scenarios</option>}
-                          {context.scenarios.map((item) => (
-                            <option key={item.scenario_id} value={item.scenario_id}>
-                              {item.is_phishing ? "Phishing" : "Genuine"} · {item.title} · {item.category}
-                            </option>
-                          ))}
+                          {/* Grouped by what a recipient can do: emails with a link or file can be clicked */}
+                          {[true, false].map((clickable) => {
+                            const group = context.scenarios.filter((item) => item.clickable === clickable);
+                            return group.length > 0 && (
+                              <optgroup
+                                key={String(clickable)}
+                                label={clickable
+                                  ? `With a link or attachment: click, report or ignore (${group.length})`
+                                  : `No link or attachment: report or ignore only (${group.length})`}
+                              >
+                                {group.map((item) => (
+                                  <option key={item.scenario_id} value={item.scenario_id}>
+                                    {item.is_phishing ? "Phishing" : "Genuine"} · {item.title} · {item.category}
+                                  </option>
+                                ))}
+                              </optgroup>
+                            );
+                          })}
                         </select>
+                        {scenario && !scenario.clickable && (
+                          <span className="block text-xs font-normal text-muted-foreground">
+                            This email has no link or attachment, like a scam that asks for a reply. Recipients can
+                            report it or ignore it ({context.ignore_minutes} minutes without a report counts as
+                            ignored); there is nothing to click.
+                          </span>
+                        )}
                       </label>
                     ) : (
                       <CustomEmailForm value={custom} presets={context.attachment_presets} onChange={setCustom} />

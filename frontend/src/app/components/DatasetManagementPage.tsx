@@ -43,6 +43,7 @@ import {
   SelectValue,
 } from "./ui/select";
 import DatasetService from "../../services/datasetService";
+import { deleteDataset, startUpload, useDatasetJobs, type QualityReport } from "../../services/datasetJobs";
 import { toast } from "sonner";
 import { confirmToast } from "./confirmToast";
 import { FilterBar, toOptions } from "./FilterBar";
@@ -70,31 +71,10 @@ interface Dataset {
   quality_report: QualityReport | null;
 }
 
-/** Result of the upload quality check (CATCH "Approve" stage). */
-interface QualityReport {
-  total_rows: number;
-  empty_rows: number;
-  too_short: number;
-  too_long?: number;
-  unreadable?: number;
-  duplicates: number;
-  unlabelled: number;
-  personal_data: number;
-  usable_labelled: number;
-  quality_ok: boolean;
-}
-
 interface DatasetManagementPageProps {
   onBack: () => void;
 }
 
-interface UploadResult {
-  datasetType: string;
-  recordCount: number;
-  generatedScenarios: number;
-  generatedByCategory: Array<{ category: string; count: number }>;
-  qualityReport: QualityReport;
-}
 
 /** Admin page to upload, check and manage datasets. */
 export function DatasetManagementPage({ onBack }: DatasetManagementPageProps) {
@@ -109,10 +89,12 @@ export function DatasetManagementPage({ onBack }: DatasetManagementPageProps) {
 
   const [datasetType, setDatasetType] = useState("EMAIL");
 
-  const [uploading, setUploading] = useState(false);
-  const [uploadResult, setUploadResult] = useState<UploadResult | null>(null);
-  const [uploadError, setUploadError] = useState("");
-  const [rejectedReport, setRejectedReport] = useState<QualityReport | null>(null);
+  // Uploads and deletions run in a store outside this page, so leaving the page does not stop them
+  const jobs = useDatasetJobs();
+  const uploading = jobs.upload !== null;
+  const uploadResult = jobs.result;
+  const uploadError = jobs.error;
+  const rejectedReport = jobs.rejectedReport;
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [isReprocessing, setIsReprocessing] = useState(false);
@@ -135,54 +117,20 @@ export function DatasetManagementPage({ onBack }: DatasetManagementPageProps) {
     setIsLoadingList(false);
   };
 
+  // Load the list, and again whenever an upload or deletion finishes (even one started before this page opened)
   useEffect(() => {
     loadDatasets();
-  }, []);
+  }, [jobs.version]);
 
   const handleUpload = async () => {
     if (!selectedFile) {
       toast.warning("Please select a dataset first.");
-
       return;
     }
-
-    try {
-      setUploading(true);
-      setUploadResult(null);
-      setUploadError("");
-      setRejectedReport(null);
-
-      const formData = new FormData();
-
-      formData.append("file", selectedFile);
-
-      formData.append("dataset_type", datasetType);
-
-      const response = await DatasetService.uploadDataset(formData);
-
-      if (response.ok && response.data.success) {
-        setUploadResult({
-          datasetType,
-          recordCount: response.data.data.record_count,
-          generatedScenarios: response.data.data.generated_scenarios,
-          generatedByCategory: response.data.data.generated_by_category || [],
-          qualityReport: response.data.data.quality_report,
-        });
-        setSelectedFile(null);
-        if (fileInputRef.current) fileInputRef.current.value = "";
-        toast.success(`${response.data.data.generated_scenarios.toLocaleString()} draft scenarios are ready for review.`);
-        await loadDatasets();
-      } else {
-        setUploadError(response.data.message || "Dataset processing could not be completed.");
-        setRejectedReport(response.data.data?.quality_report ?? null);
-        toast.error(response.data.message || "Dataset rejected.");
-      }
-    } catch (error) {
-      console.error(error);
-      setUploadError("Dataset upload failed. Check your connection and try again.");
-    } finally {
-      setUploading(false);
-    }
+    const file = selectedFile;
+    setSelectedFile(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+    await startUpload(file, datasetType);
   };
 
   const visibleDatasets = datasets.filter((dataset) =>
@@ -212,25 +160,13 @@ export function DatasetManagementPage({ onBack }: DatasetManagementPageProps) {
     { label: "SMS Datasets", value: smsDatasets, icon: MessageSquare, tone: "green", hint: "Feed SMS training" },
   ];
 
-  const handleDeleteDataset = (datasetId: number) => {
+  const handleDeleteDataset = (dataset: Dataset) => {
     confirmToast({
-      id: `confirm-delete-dataset-${datasetId}`,
-      title: "Delete this dataset?",
+      id: `confirm-delete-dataset-${dataset.dataset_id}`,
+      title: `Delete ${dataset.name}?`,
       description: "Its records, the scenarios made from it and players' attempts on them are removed. This cannot be undone.",
-      onConfirm: () => deleteDataset(datasetId),
+      onConfirm: () => deleteDataset(dataset.dataset_id, dataset.name),
     });
-  };
-
-  const deleteDataset = async (datasetId: number) => {
-    const response = await DatasetService.deleteDataset(datasetId);
-
-    if (response.ok && response.data.success) {
-      toast.success("Dataset and its scenarios were deleted.");
-      await loadDatasets();
-      return;
-    }
-
-    toast.error(response.data.message || "Unable to delete dataset.");
   };
 
   return (
@@ -300,8 +236,9 @@ export function DatasetManagementPage({ onBack }: DatasetManagementPageProps) {
                       Uploading and generating simulations
                     </div>
                     <p className="mt-1 text-sm text-muted-foreground">
-                      The dataset is being checked for quality and converted into draft{" "}
-                      {datasetType.toLowerCase()} scenarios. Large email collections can take a few minutes.
+                      {jobs.upload?.fileName} is being checked for quality and converted into draft{" "}
+                      {jobs.upload?.datasetType.toLowerCase()} scenarios. Large files can take a few minutes; you can
+                      leave this page and it keeps going.
                     </p>
                     <Progress className="mt-3 animate-pulse" value={65} />
                   </div>
@@ -498,13 +435,16 @@ export function DatasetManagementPage({ onBack }: DatasetManagementPageProps) {
                         <Button
                           variant="ghost"
                           size="icon"
-                          title={`Delete ${dataset.name}`}
+                          title={jobs.deleting.includes(dataset.dataset_id) ? `Deleting ${dataset.name}...` : `Delete ${dataset.name}`}
+                          disabled={jobs.deleting.includes(dataset.dataset_id)}
                           onClick={(event) => {
                             event.stopPropagation();
-                            handleDeleteDataset(dataset.dataset_id);
+                            handleDeleteDataset(dataset);
                           }}
                         >
-                          <Trash2 className="w-4 h-4" />
+                          {jobs.deleting.includes(dataset.dataset_id)
+                            ? <LoaderCircle className="w-4 h-4 animate-spin" aria-label="Deleting" />
+                            : <Trash2 className="w-4 h-4" />}
                         </Button>
                       </div>
                     </TableCell>

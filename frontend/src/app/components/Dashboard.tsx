@@ -35,7 +35,6 @@ import { CampaignInbox, CampaignTag, formatXp } from "./CampaignInbox";
 import type { Progress as PlayerProgress } from "../../types/catch";
 
 interface CurrentUser {
-  user_id: number;
   full_name: string;
   email: string;
   age: number | null;
@@ -267,7 +266,7 @@ function LevelRing({ level, percent }: { level?: number; percent: number }) {
   );
 }
 
-/** Shortcuts to email, SMS and Inbox Rush training. */
+/** Shortcuts to email and SMS training. */
 function TrainingCards({ onNavigate }: { onNavigate: (page: string) => void }) {
   const cards = [
     {
@@ -284,17 +283,10 @@ function TrainingCards({ onNavigate }: { onNavigate: (page: string) => void }) {
       icon: MessageSquare,
       tone: "from-purple-500/30 to-purple-700/10 border-purple-500/30 text-purple-200",
     },
-    {
-      page: "triage",
-      title: "Inbox Rush",
-      text: "Sort a whole inbox against the clock",
-      icon: Zap,
-      tone: "from-orange-500/30 via-pink-500/15 to-violet-600/10 border-orange-400/30 text-orange-200",
-    },
   ];
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
       {cards.map((card) => (
         <button
           key={card.page}

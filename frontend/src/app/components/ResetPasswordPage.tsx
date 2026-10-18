@@ -7,6 +7,7 @@ import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import AuthService from '../../services/authService';
+import { LIMITS, emailProblem, passwordProblem } from '../../services/validation';
 
 interface ResetPasswordPageProps {
   onNavigate: (page: string) => void;
@@ -24,8 +25,16 @@ export function ResetPasswordPage({ onNavigate, token }: ResetPasswordPageProps)
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
-    setSubmitting(true);
     setError('');
+    const problem = token
+      ? passwordProblem(passwords.newPassword)
+        || (passwords.newPassword !== passwords.confirmPassword ? 'New passwords do not match.' : '')
+      : emailProblem(email);
+    if (problem) {
+      setError(problem);
+      return;
+    }
+    setSubmitting(true);
     try {
       const response = token
         ? await AuthService.resetPassword(token, passwords.newPassword, passwords.confirmPassword)
@@ -63,19 +72,19 @@ export function ResetPasswordPage({ onNavigate, token }: ResetPasswordPageProps)
           <>
             <div className="space-y-2">
               <Label htmlFor="newPassword">New password</Label>
-              <Input id="newPassword" type="password" autoComplete="new-password" required value={passwords.newPassword}
+              <Input id="newPassword" type="password" autoComplete="new-password" required maxLength={LIMITS.passwordMax} value={passwords.newPassword}
                 onChange={(event) => setPasswords({ ...passwords, newPassword: event.target.value })} />
             </div>
             <div className="space-y-2">
               <Label htmlFor="confirmPassword">Confirm new password</Label>
-              <Input id="confirmPassword" type="password" autoComplete="new-password" required value={passwords.confirmPassword}
+              <Input id="confirmPassword" type="password" autoComplete="new-password" required maxLength={LIMITS.passwordMax} value={passwords.confirmPassword}
                 onChange={(event) => setPasswords({ ...passwords, confirmPassword: event.target.value })} />
             </div>
           </>
         ) : (
           <div className="space-y-2">
             <Label htmlFor="email">Email</Label>
-            <Input id="email" type="email" placeholder="john.doe@example.com" required value={email}
+            <Input id="email" type="email" placeholder="john.doe@example.com" required maxLength={LIMITS.email} value={email}
               onChange={(event) => setEmail(event.target.value)} />
           </div>
         )}

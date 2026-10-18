@@ -3,19 +3,28 @@
 from functools import wraps
 
 from flask import jsonify
-from flask_jwt_extended import get_jwt
+from flask_jwt_extended import current_user
+
+from app.enums.role import Role
+
+
+def current_user_id():
+    """The signed-in user's id. It comes from the server-side session the token points to, never from the
+    token itself (which carries no user id). Use inside @jwt_required() routes."""
+    return current_user.user_id
 
 
 def require_admin(view):
-    """Allow the route only for administrators. Place it below @jwt_required()."""
+    """Allow the route only for administrators. Place it below @jwt_required(). The role is read from the
+    database for every request, so a role change or a deleted account takes effect at once."""
 
     @wraps(view)
     def wrapper(*args, **kwargs):
         """Reject the request unless the user is an admin."""
-        if get_jwt().get("role") != "ADMIN":
+        if not current_user or current_user.role != Role.ADMIN.value:
             return jsonify({
                 "success": False,
-                "message": "Administrator access is required.",
+                "message": "You do not have access to this.",
                 "data": None,
             }), 403
         return view(*args, **kwargs)

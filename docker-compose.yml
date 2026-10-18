@@ -24,9 +24,11 @@ services:
     # Secrets, Gmail, the campaign allow-list and the demo seed settings
     env_file:
       - ./backend/.env
-    # These replace the local-development values in backend/.env with the container ones
+    # These replace the local-development values in backend/.env with the container ones. The fixed
+    # values are written here, not read from .env, so a variable left in the shell cannot change them.
     environment:
-      FLASK_ENV: ${FLASK_ENV:?Set FLASK_ENV in .env}
+      # Gunicorn runs the app, never the Flask debugger
+      FLASK_ENV: production
       DB_HOST: db
       DB_PORT: 5432
       DB_NAME: ${DB_NAME}
@@ -36,11 +38,31 @@ services:
       BACKEND_URL: ${BACKEND_URL:?Set BACKEND_URL in .env}
       PUBLIC_BACKEND_URL: ${PUBLIC_BACKEND_URL:?Set PUBLIC_BACKEND_URL in .env}
       MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:?Set MAX_UPLOAD_MB in .env}
+      REQUEST_TIMEOUT_SECONDS: ${REQUEST_TIMEOUT_SECONDS:?Set REQUEST_TIMEOUT_SECONDS in .env}
+      # The demo seed reads its email and SMS dataset files from the folder mounted below
+      DEMO_DATASET_DIR: /app/demo_datasets
+      # nginx sits in front of the API: trust its forwarded client address (rate limits) and https flag
+      TRUSTED_PROXY_COUNT: 1
+      # Login cookies are only sent over HTTPS or to localhost unless this is false
+      COOKIE_SECURE: ${COOKIE_SECURE:?Set COOKIE_SECURE in .env}
     volumes:
       # Uploaded datasets are kept between restarts, like the database
       - uploads_data:/app/uploads
+      # Your dataset folder on this computer, read-only: the demo scenarios are imported from it
+      - ${DEMO_DATASETS_HOST_DIR:?Set DEMO_DATASETS_HOST_DIR in .env}:/app/demo_datasets:ro
+    # Only this computer reaches the API directly (campaign links and the tracking pixel); the app itself goes
+    # through nginx on the frontend port. A request sent straight here could claim any client address in
+    # X-Forwarded-For, so this port never listens on the network.
     ports:
-      - "${HOST_IP:?Set HOST_IP in .env}:${BACKEND_PORT:?Set BACKEND_PORT in .env}:5000"
+      - "127.0.0.1:${BACKEND_PORT:?Set BACKEND_PORT in .env}:5000"
+    # "health: starting" while the first start loads the demo data (a few minutes); healthy once the API answers
+    # and the loading marker from entrypoint.sh is gone
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os, socket, sys; socket.create_connection(('127.0.0.1', 5000), 3); sys.exit(os.path.exists('/tmp/phishsim-setting-up'))"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15m
     depends_on:
       db:
         condition: service_healthy
@@ -53,8 +75,9 @@ services:
     restart: unless-stopped
     environment:
       MAX_UPLOAD_MB: ${MAX_UPLOAD_MB}
+      REQUEST_TIMEOUT_SECONDS: ${REQUEST_TIMEOUT_SECONDS}
     ports:
-      - "${HOST_IP}:${FRONTEND_PORT:?Set FRONTEND_PORT in .env}:80"
+      - "${HOST_IP:?Set HOST_IP in .env}:${FRONTEND_PORT:?Set FRONTEND_PORT in .env}:80"
     depends_on:
       - backend
 

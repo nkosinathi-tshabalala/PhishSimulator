@@ -2,9 +2,9 @@
 
 from flask import Blueprint, Response, current_app, redirect, request
 
-from app.routes.route_helpers import require_admin, respond
+from app.routes.route_helpers import current_user_id, require_admin, respond
 from app.services.campaign_service import TRACKING_PIXEL, CampaignService
-from flask_jwt_extended import get_jwt_identity, jwt_required
+from flask_jwt_extended import jwt_required
 
 
 campaign_bp = Blueprint("campaign", __name__, url_prefix="/api/campaigns")
@@ -27,7 +27,7 @@ def create_campaign():
     """Admin: save a new campaign as a draft."""
     success, message, data = CampaignService.create_campaign(
         request.get_json(silent=True) or {},
-        int(get_jwt_identity()),
+        current_user_id(),
     )
     return respond(success, message, data, ok_status=201)
 
@@ -86,7 +86,7 @@ def record_click(token):
 @jwt_required()
 def player_inbox():
     """Player: results of the campaign emails sent to their address."""
-    inbox = CampaignService.player_inbox(int(get_jwt_identity()))
+    inbox = CampaignService.player_inbox(current_user_id())
     return respond(inbox is not None, "Inbox retrieved." if inbox is not None else "User not found.", inbox,
                    error_status=404)
 
@@ -96,7 +96,7 @@ def player_inbox():
 @jwt_required()
 def mark_seen(recipient_id):
     """Player: mark one campaign result as read."""
-    ok = CampaignService.mark_seen(recipient_id, int(get_jwt_identity()))
+    ok = CampaignService.mark_seen(recipient_id, current_user_id())
     return respond(ok, "Marked as read." if ok else "Result not found.", None, error_status=404)
 
 

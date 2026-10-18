@@ -52,7 +52,7 @@ function EmailView({ scenario, actions }: { scenario: MessageView; actions?: Mes
   );
 }
 
-/** The open email. Also used by the inbox triage challenge. */
+/** The open email. Also used by the admin scenario preview. */
 export function EmailReader({ scenario, actions }: { scenario: MessageView; actions?: MessageActions }) {
   return (
     <section className="flex-1 flex flex-col min-w-0">

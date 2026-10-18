@@ -1,5 +1,5 @@
 # Serves the built React app and forwards /api to the backend container.
-# The nginx image fills in ${MAX_UPLOAD_MB} from the environment when the container starts.
+# The nginx image fills in ${MAX_UPLOAD_MB} and ${REQUEST_TIMEOUT_SECONDS} from the environment when the container starts.
 server {
     listen 80;
     server_name _;
@@ -14,10 +14,14 @@ server {
     # Send API calls to the backend container.
     location /api/ {
         proxy_pass http://backend:5000;
-        proxy_set_header Host $host;
+        # The address the browser used, port included: the API compares it with the Origin of every change
+        proxy_set_header Host $http_host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+        # Large dataset imports can take minutes; wait as long as the API is allowed to work
+        proxy_read_timeout ${REQUEST_TIMEOUT_SECONDS}s;
+        proxy_send_timeout ${REQUEST_TIMEOUT_SECONDS}s;
     }
 
     # Built JavaScript and CSS have a content hash in their names, so a new build always gets new
@@ -38,7 +42,8 @@ server {
 
         # Browser protections. The CSP lets the page load code only from this site (fonts from Google),
         # which limits the damage any injected script could do.
-        add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'" always;
+        add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'" always;
+        add_header Cross-Origin-Opener-Policy "same-origin" always;
         add_header X-Content-Type-Options "nosniff" always;
         add_header X-Frame-Options "DENY" always;
         add_header Referrer-Policy "strict-origin-when-cross-origin" always;

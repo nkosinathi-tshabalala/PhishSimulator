@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/
 import { Badge } from './ui/badge';
 import AnalyticsService from '../../services/analyticsService';
 import { StatCard, type StatTone } from './StatCard';
+import { InlineLoader } from "./Loading";
 
 interface AdminDashboardProps {
   onNavigate: (page: string) => void;
@@ -172,7 +173,9 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
               <CardDescription>Latest platform events</CardDescription>
             </CardHeader>
             <CardContent className="p-4 pt-0 space-y-3">
-              {dashboardStats?.recent_activity.length ? dashboardStats.recent_activity.map((item) => (
+              {!dashboardStats && !statsError ? (
+                <InlineLoader label="Loading recent activity..." />
+              ) : dashboardStats?.recent_activity.length ? dashboardStats.recent_activity.map((item) => (
                 <button
                   type="button"
                   key={`${item.type}-${item.occurred_at}-${item.detail}`}

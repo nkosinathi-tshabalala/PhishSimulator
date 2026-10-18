@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
+import { Skeleton } from "./ui/skeleton";
 
 export type StatTone = "sky" | "green" | "violet" | "blue" | "amber" | "red" | "orange" | "pink" | "slate";
 
@@ -33,7 +34,12 @@ export function StatCard({ label, value, hint, icon: Icon, tone, onClick }: {
       <div className="relative flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-xs uppercase tracking-wide text-muted-foreground">{label}</p>
-          <p className="mt-1 text-3xl font-bold text-white tabular-nums">{value ?? "…"}</p>
+          {value === undefined || value === null ? (
+            // No value yet: the figure is still loading
+            <Skeleton aria-label="Loading" className="mt-2 h-8 w-16 bg-white/10" />
+          ) : (
+            <p className="mt-1 text-3xl font-bold text-white tabular-nums">{value}</p>
+          )}
         </div>
         <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${style.icon}`}>
           <Icon className="w-5 h-5" />

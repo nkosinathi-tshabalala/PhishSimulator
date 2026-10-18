@@ -1,10 +1,13 @@
 // Confetti for correct answers and level ups
 
 import { useMemo } from "react";
+import { createPortal } from "react-dom";
 
 const COLOURS = ["#38bdf8", "#a78bfa", "#fbbf24", "#34d399", "#f472b6", "#fb923c"];
 
-/** A short burst of confetti. Re-mount it (change `key`) to play it again. */
+/** A short burst of confetti. Re-mount it (change `key`) to play it again.
+ *  Drawn straight into the page body: inside a dialog, "position: fixed" is measured from the dialog (it is
+ *  moved with a CSS transform), so the falling pieces stayed below it and left empty space to scroll through. */
 export function Confetti({ pieces = 60 }: { pieces?: number }) {
   const layout = useMemo(
     () => Array.from({ length: pieces }, (_, index) => ({
@@ -17,8 +20,8 @@ export function Confetti({ pieces = 60 }: { pieces?: number }) {
     [pieces],
   );
 
-  return (
-    <div aria-hidden>
+  return createPortal(
+    <div aria-hidden className="fixed inset-0 overflow-hidden pointer-events-none z-60">
       {layout.map((piece, index) => (
         <span
           key={index}
@@ -32,6 +35,7 @@ export function Confetti({ pieces = 60 }: { pieces?: number }) {
           }}
         />
       ))}
-    </div>
+    </div>,
+    document.body,
   );
 }

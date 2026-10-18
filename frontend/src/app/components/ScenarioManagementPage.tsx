@@ -1,8 +1,9 @@
 // Admin page: review, edit and publish scenarios (CATCH "Approve")
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 import {
+  AlertTriangle,
   CheckCircle2,
   ChevronDown,
   ChevronRight,
@@ -52,6 +53,7 @@ import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "./ui/table";
 import { Textarea } from "./ui/textarea";
+import { InlineLoader, Spinner } from "./Loading";
 
 interface ScenarioManagementPageProps {
   onBack: () => void;
@@ -63,6 +65,7 @@ interface ScenarioSummary {
   simulation_type: Channel;
   category: string;
   difficulty: "Easy" | "Medium" | "Hard";
+  correct_answer: "REPORT" | "SAFE";
   status: ScenarioStatus;
   dataset_id: number | null;
   quality_score: number | null;
@@ -89,8 +92,21 @@ interface DatasetGroup {
   dataset_id: number | "none";
   name: string;
   uploaded_at: string | null;
+  // At the selected stage (the rows an open group lists)
   count: number;
+  // At every stage
+  total: number;
   by_status: Record<ScenarioStatus, number>;
+}
+
+/** A live category or difficulty where one answer is missing or rare (from the server's balance report). */
+interface BalanceFlag {
+  channel: Channel;
+  group: "category" | "difficulty";
+  name: string;
+  phishing: number;
+  genuine: number;
+  status: "one_sided" | "uneven";
 }
 
 interface ScenarioForm {
@@ -108,8 +124,8 @@ interface ScenarioForm {
 }
 
 const CATEGORIES = [
-  "Banking", "Delivery", "Government", "Employment",
-  "University", "Password Reset", "Microsoft 365", "Social Media",
+  "Banking & Money", "Account Security", "Email & IT", "Prizes & Offers", "Delivery", "Government",
+  "Employment", "University", "Social Media", "General",
 ];
 
 const QA_ITEMS = [
@@ -161,6 +177,16 @@ const ACTIONS_FOR: Record<ScenarioStatus, Array<{ action: ReviewAction; label: s
   REJECTED: [{ action: "reopen", label: "Reopen as draft" }],
 };
 
+// What a review button says while the server works on it
+const BUSY_LABEL: Record<ReviewAction, string> = {
+  approve: "Approving…", reject: "Rejecting…", activate: "Activating…", archive: "Archiving…", reopen: "Reopening…",
+};
+
+// The stage a scenario is in after each review action
+const REVIEW_RESULT: Record<ReviewAction, ScenarioStatus> = {
+  approve: "APPROVED", reject: "REJECTED", activate: "ACTIVE", archive: "ARCHIVED", reopen: "DRAFT",
+};
+
 const emptyFilters = {
   status: "DRAFT",
   search: "",
@@ -185,7 +211,7 @@ function emptyForm(channel: Channel): ScenarioForm {
   return {
     title: "",
     simulation_type: channel,
-    category: "Password Reset",
+    category: "Account Security",
     difficulty: "Medium",
     sender: "",
     subject: "",
@@ -208,7 +234,16 @@ export function ScenarioManagementPage({ onBack }: ScenarioManagementPageProps) 
   const [channelCounts, setChannelCounts] = useState({ email: 0, sms: 0 });
   const [categories, setCategories] = useState<string[]>(CATEGORIES);
   const [groups, setGroups] = useState<DatasetGroup[]>([]);
+  const [balance, setBalance] = useState<BalanceFlag[]>([]);
   const [pagination, setPagination] = useState({ page: 1, pages: 0, total: 0 });
+  const [isLoading, setIsLoading] = useState(true);
+  // Which view (channel, filters, page) the rows on screen belong to, and the number of the latest request:
+  // a slower, older reply is ignored, and rows from another view are never shown under the open group
+  const [loadedView, setLoadedView] = useState("");
+  const latestRequest = useRef(0);
+  // The action waiting for the server ("open-12", "review-approve", "preview-archive", "bulk"): its control
+  // shows a spinner, and the other actions wait, so nothing is clicked twice
+  const [busy, setBusy] = useState<string | null>(null);
 
   const [reviewing, setReviewing] = useState<ScenarioDetail | null>(null);
   const [checklist, setChecklist] = useState<QaChecklist>(emptyChecklist());
@@ -221,6 +256,9 @@ export function ScenarioManagementPage({ onBack }: ScenarioManagementPageProps) 
 
   // The open dataset folder: the one picked, or the only one when there is just one
   const openDataset = filters.dataset_id || (groups.length === 1 ? String(groups[0].dataset_id) : "");
+  // The rows on screen match the current channel, filters and page (otherwise a loader shows instead)
+  const rowsCurrent = loadedView === viewKey(page);
+  const shownScenarios = rowsCurrent ? scenarios : [];
 
   /** Show the server's message as a success or error toast. */
   const notify = (response: { ok: boolean; data: { success: boolean; message: string } }) => {
@@ -228,19 +266,30 @@ export function ScenarioManagementPage({ onBack }: ScenarioManagementPageProps) 
     else toast.error(response.data.message || "Something went wrong.");
   };
 
+  function viewKey(requestedPage: number) {
+    return JSON.stringify({ channel, filters, page: requestedPage });
+  }
+
   const loadScenarios = async (requestedPage = page) => {
+    const request = ++latestRequest.current;
+    const view = viewKey(requestedPage);
+    setIsLoading(true);
     const response = await ScenarioService.getScenarios(requestedPage, { ...filters, simulation_type: channel });
+    if (request !== latestRequest.current) return;   // a newer request has been sent since
+    setIsLoading(false);
     if (!response.ok || !response.data.success) {
       toast.error(response.data.message || "Unable to load scenarios.");
       return;
     }
     const data = response.data.data;
+    setLoadedView(view);
     setScenarios(data.scenarios);
     setStatusCounts(data.stats.by_status);
     setChannelCounts({ email: data.stats.email, sms: data.stats.sms });
     if (data.categories.length) setCategories(data.categories);
     setPagination(data.pagination);
     setGroups(data.groups ?? []);
+    setBalance(data.balance ?? []);
   };
 
   useEffect(() => {
@@ -270,7 +319,10 @@ export function ScenarioManagementPage({ onBack }: ScenarioManagementPageProps) 
   };
 
   const openReview = async (scenarioId: number) => {
+    if (busy) return;
+    setBusy(`open-${scenarioId}`);
     const response = await ScenarioService.getScenario(scenarioId);
+    setBusy(null);
     if (!response.ok || !response.data.success) {
       toast.error(response.data.message || "Unable to load scenario.");
       return;
@@ -280,17 +332,26 @@ export function ScenarioManagementPage({ onBack }: ScenarioManagementPageProps) 
   };
 
   const runReview = async (action: ReviewAction) => {
-    if (!reviewing) return;
+    if (!reviewing || busy) return;
+    setBusy(`review-${action}`);
     const response = await ScenarioService.reviewScenario(
       reviewing.scenario_id,
       action,
       action === "approve" ? checklist : undefined,
     );
-    notify(response);
+    setBusy(null);
     if (response.ok && response.data.success) {
+      const stage = REVIEW_RESULT[action];
+      toast.success(response.data.message, {
+        description: filters.status && filters.status !== stage
+          ? `It has moved to the ${stage.toLowerCase()} stage, so it leaves this list. Pick ${stage.toLowerCase()} or All stages above to see it.`
+          : undefined,
+      });
       setReviewing(null);
       setChecklist(emptyChecklist());
       await loadScenarios();
+    } else {
+      notify(response);
     }
   };
 
@@ -298,7 +359,10 @@ export function ScenarioManagementPage({ onBack }: ScenarioManagementPageProps) 
 
   /** Count what a bulk action would change, then ask to confirm. */
   const previewBulk = async (action: ReviewAction, label: string) => {
+    if (busy) return;
+    setBusy(`preview-${action}`);
     const response = await ScenarioService.bulkReview(action, scopeFilters(), undefined, true);
+    setBusy(null);
     if (!response.ok || !response.data.success) {
       notify(response);
       return;
@@ -308,12 +372,14 @@ export function ScenarioManagementPage({ onBack }: ScenarioManagementPageProps) 
   };
 
   const runBulk = async () => {
-    if (!bulk) return;
+    if (!bulk || busy) return;
+    setBusy("bulk");
     const response = await ScenarioService.bulkReview(
       bulk.action,
       scopeFilters(),
       bulk.action === "approve" ? checklist : undefined,
     );
+    setBusy(null);
     notify(response);
     setBulk(null);
     await loadScenarios(1);
@@ -365,7 +431,15 @@ export function ScenarioManagementPage({ onBack }: ScenarioManagementPageProps) 
 
     if (response.ok && response.data.success) {
       setIsFormOpen(false);
-      await loadScenarios();
+      if (editingId) {
+        await loadScenarios();
+      } else {
+        // A new scenario is a draft in the admin's own group: open that group at the Draft stage to show it
+        // next to the earlier custom ones (the group's total still counts the live ones)
+        setChannel(payload.simulation_type);
+        setFilters({ ...emptyFilters, status: "DRAFT", dataset_id: "none" });
+        setPage(1);
+      }
     }
   };
 
@@ -474,7 +548,7 @@ export function ScenarioManagementPage({ onBack }: ScenarioManagementPageProps) 
                   key: "answer",
                   label: "Labels",
                   value: filters.answer,
-                  options: [{ value: "REPORT", label: "Phishing" }, { value: "SAFE", label: "Legitimate" }],
+                  options: [{ value: "REPORT", label: "Phishing" }, { value: "SAFE", label: "Genuine" }],
                   onChange: (value) => setFilter("answer", value),
                 },
                 {
@@ -521,16 +595,57 @@ export function ScenarioManagementPage({ onBack }: ScenarioManagementPageProps) 
                     key={action}
                     size="sm"
                     variant={action === "reject" || action === "archive" ? "destructive" : "secondary"}
-                    disabled={!pagination.total}
+                    disabled={!pagination.total || Boolean(busy)}
                     onClick={() => previewBulk(action, label)}
                   >
-                    {label} all…
+                    {busy === `preview-${action}` ? <><Spinner className="w-3.5 h-3.5 mr-1.5" />Counting…</> : `${label} all…`}
                   </Button>
                 ))}
               </div>
             )}
           </CardContent>
         </Card>
+
+        {balance.length > 0 && (
+          <Card className="border-amber-500/40">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-amber-400" /> Categories with only one kind of answer
+              </CardTitle>
+              <CardDescription className="space-y-1">
+                <span className="block">
+                  Live scenarios in these groups are all (or almost all) phishing, or all genuine. Amber: only one
+                  kind is live. Grey: the other kind is under a quarter.
+                </span>
+                <span className="block">
+                  Why it matters: if every live Government message is phishing, a player could answer "Report" from
+                  the label alone. The Adaptive mix still alternates phishing and genuine, but players can't pick
+                  these categories for focused practice until they hold both kinds.
+                </span>
+                <span className="block">
+                  To fix a group: make live some scenarios of the missing kind in it, or correct a wrong category or
+                  difficulty when you review.
+                </span>
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-wrap gap-2">
+              {balance.map((flag) => (
+                <span
+                  key={`${flag.channel}-${flag.group}-${flag.name}`}
+                  className={`rounded-md border px-2 py-1 text-xs ${
+                    flag.status === "one_sided"
+                      ? "border-amber-500/50 bg-amber-500/10 text-amber-200"
+                      : "border-border text-muted-foreground"
+                  }`}
+                  title={flag.status === "one_sided" ? "Only one answer is live" : "One answer is under a quarter"}
+                >
+                  {flag.channel === "EMAIL" ? "Email" : "SMS"} · {flag.name}
+                  {flag.group === "difficulty" ? " (difficulty)" : ""}: {flag.phishing} phishing, {flag.genuine} genuine
+                </span>
+              ))}
+            </CardContent>
+          </Card>
+        )}
 
         <Card>
           <CardHeader>
@@ -557,9 +672,16 @@ export function ScenarioManagementPage({ onBack }: ScenarioManagementPageProps) 
                     <Database className="w-4 h-4 shrink-0 text-teal-300" />
                     <span className="font-semibold">{group.name}</span>
                     <span className="text-sm text-muted-foreground">
-                      {group.count.toLocaleString()} scenario{group.count === 1 ? "" : "s"}
+                      {group.total.toLocaleString()} scenario{group.total === 1 ? "" : "s"}
+                      {filters.status && group.count !== group.total
+                        && ` · ${group.count.toLocaleString()} ${filters.status.toLowerCase()} shown`}
                       {group.uploaded_at && ` · uploaded ${formatWhen(group.uploaded_at)}`}
                     </span>
+                    {isOpen && isLoading && (
+                      <span className="flex items-center gap-1.5 text-xs text-sky-300" role="status">
+                        <Spinner className="w-3.5 h-3.5" /> Updating…
+                      </span>
+                    )}
                     <span className="ml-auto flex flex-wrap gap-1.5">
                       {[...PIPELINE, "REJECTED" as const].filter((status) => group.by_status[status]).map((status) => (
                         <span key={status} className={`rounded-full border px-2 py-0.5 text-xs font-medium ${STATUS_STYLES[status]}`}>
@@ -570,10 +692,11 @@ export function ScenarioManagementPage({ onBack }: ScenarioManagementPageProps) 
                   </button>
                   {isOpen && <div className="space-y-4 border-t border-border px-4 pb-4 pt-3">
       <p className="text-xs text-muted-foreground">Click any row to open the review screen.</p>
-      <Table>
+      <Table aria-busy={isLoading} className={isLoading && shownScenarios.length ? "opacity-60 transition-opacity" : "transition-opacity"}>
         <TableHeader>
           <TableRow>
             <TableHead><SortButton label="Scenario" column="title" sort={sortState} onSort={sortBy} /></TableHead>
+            <TableHead><SortButton label="Label" column="answer" sort={sortState} onSort={sortBy} /></TableHead>
             <TableHead><SortButton label="Category" column="category" sort={sortState} onSort={sortBy} /></TableHead>
             <TableHead><SortButton label="Difficulty" column="difficulty" sort={sortState} onSort={sortBy} /></TableHead>
             <TableHead><SortButton label="Status" column="status" sort={sortState} onSort={sortBy} /></TableHead>
@@ -585,20 +708,23 @@ export function ScenarioManagementPage({ onBack }: ScenarioManagementPageProps) 
           </TableRow>
         </TableHeader>
         <TableBody>
-          {scenarios.map((scenario) => (
+          {shownScenarios.map((scenario) => (
             <TableRow
               key={scenario.scenario_id}
               onClick={() => openReview(scenario.scenario_id)}
-              className="cursor-pointer hover:bg-sky-500/5"
+              aria-busy={busy === `open-${scenario.scenario_id}`}
+              className={`hover:bg-sky-500/5 ${busy ? "cursor-wait" : "cursor-pointer"}`}
             >
               <TableCell className="font-medium max-w-md">
                 <span className="flex items-center gap-1.5">
+                  {busy === `open-${scenario.scenario_id}` && <Spinner className="w-3.5 h-3.5 shrink-0" />}
                   <span className="truncate">{scenario.title}</span>
                   {scenario.has_attachment && (
                     <Paperclip className="w-3.5 h-3.5 text-muted-foreground shrink-0" aria-label="Has attachment" />
                   )}
                 </span>
               </TableCell>
+              <TableCell><AnswerBadge answer={scenario.correct_answer} /></TableCell>
               <TableCell><CategoryBadge category={scenario.category} /></TableCell>
               <TableCell><DifficultyBadge difficulty={scenario.difficulty} /></TableCell>
               <TableCell><StatusBadge status={scenario.status} /></TableCell>
@@ -621,10 +747,13 @@ export function ScenarioManagementPage({ onBack }: ScenarioManagementPageProps) 
               </TableCell>
             </TableRow>
           ))}
-          {!scenarios.length && (
+          {!shownScenarios.length && (
             <TableRow>
-              <TableCell colSpan={9} className="py-8 text-center text-muted-foreground">
-                No scenarios match these filters.
+              <TableCell colSpan={10} className="py-8 text-center text-muted-foreground">
+                {isLoading || !rowsCurrent ? <InlineLoader label="Loading scenarios..." />
+                  : filters.status && !filters.search
+                    ? `None at the ${filters.status.toLowerCase()} stage here. Pick another stage above, or All stages.`
+                    : "No scenarios match these filters."}
               </TableCell>
             </TableRow>
           )}
@@ -655,9 +784,9 @@ export function ScenarioManagementPage({ onBack }: ScenarioManagementPageProps) 
                 </div>
               );
             })}
-            {!groups.length && (
+            {!groups.length && (isLoading ? <InlineLoader label="Loading datasets..." /> : (
               <p className="py-8 text-center text-muted-foreground">No scenarios match these filters.</p>
-            )}
+            ))}
           </CardContent>
         </Card>
       </div>
@@ -739,10 +868,10 @@ export function ScenarioManagementPage({ onBack }: ScenarioManagementPageProps) 
                   <Button
                     key={action}
                     variant={action === "reject" || action === "archive" ? "destructive" : "default"}
-                    disabled={action === "approve" && !isChecklistComplete}
+                    disabled={(action === "approve" && !isChecklistComplete) || Boolean(busy)}
                     onClick={() => runReview(action)}
                   >
-                    {label}
+                    {busy === `review-${action}` ? <><Spinner className="w-4 h-4 mr-1.5 text-current" />{BUSY_LABEL[action]}</> : label}
                   </Button>
                 ))}
               </DialogFooter>
@@ -767,10 +896,12 @@ export function ScenarioManagementPage({ onBack }: ScenarioManagementPageProps) 
                 <Button variant="outline" onClick={() => setBulk(null)}>Cancel</Button>
                 <Button
                   variant={bulk.action === "reject" || bulk.action === "archive" ? "destructive" : "default"}
-                  disabled={!bulk.count || (bulk.action === "approve" && !isChecklistComplete)}
+                  disabled={!bulk.count || (bulk.action === "approve" && !isChecklistComplete) || Boolean(busy)}
                   onClick={runBulk}
                 >
-                  {bulk.label} {bulk.count.toLocaleString()}
+                  {busy === "bulk"
+                    ? <><Spinner className="w-4 h-4 mr-1.5 text-current" />{BUSY_LABEL[bulk.action]}</>
+                    : `${bulk.label} ${bulk.count.toLocaleString()}`}
                 </Button>
               </DialogFooter>
             </>
