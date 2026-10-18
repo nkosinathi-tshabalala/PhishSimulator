@@ -69,7 +69,7 @@ class AuthService:
         db.session.add(UserProfile(
             player_id=player.player_id,
             age=int(data["age"]),
-            it_background=bool(data["it_background"]),
+            it_background=AuthService._flag(data["it_background"]),
             occupation=data["occupation"],
             **AuthService._consent_fields(data.get("campaign_consent")),
         ))
@@ -191,10 +191,10 @@ class AuthService:
         player, profile = user.player, user.player.profile
         player.full_name = " ".join(str(data["full_name"]).split())
         profile.age = int(data["age"])
-        profile.it_background = bool(data.get("it_background"))
+        profile.it_background = AuthService._flag(data.get("it_background"))
         profile.occupation = occupation
         if "campaign_consent" in data:
-            consent = bool(data["campaign_consent"])
+            consent = AuthService._flag(data["campaign_consent"])
             if consent != profile.campaign_consent:
                 for name, value in AuthService._consent_fields(consent).items():
                     setattr(profile, name, value)
@@ -251,7 +251,12 @@ class AuthService:
         }
 
     @staticmethod
+    def _flag(value):
+        """A yes/no field: only true (or the text "true") means yes, so "false" sent as text is not a yes."""
+        return value is True or (isinstance(value, str) and value.strip().lower() == "true")
+
+    @staticmethod
     def _consent_fields(consent):
         """Profile fields for a campaign-email consent choice: when it was given, or none once withdrawn."""
-        consent = bool(consent)
+        consent = AuthService._flag(consent)
         return {"campaign_consent": consent, "campaign_consent_at": datetime.utcnow() if consent else None}

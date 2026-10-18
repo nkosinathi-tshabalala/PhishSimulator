@@ -1,6 +1,6 @@
 // Root of the app: handles login state and shows the right page
 
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { LandingPage } from "./components/LandingPage";
 import { LoginPage } from "./components/LoginPage";
 import { RegisterPage } from "./components/RegisterPage";
@@ -8,26 +8,36 @@ import { ResetPasswordPage } from "./components/ResetPasswordPage";
 import { Sidebar } from "./components/Sidebar";
 import { AdminSidebar } from "./components/AdminSidebar";
 import { AppLayout } from "./components/AppLayout";
-import { Dashboard } from "./components/Dashboard";
-import { SimulationsPage } from "./components/SimulationsPage";
-import { EmailSimulation } from "./components/EmailSimulation";
-import { SMSSimulation } from "./components/SMSSimulation";
-import { InboxTriage } from "./components/InboxTriage";
-import { BaselineQuiz } from "./components/BaselineQuiz";
-import { Analytics } from "./components/Analytics";
-import { ProfilePage } from "./components/ProfilePage";
-import { AdminDashboard } from "./components/AdminDashboard";
-import { AdminAnalytics } from "./components/AdminAnalytics";
-import { DatasetManagementPage } from "./components/DatasetManagementPage";
-import { ScenarioManagementPage } from "./components/ScenarioManagementPage";
-import { UserMonitoringPage } from "./components/UserMonitoringPage";
-import { EmailDispatcherPage } from "./components/EmailDispatcherPage";
-import { BaselineManagementPage } from "./components/BaselineManagementPage";
-import { AdminProfilePage } from "./components/AdminProfilePage";
 import AuthService from "../services/authService";
 import { SessionWatcher } from "./components/SessionWatcher";
 import { ViewerContext } from "./viewer";
 import { clearSession, mightBeSignedIn } from "../services/session";
+import { PageLoader } from "./components/Loading";
+
+// The pages behind the login load on demand, so the first visit only downloads the landing and login pages
+// (and a player never downloads the admin pages)
+const Dashboard = lazy(() => import("./components/Dashboard").then((m) => ({ default: m.Dashboard })));
+const SimulationsPage = lazy(() => import("./components/SimulationsPage").then((m) => ({ default: m.SimulationsPage })));
+const EmailSimulation = lazy(() => import("./components/EmailSimulation").then((m) => ({ default: m.EmailSimulation })));
+const SMSSimulation = lazy(() => import("./components/SMSSimulation").then((m) => ({ default: m.SMSSimulation })));
+const BaselineQuiz = lazy(() => import("./components/BaselineQuiz").then((m) => ({ default: m.BaselineQuiz })));
+const Analytics = lazy(() => import("./components/Analytics").then((m) => ({ default: m.Analytics })));
+const ProfilePage = lazy(() => import("./components/ProfilePage").then((m) => ({ default: m.ProfilePage })));
+const AdminDashboard = lazy(() => import("./components/AdminDashboard").then((m) => ({ default: m.AdminDashboard })));
+const AdminAnalytics = lazy(() => import("./components/AdminAnalytics").then((m) => ({ default: m.AdminAnalytics })));
+const DatasetManagementPage = lazy(() => import("./components/DatasetManagementPage").then((m) => ({ default: m.DatasetManagementPage })));
+const ScenarioManagementPage = lazy(() => import("./components/ScenarioManagementPage").then((m) => ({ default: m.ScenarioManagementPage })));
+const UserMonitoringPage = lazy(() => import("./components/UserMonitoringPage").then((m) => ({ default: m.UserMonitoringPage })));
+const EmailDispatcherPage = lazy(() => import("./components/EmailDispatcherPage").then((m) => ({ default: m.EmailDispatcherPage })));
+const BaselineManagementPage = lazy(() => import("./components/BaselineManagementPage").then((m) => ({ default: m.BaselineManagementPage })));
+const AdminProfilePage = lazy(() => import("./components/AdminProfilePage").then((m) => ({ default: m.AdminProfilePage })));
+
+// The pages each role can open; a saved page outside its list is ignored
+const PLAYER_PAGES = ["dashboard", "quiz", "simulations", "email", "sms", "performance", "profile"];
+const ADMIN_PAGES = [
+  "admin-dashboard", "baseline-management", "datasets", "scenarios", "users", "analytics", "email-dispatcher",
+  "admin-profile",
+];
 
 /** Root component: restores the login and shows the right page for the user's role. */
 export default function App() {
@@ -135,8 +145,10 @@ export default function App() {
       const defaultPage = role === "admin" ? "admin-dashboard" : "dashboard";
 
       const savedPage = sessionStorage.getItem("current_page");
+      const pages = role === "admin" ? ADMIN_PAGES : PLAYER_PAGES;
 
-      setCurrentPage(savedPage || defaultPage);
+      // A page saved before it was removed (such as the old Inbox Rush) falls back to the home page
+      setCurrentPage(savedPage && pages.includes(savedPage) ? savedPage : defaultPage);
     } catch (error) {
       console.error(error);
 
@@ -194,11 +206,7 @@ export default function App() {
   };
 
   if (isLoading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center">
-        <p className="text-muted-foreground">Loading...</p>
-      </div>
-    );
+    return <PageLoader fullScreen label="Loading PhishSimulator..." />;
   }
 
   if (!isLoggedIn) {
@@ -227,16 +235,18 @@ export default function App() {
         )}
       >
         <SessionWatcher onSignInAgain={handleSessionEnd} onLogout={handleLogout} />
-        {currentPage === "admin-dashboard" && <AdminDashboard onNavigate={handleNavigate} />}
-        {currentPage === "baseline-management" && <BaselineManagementPage />}
-        {currentPage === "datasets" && <DatasetManagementPage onBack={backToDashboard} />}
-        {currentPage === "scenarios" && <ScenarioManagementPage onBack={backToDashboard} />}
-        {currentPage === "users" && <UserMonitoringPage onBack={backToDashboard} />}
-        {currentPage === "analytics" && <AdminAnalytics onNavigate={handleNavigate} />}
-        {currentPage === "email-dispatcher" && <EmailDispatcherPage onBack={backToDashboard} />}
-        {currentPage === "admin-profile" && (
-          <AdminProfilePage user={currentUser} onBack={backToDashboard} />
-        )}
+        <Suspense fallback={<PageLoader />}>
+          {currentPage === "admin-dashboard" && <AdminDashboard onNavigate={handleNavigate} />}
+          {currentPage === "baseline-management" && <BaselineManagementPage />}
+          {currentPage === "datasets" && <DatasetManagementPage onBack={backToDashboard} />}
+          {currentPage === "scenarios" && <ScenarioManagementPage onBack={backToDashboard} />}
+          {currentPage === "users" && <UserMonitoringPage onBack={backToDashboard} />}
+          {currentPage === "analytics" && <AdminAnalytics onNavigate={handleNavigate} />}
+          {currentPage === "email-dispatcher" && <EmailDispatcherPage onBack={backToDashboard} />}
+          {currentPage === "admin-profile" && (
+            <AdminProfilePage user={currentUser} onBack={backToDashboard} />
+          )}
+        </Suspense>
       </AppLayout>
     );
   }
@@ -255,16 +265,17 @@ export default function App() {
         )}
       >
         <SessionWatcher onSignInAgain={handleSessionEnd} onLogout={handleLogout} />
-        {currentPage === "dashboard" && <Dashboard user={currentUser} onNavigate={handleNavigate} />}
-        {currentPage === "quiz" && <BaselineQuiz onBack={backToHome} />}
-        {currentPage === "simulations" && <SimulationsPage onNavigate={handleNavigate} />}
-        {currentPage === "email" && <EmailSimulation onBack={backToTraining} onNavigate={handleNavigate} />}
-        {currentPage === "sms" && <SMSSimulation onBack={backToTraining} onNavigate={handleNavigate} />}
-        {currentPage === "triage" && <InboxTriage onBack={backToTraining} onNavigate={handleNavigate} />}
-        {currentPage === "performance" && <Analytics />}
-        {currentPage === "profile" && (
-          <ProfilePage user={currentUser} setCurrentUser={setCurrentUser} onBack={backToHome} />
-        )}
+        <Suspense fallback={<PageLoader />}>
+          {currentPage === "dashboard" && <Dashboard user={currentUser} onNavigate={handleNavigate} />}
+          {currentPage === "quiz" && <BaselineQuiz onBack={backToHome} />}
+          {currentPage === "simulations" && <SimulationsPage onNavigate={handleNavigate} />}
+          {currentPage === "email" && <EmailSimulation onBack={backToTraining} onNavigate={handleNavigate} />}
+          {currentPage === "sms" && <SMSSimulation onBack={backToTraining} onNavigate={handleNavigate} />}
+          {currentPage === "performance" && <Analytics />}
+          {currentPage === "profile" && (
+            <ProfilePage user={currentUser} setCurrentUser={setCurrentUser} onBack={backToHome} />
+          )}
+        </Suspense>
       </AppLayout>
     </ViewerContext.Provider>
   );

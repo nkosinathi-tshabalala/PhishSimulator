@@ -254,7 +254,8 @@ class AnalyticsService:
         writer.writerow(AnalyticsService.EXPORT_COLUMNS)
 
         for player in Player.query.order_by(Player.full_name).all():
-            performance = AnalyticsService.get_player_performance(player.user_id)
+            # The export leaves out the private standing, so it is not worked out for every player
+            performance = AnalyticsService.get_player_performance(player.user_id, with_standing=False)
             if not performance:
                 continue
             last = performance["recent_attempts"][0]["attempted_at"] if performance["recent_attempts"] else ""
@@ -277,7 +278,7 @@ class AnalyticsService:
         return output.getvalue()
 
     @staticmethod
-    def get_player_performance(user_id, filters=None):
+    def get_player_performance(user_id, filters=None, with_standing=True):
         """Everything the player sees on Home and My Progress. The filters narrow the stats and
         charts; XP, level, badges and the adaptive difficulty always use the full history."""
         filters = filters or MetricFilters()
@@ -323,7 +324,8 @@ class AnalyticsService:
         )
         progress = ProgressService.summary(all_attempts)
         # Private position among all players (only "#N of M", no one else's details)
-        progress["skill"]["standing"] = ProgressService.standing(player.player_id)
+        if with_standing:
+            progress["skill"]["standing"] = ProgressService.standing(player.player_id)
         days, last_day = filters.chart_window(attempts)
         recent_attempts = []
         for attempt in attempts[:RECENT_LIMIT]:
@@ -508,7 +510,9 @@ class AnalyticsService:
 
     @staticmethod
     def _get_recent_activity():
-        """The latest registrations, uploads, new scenarios and sessions."""
+        """The latest registrations, uploads, new scenarios and sessions. Only the newest few of each kind
+        are read from the database (not every scenario), then the newest of those are kept."""
+        shown = 4
         activity = []
 
         activity.extend({
@@ -516,27 +520,31 @@ class AnalyticsService:
             "detail": user.email,
             "occurred_at": user.created_at,
             "type": "user",
-        } for user in User.query.all())
+        } for user in User.query.filter(User.created_at.is_not(None))
+            .order_by(User.created_at.desc()).limit(shown))
         activity.extend({
             "action": "Dataset uploaded",
             "detail": dataset.filename,
             "occurred_at": dataset.uploaded_at,
             "type": "dataset",
-        } for dataset in Dataset.query.all())
+        } for dataset in Dataset.query.filter(Dataset.uploaded_at.is_not(None))
+            .order_by(Dataset.uploaded_at.desc()).limit(shown))
         activity.extend({
             "action": "Scenario created",
-            "detail": scenario.title,
-            "occurred_at": scenario.created_at,
+            "detail": title,
+            "occurred_at": created_at,
             "type": "scenario",
-        } for scenario in ScenarioService._reviewable().all())
+        } for title, created_at in ScenarioService._reviewable()
+            .filter(Scenario.created_at.is_not(None))
+            .with_entities(Scenario.title, Scenario.created_at)
+            .order_by(Scenario.created_at.desc()).limit(shown))
         activity.extend({
             "action": "Simulation completed",
             "detail": f"{session.simulation_type} simulation session",
             "occurred_at": session.completed_at,
             "type": "simulation",
-        } for session in SimulationSession.query.filter(
-            SimulationSession.completed_at.is_not(None)
-        ).all())
+        } for session in SimulationSession.query.filter(SimulationSession.completed_at.is_not(None))
+            .order_by(SimulationSession.completed_at.desc()).limit(shown))
 
         return [{
             **item,
@@ -545,7 +553,7 @@ class AnalyticsService:
             activity,
             key=lambda item: item["occurred_at"],
             reverse=True,
-        )[:4]]
+        )[:shown]]
 
     @staticmethod
     def _new_users_per_day(filters, days, last_day):
@@ -564,8 +572,11 @@ class AnalyticsService:
 
     @staticmethod
     def _scenario_categories():
-        """Map every scenario id to its category (one query, used by the charts)."""
-        return dict(db.session.query(Scenario.scenario_id, Scenario.category).all())
+        """Map each answered scenario's id to its category (one query, used by the charts). Scenarios nobody
+        has answered (most drafts) never appear in a chart, so they are not loaded."""
+        answered = db.session.query(SimulationAttempt.scenario_id).distinct()
+        return dict(db.session.query(Scenario.scenario_id, Scenario.category)
+                    .filter(Scenario.scenario_id.in_(answered)).all())
 
     @staticmethod
     def _to_utc_isoformat(value):

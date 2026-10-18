@@ -57,8 +57,6 @@ class ScenarioService:
 
     COOLDOWN_ATTEMPTS = 5
     MISTAKE_REVIEW_GAP = 3
-    TRIAGE_SIZE = 6
-    TRIAGE_PHISHING = (2, 4)
 
     @staticmethod
     def display_title(scenario):
@@ -729,45 +727,6 @@ class ScenarioService:
                 "difficulty_reason": difficulty_reason,
             },
             "practice_categories": [],
-        }
-
-    @staticmethod
-    def get_triage_batch(simulation_type, user_id):
-        """A small inbox of mixed messages for Inbox Rush."""
-        simulation_type = simulation_type.upper()
-        _, attempts, difficulty, difficulty_reason = ScenarioService._player_history(user_id)
-        completed_ids = {a.scenario_id for a in attempts if a.simulation_type.upper() == simulation_type}
-        candidates = ScenarioService._candidates(ScenarioService._active_query(simulation_type))
-
-        # A mixed inbox: 2 to 4 of the 6 are phishing, so counting them gives nothing away
-        rng = SystemRandom()
-        phishing = rng.randint(*ScenarioService.TRIAGE_PHISHING)
-        answers = ["REPORT"] * phishing + ["SAFE"] * (ScenarioService.TRIAGE_SIZE - phishing)
-        chosen_ids = []
-        for answer in answers:
-            taken = set(chosen_ids)
-            exclusions = [completed_ids | taken, taken]
-            # Keep the mix even if it means a message seen before; the other answer only when none is left
-            with_answer = [row for row in candidates if (row[3] or "").upper() == answer]
-            scenario_id = (
-                ScenarioService.pick(with_answer, answer, None, difficulty, exclusions, rng=rng)
-                or ScenarioService.pick(candidates, answer, None, difficulty, exclusions, rng=rng)
-            )
-            if scenario_id is None:
-                break
-            chosen_ids.append(scenario_id)
-        rng.shuffle(chosen_ids)
-        by_id = {scenario.scenario_id: scenario for scenario in Scenario.query.filter(
-            Scenario.scenario_id.in_(chosen_ids)).all()} if chosen_ids else {}
-        chosen = [by_id[scenario_id] for scenario_id in chosen_ids]
-
-        if len(chosen) < 2:
-            return False, "Not enough scenarios for an inbox challenge yet.", None
-
-        return True, "Inbox ready.", {
-            "difficulty": difficulty,
-            "difficulty_reason": difficulty_reason,
-            "messages": [ScenarioService._player_payload(scenario, completed_ids) for scenario in chosen],
         }
 
     @staticmethod

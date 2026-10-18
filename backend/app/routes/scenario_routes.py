@@ -37,18 +37,6 @@ def get_review_scenario(simulation_type):
     return respond(success, message, result, error_status=404)
 
 
-# GET /api/scenarios/triage/<EMAIL|SMS> - a small inbox for Inbox Rush
-@scenario_bp.route("/triage/<simulation_type>", methods=["GET"])
-@jwt_required()
-def get_triage_batch(simulation_type):
-    """A mixed inbox of messages for the triage challenge (no answers)."""
-    success, message, result = ScenarioService.get_triage_batch(
-        simulation_type,
-        current_user_id(),
-    )
-    return respond(success, message, result, error_status=404)
-
-
 # GET /api/scenarios - admin only: scenarios in pages, with filters and search
 @scenario_bp.route("", methods=["GET"])
 @jwt_required()

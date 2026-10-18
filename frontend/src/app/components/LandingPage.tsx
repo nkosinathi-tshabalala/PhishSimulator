@@ -11,6 +11,7 @@ import {
   Target,
 } from "lucide-react";
 import { Button } from "./ui/button";
+import { Skeleton } from "./ui/skeleton";
 import AnalyticsService from "../../services/analyticsService";
 
 interface LandingPageProps {
@@ -19,11 +20,12 @@ interface LandingPageProps {
 
 /** Public home page with the sign-in and register links. */
 export function LandingPage({ onNavigate }: LandingPageProps) {
-  const [platformSummary, setPlatformSummary] = useState({
-    registered_players: 0,
-    simulation_attempts: 0,
-    platform_accuracy: 0,
-  });
+  // Null until the totals arrive, so the page never shows a misleading 0 while loading
+  const [platformSummary, setPlatformSummary] = useState<{
+    registered_players: number;
+    simulation_attempts: number;
+    platform_accuracy: number;
+  } | null>(null);
 
   useEffect(() => {
     const loadPlatformSummary = async () => {
@@ -125,12 +127,16 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
         <div className="absolute inset-x-0 bottom-0 border-t border-white/10 bg-[#0b1221]/85 backdrop-blur-sm">
           <div className="mx-auto grid max-w-7xl grid-cols-3 divide-x divide-white/10 px-6 lg:px-8">
             {[
-              [platformSummary.registered_players.toLocaleString(), "Learners enrolled"],
-              [platformSummary.simulation_attempts.toLocaleString(), "Simulations completed"],
-              [`${platformSummary.platform_accuracy}%`, "Verified decisions"],
+              [platformSummary?.registered_players.toLocaleString(), "Learners enrolled"],
+              [platformSummary?.simulation_attempts.toLocaleString(), "Simulations completed"],
+              [platformSummary && `${platformSummary.platform_accuracy}%`, "Verified decisions"],
             ].map(([value, label]) => (
               <div key={label} className="py-6 text-center sm:text-left sm:pl-8 first:sm:pl-0">
-                <p className="text-2xl font-semibold text-white sm:text-3xl">{value}</p>
+                {value ? (
+                  <p className="text-2xl font-semibold text-white sm:text-3xl">{value}</p>
+                ) : (
+                  <Skeleton aria-label="Loading" className="mx-auto h-8 w-20 bg-white/10 sm:mx-0 sm:h-9" />
+                )}
                 <p className="mt-1 text-xs tracking-[0.08em] text-slate-400">{label}</p>
               </div>
             ))}

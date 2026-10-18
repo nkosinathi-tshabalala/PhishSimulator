@@ -61,6 +61,13 @@ class ScenarioSchema:
         if data["correct_answer"] not in valid_answers:
             return False, f"correct_answer must be one of {sorted(valid_answers)}."
 
+        # The training categories the app sorts imports into (the admin form offers the same list), so a typo
+        # cannot create a category players see once and can never practise
+        from app.datasets.scenario_parser import ScenarioParser
+        valid_categories = [*ScenarioParser.CATEGORY_KEYWORDS, ScenarioParser.GENERAL_CATEGORY]
+        if data["category"] not in valid_categories:
+            return False, f"category must be one of {valid_categories}."
+
         attachment = data.get("attachment")
         if attachment is not None and not isinstance(attachment, str):
             return False, "attachment must be a file name."

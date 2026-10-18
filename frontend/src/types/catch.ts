@@ -130,12 +130,6 @@ export interface AttemptResult {
   };
 }
 
-export interface TriageBatch {
-  difficulty: Difficulty;
-  difficulty_reason: string;
-  messages: MessageView[];
-}
-
 /** Activity per day for one year (decisions plus finished baseline quizzes). */
 export interface YearActivity {
   year: number;

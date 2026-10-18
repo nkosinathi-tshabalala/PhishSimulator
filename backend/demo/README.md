@@ -6,7 +6,7 @@ It was written by hand so the demo works well; `DEMO_AUTHOR_WRITTEN=off` in `bac
 | File | What it is | How the demo loads it |
 | --- | --- | --- |
 | `demo_only_author_written_genuine_email.csv` | 56 genuine emails in the KD format: Account Security 12, Email & IT 12, Prizes & Offers 12, Government 12, Social Media 8 | Uploaded like any dataset (it shows on the Datasets page under this name), and paired with KD phishing in the replayed review |
-| `sa_admin_scenarios.json` | 90 South African scenarios, phishing **and** genuine: 54 emails (3 + 3 in each of 9 categories) and 36 texts (3 + 3 in most categories) | Added as the admin's own scenarios (no dataset, like the "Create scenario" form), then approved and switched on. They show in Scenario Review under "Added by hand or demo data" |
+| `sa_admin_scenarios.json` | 100 South African scenarios, phishing **and** genuine: 64 emails (4 + 4 in General and Banking & Money, 3 + 3 in the other 7 categories) and 36 texts (3 + 3 in most categories) | Added as the admin's own scenarios (no dataset, like the "Create scenario" form), then approved and switched on. They show in Scenario Review under "Added by hand or demo data" |
 
 ## Why they exist
 

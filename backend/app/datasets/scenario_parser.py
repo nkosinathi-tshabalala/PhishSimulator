@@ -22,9 +22,9 @@ class ScenarioParser:
     GENERAL_CATEGORY = "General"
 
     # What a message is about, from its own words: (strong words, which name the topic on their own, such as
-    # a brand or "parcel"; weak words, which only count with another). Strong words score 2 and weak words 1,
-    # words in the subject count twice, and a category needs MIN_CATEGORY_SCORE. The highest score wins; a tie
-    # goes to the category listed first, so specific topics come before the broad "account" and "money" ones.
+    # a brand or "parcel"; weak words, which only count with another). Strong words score 2 and weak words 1;
+    # a strong word in the subject counts twice, and a category needs MIN_CATEGORY_SCORE. The highest score
+    # wins; a tie goes to the category listed first, so specific topics come before the broad "account" and "money" ones.
     # Phishing and genuine messages are sorted by exactly the same words, so a category never hints at the answer.
     CATEGORY_KEYWORDS = {
         "Delivery": (

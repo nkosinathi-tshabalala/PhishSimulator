@@ -33,12 +33,19 @@ MODE="${SEED_DEMO:-auto}"
 # as long as this file exists, every request gets "still getting ready" and the healthcheck says starting.
 export SETUP_MARKER_FILE=/tmp/phishsim-setting-up
 rm -f "$SETUP_MARKER_FILE"
+# Kept in the uploads volume until a load finishes, so a load cut short by a restart runs again on the
+# next start (seed_demo.py clears what it had written) instead of leaving a half-loaded demo
+UNFINISHED_LOAD=/app/uploads/.demo-load-unfinished
 load_demo() {
-  touch "$SETUP_MARKER_FILE"
+  touch "$SETUP_MARKER_FILE" "$UNFINISHED_LOAD"
   (
     set +e   # whatever fails, the marker must go so the app does not stay "getting ready"
     if [ "$1" = "reset" ]; then python reset_database.py --confirm-reset; fi
-    python seed_demo.py || echo "Demo data was not loaded (see the message above). The app starts without it."
+    if python seed_demo.py; then
+      rm -f "$UNFINISHED_LOAD"
+    else
+      echo "Demo data was not loaded (see the message above). The app starts without it."
+    fi
     rm -f "$SETUP_MARKER_FILE"
     echo "Ready: the app can be used now."
   ) &
@@ -47,7 +54,10 @@ if [ "$MODE" = "reset" ]; then
   echo "Resetting database and loading demo data in the background..."
   load_demo reset
 elif [ "$MODE" = "auto" ]; then
-  if python -c "import sys; from app import create_app; from app.models.authentication import User; app=create_app(); app.app_context().push(); sys.exit(0 if User.query.first() else 1)"; then
+  if [ -f "$UNFINISHED_LOAD" ]; then
+    echo "The last demo data load did not finish: loading it again, in the background..."
+    load_demo
+  elif python -c "import sys; from app import create_app; from app.models.authentication import User; app=create_app(); app.app_context().push(); sys.exit(0 if User.query.first() else 1)"; then
     echo "Database already has data; leaving it as is."
   else
     echo "Empty database: loading demo data once, in the background..."

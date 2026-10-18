@@ -53,6 +53,7 @@ import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "./ui/table";
 import { Textarea } from "./ui/textarea";
+import { InlineLoader } from "./Loading";
 
 interface ScenarioManagementPageProps {
   onBack: () => void;
@@ -222,6 +223,7 @@ export function ScenarioManagementPage({ onBack }: ScenarioManagementPageProps) 
   const [groups, setGroups] = useState<DatasetGroup[]>([]);
   const [balance, setBalance] = useState<BalanceFlag[]>([]);
   const [pagination, setPagination] = useState({ page: 1, pages: 0, total: 0 });
+  const [isLoading, setIsLoading] = useState(true);
 
   const [reviewing, setReviewing] = useState<ScenarioDetail | null>(null);
   const [checklist, setChecklist] = useState<QaChecklist>(emptyChecklist());
@@ -242,7 +244,9 @@ export function ScenarioManagementPage({ onBack }: ScenarioManagementPageProps) 
   };
 
   const loadScenarios = async (requestedPage = page) => {
+    setIsLoading(true);
     const response = await ScenarioService.getScenarios(requestedPage, { ...filters, simulation_type: channel });
+    setIsLoading(false);
     if (!response.ok || !response.data.success) {
       toast.error(response.data.message || "Unable to load scenarios.");
       return;
@@ -488,7 +492,7 @@ export function ScenarioManagementPage({ onBack }: ScenarioManagementPageProps) 
                   key: "answer",
                   label: "Labels",
                   value: filters.answer,
-                  options: [{ value: "REPORT", label: "Phishing" }, { value: "SAFE", label: "Legitimate" }],
+                  options: [{ value: "REPORT", label: "Phishing" }, { value: "SAFE", label: "Genuine" }],
                   onChange: (value) => setFilter("answer", value),
                 },
                 {
@@ -625,7 +629,7 @@ export function ScenarioManagementPage({ onBack }: ScenarioManagementPageProps) 
                   </button>
                   {isOpen && <div className="space-y-4 border-t border-border px-4 pb-4 pt-3">
       <p className="text-xs text-muted-foreground">Click any row to open the review screen.</p>
-      <Table>
+      <Table aria-busy={isLoading} className={isLoading && scenarios.length ? "opacity-60 transition-opacity" : "transition-opacity"}>
         <TableHeader>
           <TableRow>
             <TableHead><SortButton label="Scenario" column="title" sort={sortState} onSort={sortBy} /></TableHead>
@@ -681,7 +685,7 @@ export function ScenarioManagementPage({ onBack }: ScenarioManagementPageProps) 
           {!scenarios.length && (
             <TableRow>
               <TableCell colSpan={10} className="py-8 text-center text-muted-foreground">
-                No scenarios match these filters.
+                {isLoading ? <InlineLoader label="Loading scenarios..." /> : "No scenarios match these filters."}
               </TableCell>
             </TableRow>
           )}
@@ -712,9 +716,9 @@ export function ScenarioManagementPage({ onBack }: ScenarioManagementPageProps) 
                 </div>
               );
             })}
-            {!groups.length && (
+            {!groups.length && (isLoading ? <InlineLoader label="Loading datasets..." /> : (
               <p className="py-8 text-center text-muted-foreground">No scenarios match these filters.</p>
-            )}
+            ))}
           </CardContent>
         </Card>
       </div>

@@ -12,16 +12,19 @@
 # address, with a couple of finished email campaigns.
 #
 # Scenarios come from two public dataset files, one email and one SMS (DEMO_EMAIL_DATASET and
-# DEMO_SMS_DATASET in DEMO_DATASET_DIR, by default backend/uploads/datasets), plus two small DEMO-ONLY files
-# of author-written genuine messages (backend/demo, see its README). The public files have phishing about
-# accounts, IT, prizes and government but almost no genuine messages on those topics, so those categories
-# could not be practised on their own. DEMO_AUTHOR_WRITTEN=off leaves the demo-only files out, for figures
-# that come from the public datasets alone (as in the paper). Every file is imported exactly as the Datasets
-# page does it, so the quality check, cleaning and draft scenarios are the real ones. An admin review is
-# then replayed per channel: a balanced set of drafts that pass every automatic check is approved and
-# switched on, a few are left approved, a few broken ones are rejected, and the rest wait in review.
-# Players only ever practise on those active dataset scenarios, and each decision is chosen and scored
-# by the app's own rules (adaptive difficulty and category, clue checking, XP with the level multiplier).
+# DEMO_SMS_DATASET in DEMO_DATASET_DIR, by default backend/uploads/datasets), plus two DEMO-ONLY files
+# (backend/demo, see its README): a CSV of author-written genuine emails, and South African phishing and
+# genuine scenarios the admin adds by hand. The public email file has phishing about accounts, IT, prizes
+# and government but almost no genuine emails on those topics, so those categories could not be practised on
+# their own. DEMO_AUTHOR_WRITTEN=off leaves the demo-only files out, for figures that come from the public
+# datasets alone (as in the paper). Every CSV is imported exactly as the Datasets page does it, so the quality
+# check, cleaning and draft scenarios are the real ones. An admin review is then replayed per channel: a
+# balanced set of drafts that pass every automatic check is approved and switched on, a few are left
+# approved, a few broken ones are rejected, and the rest wait in review. The South African scenarios are
+# then added live with no dataset, as the "Create scenario" form adds them (unit tests check that each one
+# passes every automatic check). Players only ever practise on live scenarios, and each decision is chosen
+# and scored by the app's own rules (adaptive difficulty and category, clue checking, XP with the level
+# multiplier).
 #
 # Test players get Gmail plus-aliases of DEMO_EMAIL (you+lerato.mokoena@gmail.com), which all arrive in
 # your own inbox, so campaigns can be demonstrated end to end. Without DEMO_EMAIL they get clearly fake
@@ -461,7 +464,7 @@ def seed_baseline(player, template, rng, joined_at):
 
 
 class ScenarioPool:
-    """The live dataset scenarios of each channel, looked up the way ScenarioService does for a player."""
+    """The live scenarios of each channel, looked up the way ScenarioService does for a player."""
 
     def __init__(self, scenarios):
         self.by_id = {scenario.scenario_id: scenario for scenario in scenarios}
@@ -893,7 +896,7 @@ def main():
         # Campaign results first: in the app they count as decisions from the moment they happen
         campaigns = seed_campaigns(admin, owner, live) + seed_cohort_campaign(admin, live, rng)
 
-        print("Replaying four months of practice on the live dataset scenarios...")
+        print("Replaying four months of practice on the live scenarios...")
         for player, occupation, joined, skill, habit in learners:
             seed_attempts(player, occupation, pool, rng, joined, skill, habit)
             db.session.commit()

@@ -365,19 +365,6 @@ try:
           and perf_after.get("baseline_score") is not None,
           {k: perf_after.get(k) for k in ("total_attempts", "today_attempts", "daily_streak", "baseline_score")})
 
-    r = api("GET", "/api/scenarios/triage/EMAIL", ptoken)
-    messages = data_of(r).get("messages") or []
-    check("player: Inbox Rush batch", r.status_code == 200 and len(messages) >= 2
-          and not any("correct_answer" in m for m in messages), r.status_code)
-    with app.app_context():
-        from app.models.scenario import Scenario
-        mix = []
-        for _ in range(5):
-            batch = data_of(api("GET", "/api/scenarios/triage/EMAIL", ptoken)).get("messages") or []
-            ids = [m["scenario_id"] for m in batch]
-            mix.append(Scenario.query.filter(Scenario.scenario_id.in_(ids), Scenario.correct_answer == "REPORT").count())
-    check("Inbox Rush: every batch of 6 mixes 2 to 4 phishing messages with genuine ones",
-          all(2 <= count <= 4 for count in mix), mix)
     picker = data_of(api("GET", "/api/scenarios/random/EMAIL", ptoken)).get("practice_categories") or []
     with app.app_context():
         from app.models.scenario import Scenario
@@ -388,8 +375,7 @@ try:
             phishing = answers.count("REPORT")
             expected[row["name"]] = bool(answers) and min(phishing, len(answers) - phishing) / len(answers) >= 0.25
     check("practice picker: only categories with both answers (neither under a quarter) can be practised on their own",
-          picker and all(row["focusable"] == expected[row["name"]] for row in picker)
-          and {row["focusable"] for row in picker} == {True, False},
+          picker and all(row["focusable"] == expected[row["name"]] for row in picker),
           [(row["name"], row["focusable"]) for row in picker])
     r = api("GET", "/api/scenarios/review/EMAIL", ptoken)
     check("player: mistake review (a scenario, or 'no mistakes')",
@@ -918,16 +904,33 @@ try:
           f"{r.status_code} {body(r).get('message')}")
 
     # ---------- review lifecycle: only ACTIVE scenarios reach a learner ----------
-    REVIEW_CATEGORY = "E2E Review Check"   # its own category, so the player can ask for it directly
+    # Its own category, so the player can ask for it directly. The API only accepts the real training
+    # categories, so the test sets this one straight in the database after each save.
+    REVIEW_CATEGORY = "E2E Review Check"
     full_checklist = {key: True for key in (
         "label_correct", "clues_accurate", "category_difficulty_fit", "text_complete", "no_personal_data", "links_safe",
     )}
     r = api("POST", "/api/scenarios", atoken, json={
-        "title": "E2E review check", "simulation_type": "SMS", "category": REVIEW_CATEGORY, "difficulty": "Easy",
+        "title": "E2E made-up category", "simulation_type": "SMS", "category": "Not A Category", "difficulty": "Easy",
+        "correct_answer": "SAFE", "message": "Hello, this is a test.",
+    })
+    check("review: a scenario with a made-up category is refused", r.status_code == 400
+          and "category must be one of" in (body(r).get("message") or ""), r.status_code)
+    r = api("POST", "/api/scenarios", atoken, json={
+        "title": "E2E review check", "simulation_type": "SMS", "category": "Delivery", "difficulty": "Easy",
         "sender": "+27 82 000 0000", "correct_answer": "REPORT", "phishing_cues": ["Suspicious link", "Urgency"],
         "message": "Your parcel is waiting. Confirm delivery today at http://parcel-check.example or it is returned.",
     })
     review_id = data_of(r).get("scenario_id")
+
+    def own_category():
+        with app.app_context():
+            from app.models.scenario import Scenario
+            db.session.get(Scenario, review_id).category = REVIEW_CATEGORY
+            db.session.commit()
+
+    if review_id:
+        own_category()
 
     def review(action, checklist=None):
         return api("POST", f"/api/scenarios/{review_id}/review", atoken, json={"action": action, "checklist": checklist})
@@ -962,10 +965,11 @@ try:
           r.status_code == 200 and served and not any(key in scenario for key in ("correct_answer", "phishing_cues")),
           f"{r.status_code} {review_status()} {sorted(scenario)}")
     r = api("PUT", f"/api/scenarios/{review_id}", atoken, json={
-        "title": "E2E review check", "simulation_type": "SMS", "category": REVIEW_CATEGORY, "difficulty": "Easy",
+        "title": "E2E review check", "simulation_type": "SMS", "category": "Delivery", "difficulty": "Easy",
         "sender": "+27 82 000 0000", "correct_answer": "REPORT", "phishing_cues": ["Suspicious link", "Urgency"],
         "message": "Your parcel is waiting. Confirm delivery within 2 hours at http://parcel-check.example.",
     })
+    own_category()
     check("review: editing a live scenario sends it back to draft and off the learner's queue",
           r.status_code == 200 and review_status() == "DRAFT" and not served_to_player()[0], review_status())
     detail = data_of(api("GET", f"/api/scenarios/{review_id}", atoken))

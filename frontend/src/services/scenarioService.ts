@@ -23,11 +23,6 @@ class ScenarioService {
     return apiRequest(`/scenarios/review/${type}`, "GET", null);
   }
 
-  /** A mixed inbox for Inbox Rush. */
-  async getTriageBatch(type: Channel) {
-    return apiRequest(`/scenarios/triage/${type}`, "GET", null);
-  }
-
   /** Send a decision and its reasons to be scored. */
   async submitAttempt(data: {
     scenario_id: number;
