@@ -50,6 +50,13 @@ services:
       - ${DEMO_DATASETS_HOST_DIR:?Set DEMO_DATASETS_HOST_DIR in .env}:/app/demo_datasets:ro
     ports:
       - "${HOST_IP:?Set HOST_IP in .env}:${BACKEND_PORT:?Set BACKEND_PORT in .env}:5000"
+    # "health: starting" while the first start loads the demo data (a few minutes); healthy once the API answers
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('127.0.0.1', 5000), 3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15m
     depends_on:
       db:
         condition: service_healthy

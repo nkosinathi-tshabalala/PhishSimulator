@@ -142,7 +142,7 @@ def register_security(app):
         """Log the details on the server; the client only learns that something failed."""
         db.session.rollback()
         app.logger.exception("Unhandled error on %s %s", request.method, request.path)
-        return _reply("Something went wrong. Please try again.", 500)
+        return _reply("Something went wrong on our side and we're fixing it. Please try again in a few minutes.", 500)
 
     # ---- tokens: every one is checked against its session row; replies never say why a token failed ----
 

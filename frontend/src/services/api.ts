@@ -56,7 +56,14 @@ function send(endpoint: string, method: string, data: unknown) {
 
 /** Sends an HTTP request to the backend API. */
 export async function apiRequest(endpoint: string, method: string = "GET", data: unknown = null) {
-  let response = await send(endpoint, method, data);
+  let response: Response;
+  try {
+    response = await send(endpoint, method, data);
+  } catch (error) {
+    // No answer at all (server down or starting, network lost): the same reply as a failing server
+    console.error(error);
+    return { ok: false, status: 0, data: { success: false, message: SERVER_PROBLEM } };
+  }
 
   // The access token lasts a few minutes: renew it once and try again
   if (response.status === 401 && !NO_RENEW.some((path) => endpoint.startsWith(path))) {
@@ -99,16 +106,16 @@ export async function downloadFile(endpoint: string, filename: string) {
   return true;
 }
 
-/** A readable message when the server (or the nginx proxy in front of it) answers with a page instead of JSON. */
+/** Shown when the server cannot be reached or fails; the details stay in the server logs. */
+export const SERVER_PROBLEM = "Something went wrong on our side and we're fixing it. Please try again in a few minutes.";
+
+/** A plain message when the server (or the nginx proxy in front of it) answers with a page instead of JSON. */
 function describeNonJson(status: number) {
   if (status === 413) {
-    return "This file is larger than the upload limit. Upload a smaller file, or raise MAX_UPLOAD_MB in .env and restart.";
+    return "That file is too large to upload. Please choose a smaller file.";
   }
   if (status === 429) {
     return "Too many attempts. Please wait a minute and try again.";
   }
-  if (status === 502 || status === 503 || status === 504) {
-    return "The server took too long or stopped responding. For very large datasets, raise REQUEST_TIMEOUT_SECONDS in .env and restart.";
-  }
-  return `Unexpected server response (HTTP ${status}).`;
+  return SERVER_PROBLEM;
 }
