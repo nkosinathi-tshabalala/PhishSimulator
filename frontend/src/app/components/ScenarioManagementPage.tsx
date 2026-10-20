@@ -442,7 +442,12 @@ export function ScenarioManagementPage({ onBack }: ScenarioManagementPageProps) 
 
     if (response.ok && response.data.success) {
       setIsFormOpen(false);
-      if (editingId) {
+      const savedStatus = response.data.data?.status as string | undefined;
+      if (editingId && savedStatus && filters.status && filters.status !== savedStatus.toUpperCase()) {
+        // An edited live scenario moves to Approved: follow it there so it does not drop out of view
+        setFilters((current) => ({ ...current, status: savedStatus.toUpperCase() }));
+        setPage(1);
+      } else if (editingId) {
         await loadScenarios();
       } else {
         // A new scenario is a draft in the admin's own group: open that group at the Draft stage to show it
@@ -934,7 +939,9 @@ export function ScenarioManagementPage({ onBack }: ScenarioManagementPageProps) 
           <DialogHeader>
             <DialogTitle>{editingId ? "Edit Scenario" : "Create Scenario"}</DialogTitle>
             <DialogDescription>
-              New or edited scenarios become drafts and must pass review before players see them.
+              {editingId
+                ? "Editing a live scenario moves it to Approved: players stop seeing it until you activate the edited version."
+                : "New scenarios start as drafts and must pass review before players see them."}
             </DialogDescription>
           </DialogHeader>
           <form className="space-y-4" onSubmit={saveScenario}>

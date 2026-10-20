@@ -1000,18 +1000,20 @@ try:
         "message": "Your parcel is waiting. Confirm delivery within 2 hours at http://parcel-check.example.",
     })
     own_category()
-    check("review: editing a live scenario sends it back to draft and off the learner's queue",
-          r.status_code == 200 and review_status() == "DRAFT" and not served_to_player()[0], review_status())
+    check("review: editing a live scenario moves it to Approved and off the learner's queue",
+          r.status_code == 200 and review_status() == "APPROVED" and not served_to_player()[0], review_status())
     detail = data_of(api("GET", f"/api/scenarios/{review_id}", atoken))
-    changed = items(data_of(api("GET", "/api/scenarios?simulation_type=SMS&status=DRAFT&when=updated_today", atoken)),
+    changed = items(data_of(api("GET", "/api/scenarios?simulation_type=SMS&status=APPROVED&when=updated_today", atoken)),
                     "scenarios", "items")
-    check("review: the edit clears the approval time and shows under 'Changed today'",
-          detail.get("approved_at") is None and any(row["scenario_id"] == review_id for row in changed), detail.get("approved_at"))
-    check("review: reject a draft, then reopen it as a draft",
+    check("review: the edit stamps a new approval time and shows under Approved, 'Changed today'",
+          detail.get("approved_at") is not None and any(row["scenario_id"] == review_id for row in changed),
+          detail.get("approved_at"))
+    check("review: reject the edited (approved) scenario, then reopen it as a draft",
           review("reject").status_code == 200 and review_status() == "REJECTED"
           and review("reopen").status_code == 200 and review_status() == "DRAFT", review_status())
     review("approve", full_checklist)
-    review("activate")
+    check("review: activating it again puts it back on the learner's queue",
+          review("activate").status_code == 200 and review_status() == "ACTIVE" and served_to_player()[0], review_status())
     check("review: archiving takes a live scenario off the learner's queue",
           review("archive").status_code == 200 and review_status() == "ARCHIVED" and not served_to_player()[0], review_status())
     check("review: the unused test scenario deletes", api("DELETE", f"/api/scenarios/{review_id}", atoken).status_code == 200)
