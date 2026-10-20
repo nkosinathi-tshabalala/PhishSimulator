@@ -259,6 +259,8 @@ def real_clues(scenario):
     lowered = message.lower()
     if any(contains_word(lowered, phrase) for phrase in SAFE_CHANNEL_PHRASES):
         signals.append("Safe way to check")
+    # Trust signals the admin added in review, for what the rules above cannot read ("at anyFirstBank branch")
+    signals += [cue for cue in dict.fromkeys(stored) if cue in TRUST_SIGNALS and cue not in signals]
     return signals
 
 

@@ -86,6 +86,8 @@ interface ScenarioDetail extends Omit<ScenarioSummary, "uses" | "has_attachment"
   correct_answer: "REPORT" | "SAFE";
   feedback: string | null;
   phishing_cues: string[];
+  // The clues players are scored on: warning signs for phishing, trust signals for genuine messages
+  scored_clues: string[];
   quality_checks: Array<{ label: string; passed: boolean; detail: string }>;
   created_at: string | null;
 }
@@ -129,6 +131,16 @@ interface ScenarioForm {
 const CATEGORIES = [
   "Banking & Money", "Account Security", "Email & IT", "Prizes & Offers", "Delivery", "Government",
   "Employment", "University", "Social Media", "General",
+];
+
+// The clue names the server accepts (app/utils/clues.py)
+const WARNING_SIGN_NAMES = [
+  "Suspicious link", "Urgency", "Credential request", "Fake sender", "Generic greeting", "Too good to be true",
+  "Threat or penalty", "Unexpected attachment",
+];
+const TRUST_SIGNAL_NAMES = [
+  "Known sender", "No personal info requested", "No pressure to act", "Expected context", "Official link",
+  "No link or attachment", "Personal greeting", "Safe way to check",
 ];
 
 const QA_ITEMS = [
@@ -847,15 +859,38 @@ export function ScenarioManagementPage({ onBack }: ScenarioManagementPageProps) 
                   </div>
                   <HiddenDetails scenario={reviewing} />
                   <div className="flex flex-wrap items-center gap-2 text-sm">
-                    <span className="text-muted-foreground">Clues:</span>
-                    {reviewing.phishing_cues.length
-                      ? reviewing.phishing_cues.map((cue) => (
-                          <span key={cue} className="rounded-full bg-amber-500/15 text-amber-200 px-2 py-0.5 text-xs">
+                    <span className="text-muted-foreground">
+                      {reviewing.correct_answer === "REPORT" ? "Warning signs players look for:" : "Trust signals players look for:"}
+                    </span>
+                    {reviewing.scored_clues.length
+                      ? reviewing.scored_clues.map((cue) => (
+                          <span
+                            key={cue}
+                            className={`rounded-full px-2 py-0.5 text-xs ${
+                              reviewing.correct_answer === "REPORT"
+                                ? "bg-amber-500/15 text-amber-200"
+                                : "bg-green-500/15 text-green-300"
+                            }`}
+                          >
                             {cue}
                           </span>
                         ))
-                      : <span className="text-xs">none</span>}
+                      : <span className="text-xs">none: add them before approving</span>}
                   </div>
+                  {reviewing.correct_answer === "SAFE" && (() => {
+                    // Warning signs on a genuine message do not score: they are why it looks risky (its difficulty)
+                    const looksRisky = reviewing.phishing_cues.filter((cue) => !reviewing.scored_clues.includes(cue));
+                    return looksRisky.length > 0 && (
+                      <div className="flex flex-wrap items-center gap-2 text-sm">
+                        <span className="text-muted-foreground">Looks risky because of:</span>
+                        {looksRisky.map((cue) => (
+                          <span key={cue} className="rounded-full bg-amber-500/15 text-amber-200 px-2 py-0.5 text-xs">
+                            {cue}
+                          </span>
+                        ))}
+                      </div>
+                    );
+                  })()}
                 </section>
 
                 <section className="space-y-5">
@@ -1013,6 +1048,10 @@ export function ScenarioManagementPage({ onBack }: ScenarioManagementPageProps) 
                 onChange={(event) => setField("phishing_cues", event.target.value)}
                 placeholder="Suspicious link, Urgency, Fake sender"
               />
+              <p className="text-xs text-muted-foreground">
+                Warning signs: {WARNING_SIGN_NAMES.join(", ")}. For a genuine message, add trust signals the app does
+                not find by itself: {TRUST_SIGNAL_NAMES.join(", ")}.
+              </p>
             </Field>
             <Field label="Extra feedback for players (optional)">
               <Textarea value={form.feedback} onChange={(event) => setField("feedback", event.target.value)} />

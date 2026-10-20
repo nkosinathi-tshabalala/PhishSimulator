@@ -32,6 +32,7 @@ BRANDS = {
     "americanexpress": ("americanexpress.com", "aexp.com"),
     "wellsfargo": ("wellsfargo.com",),
     "bankofamerica": ("bankofamerica.com", "bofa.com"),
+    "bofa": ("bankofamerica.com", "bofa.com"),
     "dropbox": ("dropbox.com", "dropboxmail.com"),
     "docusign": ("docusign.com", "docusign.net"),
     "office365": ("office.com", "microsoft.com", "office365.com"),
@@ -55,13 +56,17 @@ BRAND_NAMES = {
     "paypal": "PayPal", "linkedin": "LinkedIn", "whatsapp": "WhatsApp", "icloud": "iCloud", "fedex": "FedEx",
     "standardbank": "Standard Bank", "tiktok": "TikTok", "onedrive": "OneDrive", "postnet": "PostNet",
     "americanexpress": "American Express", "amex": "Amex", "wellsfargo": "Wells Fargo",
-    "bankofamerica": "Bank of America", "docusign": "DocuSign", "office365": "Office 365", "ebay": "eBay",
+    "bankofamerica": "Bank of America", "bofa": "Bank of America", "docusign": "DocuSign", "office365": "Office 365", "ebay": "eBay",
     "usps": "USPS", "irs": "IRS", "wetransfer": "WeTransfer", "usaa": "USAA",
 }
 SHORT_BRAND = 4
+# Short names that no ordinary word contains, so they count inside a longer word too ("unblockbofaprepaid")
+SHORT_BRANDS_INSIDE_WORDS = {"bofa"}
 
 SHORTENERS = {"bit.ly", "tinyurl.com", "t.co", "goo.gl", "ow.ly", "is.gd", "cutt.ly", "rb.gy", "shorturl.at", "tiny.cc",
               "rebrand.ly", "t.ly", "s.id", "v.gd", "bit.do", "short.gy", "tiny.one", "shorturl.asia", "qrco.de"}
+# Free forwarding addresses: like a shortener, the address shown is not where the link goes
+FORWARDERS = {"come.to"}
 # Tunnels, free hosts and free website builders that put anyone's page online in minutes: a bank or employer
 # does not send you to a sign-in page there ("Microsoft password expires... http://vc12w.jimdo.com/")
 TEMPORARY_HOSTS = {"ngrok.io", "ngrok-free.app", "ngrok.app", "trycloudflare.com", "000webhostapp.com", "loca.lt",
@@ -74,6 +79,8 @@ BAIT_WORDS = ("secure", "verify", "login", "signin", "account", "update", "suppo
               "portal", "refund", "claim", "redeliver", "reward")
 # Domains with a two-part ending, so that "evil.co.za" is the site, not "co.za"
 TWO_PART_ENDINGS = ("co.za", "org.za", "ac.za", "gov.za", "net.za", "co.uk", "org.uk", "ac.uk", "gov.uk", "com.au")
+# The same for any country: "com.bd", "gov.in", "co.ke" are endings, so "meeha.com.bd" is the site
+COUNTRY_SECOND_LEVEL = ("com", "co", "org", "net", "gov", "ac", "edu")
 # Numbers that scammers use in place of letters ("1" can stand for "l" or "i")
 DIGIT_SWAPS = (
     str.maketrans({"0": "o", "1": "l", "3": "e", "4": "a", "5": "s", "7": "t"}),
@@ -117,7 +124,8 @@ def host_of(url):
 def site_of(host):
     """The part of a host name that someone registered: "login.paypal.com.evil.ru" -> "evil.ru"."""
     labels = host.split(".")
-    size = 3 if any(host.endswith("." + ending) for ending in TWO_PART_ENDINGS) else 2
+    country_ending = len(labels) >= 3 and len(labels[-1]) == 2 and labels[-2] in COUNTRY_SECOND_LEVEL
+    size = 3 if country_ending or any(host.endswith("." + ending) for ending in TWO_PART_ENDINGS) else 2
     return ".".join(labels[-size:])
 
 
@@ -129,7 +137,7 @@ def _brand_in(host):
     plain = " ".join(words)
     swapped = [plain.translate(swap) for swap in DIGIT_SWAPS]
     for brand in BRANDS:
-        if len(brand) <= SHORT_BRAND:
+        if len(brand) <= SHORT_BRAND and brand not in SHORT_BRANDS_INSIDE_WORDS:
             found_plain = brand in words
             found_swapped = any(brand in text.split() for text in swapped)
         else:
@@ -172,8 +180,12 @@ def link_problems(url):
         problems.append(f"the real address is the part after the '@' ({host})")
     if re.fullmatch(r"\d{1,3}(\.\d{1,3}){3}", host):
         problems.append("it uses a number (IP address) instead of a website name")
+    elif site.split(".")[0].isdigit():
+        problems.append(f"{site} is only a number, not a name a real organisation would use")
     if site in SHORTENERS:
         problems.append(f"{site} is a link shortener that hides where it really goes")
+    if site in FORWARDERS:
+        problems.append(f"{site} is a free forwarding address that hides where the link really goes")
     if site in TEMPORARY_HOSTS:
         problems.append(f"{site} is a free website builder or temporary host, which real organisations don't use "
                         "for sign-in or payment pages")
