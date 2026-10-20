@@ -8,7 +8,7 @@ from app.adaptive.adaptive_engine import AdaptiveEngine
 from app.analytics.feedback_generator import FeedbackGenerator
 from app.datasets.scenario_parser import ScenarioParser
 from app.services.progress_service import ProgressService
-from app.utils.links import link_problems
+from app.utils.links import link_problems, site_of
 from app.utils.clues import (
     TRUST_SIGNALS,
     WARNING_SIGNS,
@@ -233,6 +233,18 @@ class TestStageTests(unittest.TestCase):
         self.assertNotIn("No link or attachment", clues("Your payslip is attached.", attachment="Payslip.pdf"))
         self.assertNotIn("Official link", clues("Hi Thabo, confirm at https://takealot-secure-login.xyz/verify"))
 
+    def test_trust_signals_added_in_review_count_for_genuine_messages_only(self):
+        genuine = make_scenario("SAFE", cues="Generic greeting,Safe way to check", sender="")
+        genuine.message, genuine.attachment = "Dear Valued Customer, update your email at anyFirstBank branch ONLY", ""
+        self.assertIn("Safe way to check", real_clues(genuine))
+        self.assertNotIn("Generic greeting", real_clues(genuine))
+        # It can be offered as a button and is then a real clue, not a wrong pick
+        key = next(f"1:{n}" for n in range(20) if "Safe way to check" in clue_options(genuine, f"1:{n}"))
+        result = evaluate_justification(genuine, ["Safe way to check"], "", key)
+        self.assertEqual((result["spotted"], result["wrong_picks"]), (["Safe way to check"], []))
+        phishing = make_scenario("REPORT", cues="Urgency,Known sender")
+        self.assertEqual(real_clues(phishing), ["Urgency"])
+
 
 class CorrectStageTests(unittest.TestCase):
     """Feedback straight after each decision: verdict, clues found and missed, and advice."""
@@ -353,8 +365,15 @@ class LinkTests(unittest.TestCase):
 
     def test_genuine_links_are_fine(self):
         for url in ("https://www.takealot.com/orders", "https://teams.microsoft.com/l/meetup-join/",
-                    "https://www.sars.gov.za/efiling", "https://onedrive.live.com/view", "https://www.up.ac.za/portal"):
+                    "https://www.sars.gov.za/efiling", "https://onedrive.live.com/view", "https://www.up.ac.za/portal",
+                    "www.beeindia.gov.in", "http://whatsapp.com/dl/", "https://chat.whatsapp.com/abc",
+                    "https://groups.google.com/g/news", "https://secure.bankofamerica.com/login"):
             self.assertEqual(link_problems(url), [], url)
+
+    def test_country_endings_are_read_as_one_ending(self):
+        self.assertEqual(site_of("unblock.meeha.com.bd"), "meeha.com.bd")
+        self.assertEqual(site_of("beeindia.gov.in"), "beeindia.gov.in")
+        self.assertEqual(site_of("login.paypal.com.evil.ru"), "evil.ru")
 
     def test_fake_links_are_caught_with_a_reason(self):
         cases = {
@@ -366,6 +385,10 @@ class LinkTests(unittest.TestCase):
             "https://nsfas-portal-za.com/confirm": "NSFAS",
             "https://customs-clearance-za.info/pay": "South African",
             "https://parcel-check.xyz/pay": ".xyz",
+            # Bank of America's short name inside a word, on a site in Bangladesh ("meeha.com.bd")
+            "https://unblockbofaeddprepaid.meeha.com.bd/asdfghjkl.html": "Bank of America",
+            "https://691587.xv": "only a number",
+            "https://come.to/fnbficaxxx3": "forwarding address",
         }
         for url, reason in cases.items():
             problems = link_problems(url)

@@ -17,7 +17,7 @@ from app.datasets.scenario_parser import ScenarioParser
 from app.datasets.scenario_realism import quality_review, quality_score
 from app.schemas.scenario_schema import ScenarioSchema
 from app.utils.clock import iso_utc, local_today, utc_now, utc_start_of
-from app.utils.clues import clue_options, round_key
+from app.utils.clues import WARNING_SIGNS, clue_options, normalise_clue, real_clues, round_key
 from app.utils.labels import LEGACY_TITLE_PREFIX, message_label
 from app.utils.links import describe_link, find_urls, link_problems
 
@@ -383,6 +383,13 @@ class ScenarioService:
         links = find_urls(message)
         is_phishing = scenario.correct_answer.upper() == "REPORT"
         cues = scenario.get_phishing_cues()
+        if is_phishing:
+            clue_detail = ", ".join(cues) if cues else "No clues found: add them before approving."
+        else:
+            # A genuine message's clues are its trust signals; warning signs only explain why it looks risky
+            looks_risky = [cue for cue in cues if normalise_clue(cue) in WARNING_SIGNS]
+            clue_detail = f"Genuine. Trust signals players can spot: {', '.join(real_clues(scenario))}." + (
+                f" It looks risky because of: {', '.join(looks_risky)}." if looks_risky else "")
 
         return [
             {
@@ -393,7 +400,7 @@ class ScenarioService:
             {
                 "label": "Clues detected",
                 "passed": bool(cues) or not is_phishing,
-                "detail": ", ".join(cues) if cues else "No clues found: add them before approving.",
+                "detail": clue_detail,
             },
             {
                 "label": "Text complete",
@@ -425,6 +432,8 @@ class ScenarioService:
             "correct_answer": scenario.correct_answer,
             "feedback": scenario.feedback,
             "phishing_cues": scenario.get_phishing_cues(),
+            # What the clue buttons and feedback use: warning signs for phishing, trust signals for genuine
+            "scored_clues": real_clues(scenario),
             "status": (scenario.status or "DRAFT").upper(),
             "dataset_id": scenario.dataset_id,
             "quality_score": scenario.quality_score,
@@ -457,12 +466,17 @@ class ScenarioService:
             feedback=data.get("feedback"),
             status="DRAFT",
         )
-        scenario.set_phishing_cues(data.get("phishing_cues", []))
+        scenario.set_phishing_cues(ScenarioService._clue_names(data))
         scenario.quality_score = ScenarioService._score(scenario)
         db.session.add(scenario)
         db.session.commit()
 
         return True, "Scenario created as a draft.", {"scenario_id": scenario.scenario_id}
+
+    @staticmethod
+    def _clue_names(data):
+        """The admin's clues as catalog names ("suspicious url" -> "Suspicious link"), each once."""
+        return list(dict.fromkeys(normalise_clue(cue) for cue in data.get("phishing_cues", [])))
 
     @staticmethod
     def update_scenario(scenario_id, data):
@@ -485,7 +499,7 @@ class ScenarioService:
         if "attachment" in data:
             scenario.attachment = data["attachment"] or None
 
-        scenario.set_phishing_cues(data.get("phishing_cues", []))
+        scenario.set_phishing_cues(ScenarioService._clue_names(data))
         scenario.quality_score = ScenarioService._score(scenario)
 
         message = "Scenario updated successfully."

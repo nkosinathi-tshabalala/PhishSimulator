@@ -34,6 +34,21 @@ class InputRuleTests(unittest.TestCase):
         self.assertFalse(valid)
         self.assertIn("category must be one of", message)
 
+    def test_clues_must_be_names_from_the_clue_buttons(self):
+        ok = ScenarioSchema.validate_update(_scenario(phishing_cues=["Unexpected attachment", "Safe way to check"]))
+        self.assertEqual(ok, (True, None))
+        # An old name is still understood, but a typo would be saved and then never count, so it is refused
+        self.assertEqual(ScenarioSchema.validate_update(_scenario(phishing_cues=["suspicious url"])), (True, None))
+        valid, message = ScenarioSchema.validate_update(_scenario(phishing_cues=["Fake Sendr"]))
+        self.assertFalse(valid)
+        self.assertIn("Unknown clue: Fake Sendr", message)
+
+    def test_a_phishing_message_takes_warning_signs_only(self):
+        valid, message = ScenarioSchema.validate_update(
+            _scenario(correct_answer="REPORT", phishing_cues=["Urgency", "Known sender"]))
+        self.assertFalse(valid)
+        self.assertIn("remove Known sender", message)
+
 
 if __name__ == "__main__":
     unittest.main()

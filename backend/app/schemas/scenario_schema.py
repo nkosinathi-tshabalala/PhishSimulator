@@ -48,6 +48,15 @@ class ScenarioSchema:
             isinstance(cue, str) and len(cue) <= ScenarioSchema.MAX_CUE_LENGTH for cue in cues
         ):
             return False, f"phishing_cues must be a list of at most {ScenarioSchema.MAX_CUES} short clue names."
+        # Only the names on the clue buttons, so a typo cannot be saved and then silently never count
+        from app.utils.clues import TRUST_SIGNALS, WARNING_SIGNS, normalise_clue
+        unknown = [cue for cue in cues if normalise_clue(cue) not in {**WARNING_SIGNS, **TRUST_SIGNALS}]
+        if unknown:
+            return False, (f"Unknown clue: {', '.join(unknown)}. Warning signs: {', '.join(WARNING_SIGNS)}. "
+                           f"Trust signals (genuine messages only): {', '.join(TRUST_SIGNALS)}.")
+        trust = [cue for cue in cues if normalise_clue(cue) in TRUST_SIGNALS]
+        if trust and str(data.get("correct_answer", "")).upper() == "REPORT":
+            return False, f"A phishing message has warning signs only: remove {', '.join(trust)}."
 
         valid_types = {member.value for member in ScenarioType}
         if data["simulation_type"] not in valid_types:
