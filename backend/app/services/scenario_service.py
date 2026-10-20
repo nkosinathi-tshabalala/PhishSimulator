@@ -490,9 +490,13 @@ class ScenarioService:
 
         message = "Scenario updated successfully."
         scenario.updated_at = utc_now()
-        if (scenario.status or "").upper() in {"APPROVED", "ACTIVE"}:
-            ScenarioService._set_status(scenario, "DRAFT")
-            message = "Scenario updated and moved back to draft for review."
+        # The admin's edit is their review of the new version, so it stays approved (and is stamped again). A live
+        # scenario comes off the players' queue until the admin activates the edited version.
+        status = (scenario.status or "").upper()
+        if status in {"APPROVED", "ACTIVE"}:
+            ScenarioService._set_status(scenario, "APPROVED")
+            message = ("Scenario updated and moved to Approved. Activate it to show the edited version to players."
+                       if status == "ACTIVE" else "Scenario updated. It stays approved until you activate it.")
         db.session.commit()
 
         return True, message, {"scenario_id": scenario.scenario_id, "status": scenario.status}

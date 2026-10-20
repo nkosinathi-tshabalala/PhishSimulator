@@ -479,7 +479,7 @@ cd backend; .\.venv\Scripts\python.exe -m unittest discover tests
 
 That runs 162 unit tests and needs no database.
 
-End-to-end check of the whole API (233 checks across every CATCH stage, sessions, security and the demo data). It builds a fresh throwaway database on your PostgreSQL server from every migration plus the demo data, prints a trace of one test learner, then drops the database; your own database is never touched:
+End-to-end check of the whole API (238 checks across every CATCH stage, sessions, security and the demo data). It builds a fresh throwaway database on your PostgreSQL server from every migration plus the demo data, prints a trace of one test learner, then drops the database; your own database is never touched:
 
 ```powershell
 cd backend; .\.venv\Scripts\python.exe tests\e2e_check.py
